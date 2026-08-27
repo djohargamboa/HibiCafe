@@ -1,0 +1,1608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hibi Cafe — POS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --espresso:#2B1B12;
+  --espresso-soft:#4A3423;
+  --cream:#FBF7EE;
+  --cream-dim:#F3ECDD;
+  --panel:#FFFFFF;
+  --caramel:#B8763E;
+  --caramel-dark:#9A5F2E;
+  --matcha:#6B7A4F;
+  --matcha-dark:#566241;
+  --rust:#A6412D;
+  --gold:#C99A44;
+  --line:#E7DECB;
+  --text-dim:#8A7A64;
+  --radius:14px;
+  --shadow:0 2px 10px rgba(43,27,18,0.08);
+  --shadow-lg:0 12px 32px rgba(43,27,18,0.16);
+  font-size:16px;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--cream);color:var(--espresso);font-family:'IBM Plex Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+h1,h2,h3,.display{font-family:'Fraunces',serif;}
+.mono{font-family:'IBM Plex Mono',monospace;}
+button{font-family:inherit;cursor:pointer;border:none;}
+input,select{font-family:inherit;}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px;}
+
+/* ---------- Shell ---------- */
+#app{display:flex;flex-direction:column;height:100vh;}
+.topbar{display:flex;align-items:center;gap:18px;padding:12px 20px;background:var(--espresso);color:var(--cream);flex-shrink:0;}
+.brand{display:flex;align-items:center;gap:10px;}
+.brand .mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(145deg,var(--caramel),var(--gold));display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-weight:700;color:var(--espresso);font-size:17px;flex-shrink:0;}
+.brand .name{font-family:'Fraunces',serif;font-weight:600;font-size:19px;letter-spacing:0.2px;}
+.brand .sub{font-size:11px;color:#D9C9AE;letter-spacing:0.6px;text-transform:uppercase;margin-top:1px;}
+nav.tabs{display:flex;gap:4px;margin-left:12px;flex-wrap:wrap;}
+nav.tabs button{padding:9px 15px;border-radius:9px;background:transparent;color:#D9C9AE;font-weight:600;font-size:14px;transition:.15s;}
+nav.tabs button:hover{background:rgba(255,255,255,0.08);color:var(--cream);}
+nav.tabs button.active{background:var(--caramel);color:#fff;}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:#D9C9AE;}
+.clock{font-family:'IBM Plex Mono',monospace;}
+.cashier-pill{background:rgba(255,255,255,0.08);padding:6px 12px;border-radius:20px;font-weight:600;color:var(--cream);}
+
+.page{flex:1;overflow:hidden;display:none;}
+.page.active{display:flex;flex-direction:column;}
+.page-scroll{flex:1;overflow-y:auto;padding:22px;}
+
+/* ---------- POS ---------- */
+#pos-page{flex-direction:row;}
+.pos-left{flex:1.5;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line);}
+.cat-tabs{display:flex;gap:8px;padding:14px 18px 10px;overflow-x:auto;flex-shrink:0;background:var(--panel);border-bottom:1px solid var(--line);}
+.cat-tab{padding:9px 16px;border-radius:20px;background:var(--cream-dim);color:var(--espresso-soft);font-weight:600;font-size:13.5px;white-space:nowrap;transition:.15s;flex-shrink:0;}
+.cat-tab:hover{background:#EADFC6;}
+.cat-tab.active{background:var(--espresso);color:var(--cream);}
+.product-grid{flex:1;overflow-y:auto;padding:16px 18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;align-content:start;}
+.product-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 12px;text-align:left;box-shadow:var(--shadow);transition:.12s;position:relative;min-height:88px;display:flex;flex-direction:column;justify-content:space-between;}
+.product-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);border-color:var(--caramel);}
+.product-card:active{transform:translateY(0px) scale(0.98);}
+.product-card.unavailable{opacity:0.45;pointer-events:none;}
+.product-card .pname{font-weight:600;font-size:14.5px;line-height:1.25;margin-bottom:8px;}
+.product-card .pprice{font-size:13px;color:var(--caramel-dark);font-weight:700;font-family:'IBM Plex Mono',monospace;}
+.product-card .ptag{position:absolute;top:8px;right:8px;font-size:9.5px;background:var(--matcha);color:#fff;padding:2px 6px;border-radius:6px;font-weight:700;letter-spacing:0.3px;}
+
+.pos-right{flex:1;display:flex;flex-direction:column;background:var(--panel);min-width:340px;max-width:420px;}
+.cart-header{padding:16px 18px 10px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;}
+.cart-header h2{margin:0;font-size:19px;}
+.order-num-preview{font-size:12px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;}
+.cart-items{flex:1;overflow-y:auto;padding:8px 14px;}
+.cart-empty{text-align:center;color:var(--text-dim);padding:60px 20px;font-size:14px;}
+.cart-item{padding:12px 8px;border-bottom:1px solid var(--line);}
+.cart-item-top{display:flex;justify-content:space-between;gap:8px;}
+.cart-item .ciname{font-weight:600;font-size:14px;}
+.cart-item .cimeta{font-size:12px;color:var(--text-dim);margin-top:2px;}
+.cart-item .ciaddons{font-size:11.5px;color:var(--matcha-dark);margin-top:2px;}
+.cart-item .ciprice{font-weight:700;font-family:'IBM Plex Mono',monospace;font-size:13.5px;white-space:nowrap;}
+.cart-item-bottom{display:flex;align-items:center;justify-content:space-between;margin-top:8px;}
+.qty-ctrl{display:flex;align-items:center;gap:0;background:var(--cream-dim);border-radius:8px;overflow:hidden;}
+.qty-ctrl button{width:28px;height:28px;background:transparent;font-weight:700;font-size:15px;color:var(--espresso);}
+.qty-ctrl button:hover{background:var(--caramel);color:#fff;}
+.qty-ctrl .qty-val{width:26px;text-align:center;font-weight:700;font-size:13.5px;}
+.remove-btn{color:var(--rust);font-size:12px;font-weight:600;background:none;padding:4px 6px;}
+.cart-summary{border-top:1px solid var(--line);padding:14px 18px;flex-shrink:0;}
+.sumrow{display:flex;justify-content:space-between;font-size:13.5px;color:var(--text-dim);margin-bottom:5px;}
+.sumrow.grand{font-size:20px;font-weight:700;color:var(--espresso);margin-top:8px;font-family:'Fraunces',serif;}
+.checkout-btn{width:100%;margin-top:12px;padding:15px;background:var(--matcha);color:#fff;border-radius:12px;font-weight:700;font-size:16px;letter-spacing:0.3px;transition:.15s;}
+.checkout-btn:hover{background:var(--matcha-dark);}
+.checkout-btn:disabled{background:#C9C0AE;cursor:not-allowed;}
+.clear-cart-btn{width:100%;margin-top:8px;padding:9px;background:transparent;color:var(--rust);font-weight:600;font-size:12.5px;border-radius:10px;}
+.clear-cart-btn:hover{background:#FBEAE6;}
+
+/* ---------- Modal ---------- */
+.modal-overlay{position:fixed;inset:0;background:rgba(43,27,18,0.5);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
+.modal{background:var(--panel);border-radius:18px;max-width:480px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:var(--shadow-lg);}
+.modal-head{padding:20px 22px 12px;border-bottom:1px solid var(--line);}
+.modal-head h3{margin:0;font-size:19px;}
+.modal-head .msub{font-size:13px;color:var(--text-dim);margin-top:3px;}
+.modal-body{padding:18px 22px;}
+.modal-foot{padding:14px 22px 20px;display:flex;gap:10px;}
+.size-option{display:flex;justify-content:space-between;align-items:center;padding:13px 14px;border:1.5px solid var(--line);border-radius:11px;margin-bottom:8px;font-weight:600;transition:.12s;}
+.size-option:hover{border-color:var(--caramel);}
+.size-option.selected{border-color:var(--caramel);background:#FBF1E4;}
+.size-option .sprice{font-family:'IBM Plex Mono',monospace;color:var(--caramel-dark);}
+.addon-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--cream-dim);}
+.addon-row label{flex:1;font-size:14px;font-weight:500;cursor:pointer;}
+.addon-row .aprice{font-size:13px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;}
+.qty-stepper{display:flex;align-items:center;gap:14px;justify-content:center;padding:6px 0 4px;}
+.qty-stepper button{width:38px;height:38px;border-radius:10px;background:var(--cream-dim);font-size:18px;font-weight:700;}
+.qty-stepper button:hover{background:var(--caramel);color:#fff;}
+.qty-stepper .n{font-size:20px;font-weight:700;width:36px;text-align:center;}
+.btn{padding:11px 18px;border-radius:10px;font-weight:700;font-size:14px;}
+.btn-primary{background:var(--matcha);color:#fff;flex:1;}
+.btn-primary:hover{background:var(--matcha-dark);}
+.btn-primary:disabled{background:#C9C0AE;cursor:not-allowed;}
+.btn-secondary{background:var(--cream-dim);color:var(--espresso);}
+.btn-secondary:hover{background:#EADFC6;}
+.btn-danger{background:var(--rust);color:#fff;}
+.btn-danger:hover{background:#8A3423;}
+.pay-tabs{display:flex;gap:8px;margin-bottom:16px;}
+.pay-tab{flex:1;padding:12px;border-radius:11px;background:var(--cream-dim);font-weight:700;font-size:14px;border:1.5px solid transparent;}
+.pay-tab.active{border-color:var(--caramel);background:#FBF1E4;color:var(--caramel-dark);}
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--text-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.4px;}
+.field input, .field select{width:100%;padding:12px 13px;border:1.5px solid var(--line);border-radius:10px;font-size:16px;background:var(--cream);}
+.field input:focus, .field select:focus{outline:none;border-color:var(--caramel);}
+.big-total{text-align:center;padding:16px 0;}
+.big-total .amt{font-family:'Fraunces',serif;font-size:38px;font-weight:700;}
+.big-total .lbl{font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;}
+.change-row{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--cream-dim);border-radius:10px;margin-top:10px;font-weight:700;}
+.change-row.negative{background:#FBEAE6;color:var(--rust);}
+.change-row.positive{background:#EEF2E4;color:var(--matcha-dark);}
+.success-check{width:70px;height:70px;border-radius:50%;background:var(--matcha);color:#fff;display:flex;align-items:center;justify-content:center;font-size:34px;margin:8px auto 16px;}
+.confirm-order-num{text-align:center;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;color:var(--caramel-dark);margin-bottom:4px;}
+
+/* ---------- Generic page layout ---------- */
+.page-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+.page-title h1{margin:0;font-size:25px;}
+.page-title .psub{font-size:13px;color:var(--text-dim);margin-top:2px;}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px;}
+.stat-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow);}
+.stat-card .slabel{font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-dim);font-weight:600;margin-bottom:8px;}
+.stat-card .sval{font-family:'Fraunces',serif;font-size:30px;font-weight:700;color:var(--espresso);}
+.stat-card.accent{background:linear-gradient(145deg,var(--espresso),var(--espresso-soft));border-color:var(--espresso);}
+.stat-card.accent .slabel{color:#D9C9AE;}
+.stat-card.accent .sval{color:var(--gold);}
+table{width:100%;border-collapse:collapse;font-size:13.5px;}
+th{text-align:left;padding:10px 14px;background:var(--cream-dim);color:var(--espresso-soft);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:0.3px;border-bottom:1px solid var(--line);}
+td{padding:10px 14px;border-bottom:1px solid var(--cream-dim);}
+tr:last-child td{border-bottom:none;}
+td.num, th.num{text-align:right;font-family:'IBM Plex Mono',monospace;}
+.section-title{font-size:15px;font-weight:700;margin:0 0 12px;font-family:'Fraunces',serif;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.filter-bar{display:flex;gap:8px;align-items:center;margin-bottom:18px;flex-wrap:wrap;background:var(--panel);padding:12px 14px;border-radius:12px;border:1px solid var(--line);}
+.filter-btn{padding:8px 14px;border-radius:9px;background:var(--cream-dim);font-weight:600;font-size:13px;}
+.filter-btn.active{background:var(--espresso);color:var(--cream);}
+.status-badge{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:0.2px;}
+.status-New{background:#E4ECF7;color:#2E5C9A;}
+.status-Preparing{background:#FBF1D8;color:#966B0C;}
+.status-Completed{background:#EEF2E4;color:var(--matcha-dark);}
+.status-Cancelled{background:#FBEAE6;color:var(--rust);}
+.pm-badge{padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;}
+.pm-Cash{background:#EEF2E4;color:var(--matcha-dark);}
+.pm-GCash{background:#E4ECF7;color:#2E5C9A;}
+.empty-state{text-align:center;padding:50px 20px;color:var(--text-dim);}
+.icon-btn{padding:6px 11px;border-radius:7px;background:var(--cream-dim);font-size:12px;font-weight:600;}
+.icon-btn:hover{background:#EADFC6;}
+.icon-btn.danger{color:var(--rust);}
+.icon-btn.danger:hover{background:#FBEAE6;}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--espresso);color:var(--cream);padding:13px 22px;border-radius:11px;font-weight:600;font-size:14px;box-shadow:var(--shadow-lg);z-index:200;animation:toastin .2s ease;}
+@keyframes toastin{from{opacity:0;transform:translate(-50%,10px);}to{opacity:1;transform:translate(-50%,0);}}
+.mgmt-row{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--cream-dim);}
+.mgmt-row:last-child{border-bottom:none;}
+.mgmt-row .mname{flex:1;font-weight:600;font-size:14px;}
+.mgmt-row .mprices{font-size:12px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;}
+.toggle{width:38px;height:22px;border-radius:20px;background:var(--line);position:relative;flex-shrink:0;transition:.15s;}
+.toggle.on{background:var(--matcha);}
+.toggle .knob{width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:.15s;box-shadow:0 1px 3px rgba(0,0,0,0.3);}
+.toggle.on .knob{left:18px;}
+.badge-inactive{font-size:10px;background:var(--line);color:var(--text-dim);padding:2px 7px;border-radius:6px;font-weight:700;margin-left:6px;}
+@media (max-width:880px){
+  #pos-page{flex-direction:column;}
+  .pos-right{max-width:none;border-top:1px solid var(--line);max-height:46vh;}
+  .two-col{grid-template-columns:1fr;}
+  nav.tabs{order:3;width:100%;}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark">H</div>
+      <div>
+        <div class="name">Hibi Cafe</div>
+        <div class="sub">Point of Sale</div>
+      </div>
+    </div>
+    <nav class="tabs" id="nav-tabs">
+      <button data-page="pos" class="active">POS</button>
+      <button data-page="orders">Orders</button>
+      <button data-page="expenses">Expenses</button>
+      <button data-page="dashboard">Dashboard</button>
+      <button data-page="reports">Reports</button>
+      <button data-page="menu">Menu Mgmt</button>
+      <button data-page="settings">Settings</button>
+    </nav>
+    <div class="topbar-right">
+      <span class="cashier-pill" id="cashier-pill">Cashier: —</span>
+      <span class="clock" id="clock"></span>
+    </div>
+  </div>
+
+  <!-- POS PAGE -->
+  <div class="page active" id="page-pos">
+    <div id="pos-page" style="flex:1;display:flex;overflow:hidden;">
+      <div class="pos-left">
+        <div class="cat-tabs" id="cat-tabs"></div>
+        <div class="product-grid" id="product-grid"></div>
+      </div>
+      <div class="pos-right">
+        <div class="cart-header">
+          <h2>Current Order</h2>
+          <div class="order-num-preview" id="order-num-preview"></div>
+        </div>
+        <div class="cart-items" id="cart-items"></div>
+        <div class="cart-summary">
+          <div class="sumrow"><span>Items</span><span id="sum-items">0</span></div>
+          <div class="sumrow"><span>Cups / Drinks</span><span id="sum-cups">0</span></div>
+          <div class="sumrow grand"><span>Total</span><span id="sum-total">₱0.00</span></div>
+          <button class="checkout-btn" id="checkout-btn" disabled>Checkout</button>
+          <button class="clear-cart-btn" id="clear-cart-btn">Clear order</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ORDERS PAGE -->
+  <div class="page" id="page-orders">
+    <div class="page-scroll">
+      <div class="page-title">
+        <div><h1>Orders</h1><div class="psub">All transactions, newest first</div></div>
+      </div>
+      <div class="filter-bar" id="orders-filter"></div>
+      <div class="card" style="overflow-x:auto;">
+        <table id="orders-table"></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXPENSES PAGE -->
+  <div class="page" id="page-expenses">
+    <div class="page-scroll" id="expenses-content"></div>
+  </div>
+
+  <!-- DASHBOARD PAGE -->
+  <div class="page" id="page-dashboard">
+    <div class="page-scroll" id="dashboard-content"></div>
+  </div>
+
+  <!-- REPORTS PAGE -->
+  <div class="page" id="page-reports">
+    <div class="page-scroll" id="reports-content"></div>
+  </div>
+
+  <!-- MENU MGMT PAGE -->
+  <div class="page" id="page-menu">
+    <div class="page-scroll" id="menu-content"></div>
+  </div>
+
+  <!-- SETTINGS PAGE -->
+  <div class="page" id="page-settings">
+    <div class="page-scroll" id="settings-content"></div>
+  </div>
+</div>
+
+<div id="modal-root"></div>
+<div id="toast-root"></div>
+
+<script>
+/* ============================================================
+   HIBI CAFE POS — single-file app
+   Data persists via window.storage (shared across the cafe's
+   devices, since this is one shop's operational data).
+   ============================================================ */
+
+const PESO = n => '₱' + (Math.round(n*100)/100).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+const uid = () => Math.random().toString(36).slice(2,10);
+const todayStr = () => new Date().toISOString().slice(0,10);
+const CUP_SIZES = ['Hot 12oz','Iced 16oz','Iced 20oz'];
+
+/* ---------- Default data ---------- */
+function defaultMenu(){
+  return {
+    categories: ['Coffee','Non-Coffee','Frappe Coffee-Based','Frappe Non-Coffee-Based','Fizz','House Specials','Cookies'],
+    products: [
+      // COFFEE
+      p('Americano','Coffee',{'Hot 12oz':95,'Iced 16oz':105,'Iced 20oz':125},true,true),
+      p('Cafe Latte','Coffee',{'Hot 12oz':105,'Iced 16oz':115,'Iced 20oz':135},true,true),
+      p('Spanish Latte','Coffee',{'Hot 12oz':115,'Iced 16oz':125,'Iced 20oz':145},true,true),
+      p('Cafe Mocha','Coffee',{'Hot 12oz':115,'Iced 16oz':125,'Iced 20oz':145},true,true),
+      p('White Chocolate Mocha','Coffee',{'Hot 12oz':115,'Iced 16oz':125,'Iced 20oz':145},true,true),
+      p('Caramel Macchiato','Coffee',{'Hot 12oz':115,'Iced 16oz':125,'Iced 20oz':145},true,true),
+      p('Dirty Matcha','Coffee',{'Hot 12oz':115,'Iced 16oz':125,'Iced 20oz':145},true,true),
+      p('Ube Latte','Coffee',{'Hot 12oz':115,'Iced 16oz':125,'Iced 20oz':145},true,true),
+      // NON-COFFEE
+      p('Matcha Latte','Non-Coffee',{'Hot 12oz':115,'Iced 16oz':125,'Iced 20oz':145},true,true),
+      p('Matcha Strawberry','Non-Coffee',{'Iced 16oz':125,'Iced 20oz':145},true,true),
+      p('Pink Drink','Non-Coffee',{'Iced 16oz':125,'Iced 20oz':145},true,true),
+      p('Bellagio Chocolate','Non-Coffee',{'Hot 12oz':115,'Iced 16oz':125,'Iced 20oz':145},true,true),
+      // FRAPPE COFFEE
+      p('Hibi Signature Crush','Frappe Coffee-Based',{'Iced 16oz':140,'Iced 20oz':160},true,true),
+      p('Mocha Frappe','Frappe Coffee-Based',{'Iced 16oz':135,'Iced 20oz':155},true,true),
+      p('Toffee Caramel Frappe','Frappe Coffee-Based',{'Iced 16oz':135,'Iced 20oz':155},true,true),
+      p('White Mocha Frappe','Frappe Coffee-Based',{'Iced 16oz':135,'Iced 20oz':155},true,true),
+      // FRAPPE NON-COFFEE
+      p('Cookies and Cream','Frappe Non-Coffee-Based',{'Iced 16oz':125,'Iced 20oz':145},true,true),
+      p('White Chocolate Frappe','Frappe Non-Coffee-Based',{'Iced 16oz':135,'Iced 20oz':155},true,true),
+      p('Choco Frost','Frappe Non-Coffee-Based',{'Iced 16oz':135,'Iced 20oz':155},true,true),
+      p('Ube Macapuno','Frappe Non-Coffee-Based',{'Iced 16oz':125,'Iced 20oz':145},true,true),
+      p('Strawberry Frappe','Frappe Non-Coffee-Based',{'Iced 16oz':125,'Iced 20oz':145},true,true),
+      // FIZZ
+      p('Blueberry Fizz','Fizz',{'Iced 16oz':105,'Iced 20oz':115},true,true),
+      p('Peach Fizz','Fizz',{'Iced 16oz':105,'Iced 20oz':115},true,true),
+      p('Watermelon Fizz','Fizz',{'Iced 16oz':105,'Iced 20oz':115},true,true),
+      // HOUSE SPECIALS (no size, not drinks, no addons)
+      p('Tiramisu','House Specials',{'Regular':120},false,false),
+      p('Korean Cream Cheese Garlic Bread','House Specials',{'Regular':110},false,false),
+      p('Dubai Chewy Cookie','House Specials',{'Regular':130},false,false),
+      // COOKIES (no size, not drinks, no addons)
+      p('Belgian Double Chip','Cookies',{'100g':90},false,false),
+      p('Strawberry Cream','Cookies',{'100g':90},false,false),
+      p('Mocha Cocoa Nib','Cookies',{'100g':90},false,false),
+      p('Matcha Red Bean','Cookies',{'100g':90},false,false),
+      p('Toasted Oat & Raisin','Cookies',{'100g':90},false,false),
+    ]
+  };
+  function p(name,category,sizes,isDrink,addonEligible){
+    return {id:uid(),name,category,sizes,isDrink,addonEligible,active:true};
+  }
+}
+function defaultAddons(){
+  return [
+    {id:uid(),name:'Espresso Shot',price:40,active:true},
+    {id:uid(),name:'Oat Milk',price:40,active:true},
+    {id:uid(),name:'Whipped Cream',price:30,active:true},
+    {id:uid(),name:'Extra Syrup / Toppings',price:25,active:true},
+  ];
+}
+function defaultSettings(){
+  return {nextOrderNum:1, cashierName:'Staff'};
+}
+
+/* ---------- State ---------- */
+let MENU = defaultMenu();
+let ADDONS = defaultAddons();
+let ORDERS = [];
+let EOD = {};
+let SETTINGS = defaultSettings();
+let EXPENSES = [];
+let CART = [];
+let activeCategory = null;
+let ordersFilter = {mode:'today', date: todayStr(), start:null, end:null, status:'all'};
+let expensesFilter = {mode:'today', date: todayStr(), start: todayStr(), end: todayStr()};
+let reportsFilter = {mode:'today', date: todayStr(), start: todayStr(), end: todayStr()};
+
+/* ---------- Storage helpers ---------- */
+// Storage adapter, in priority order:
+// 1. Supabase (real shared Postgres database — works from any device/browser)
+// 2. Claude's built-in shared storage (only exists inside a Claude artifact)
+// 3. Browser localStorage (last resort — this device/browser only)
+const SUPABASE_URL = 'https://ysdnxwvkqyqojrelhcbu.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzZG54d3ZrcXlxb2pyZWxoY2J1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NzMwODksImV4cCI6MjEwMzM0OTA4OX0.XyYlPVroIXudGM2M6hSWb8ccMwjH21kLHgk5ESGA8T0';
+const HAS_SUPABASE = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+const HAS_CLAUDE_STORAGE = (typeof window !== 'undefined' && !!window.storage);
+let supabaseOk = HAS_SUPABASE; // flips false if a request ever fails, so we fall back gracefully
+
+async function supabaseGet(key){
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/app_data?key=eq.${encodeURIComponent(key)}&select=value`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+  });
+  if(!res.ok) throw new Error('Supabase GET failed: ' + res.status);
+  const rows = await res.json();
+  return rows.length ? rows[0].value : undefined;
+}
+async function supabaseSet(key, value){
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/app_data?on_conflict=key`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer: 'resolution=merge-duplicates,return=minimal'
+    },
+    body: JSON.stringify({ key, value, updated_at: new Date().toISOString() })
+  });
+  if(!res.ok) throw new Error('Supabase SET failed: ' + res.status + ' ' + await res.text());
+}
+async function storeGet(key, fallback){
+  if(supabaseOk){
+    try{ const v = await supabaseGet(key); return v===undefined ? fallback : v; }
+    catch(e){ console.error(e); supabaseOk = false; toast('Could not reach the database — using local backup storage.'); }
+  }
+  try{
+    if(HAS_CLAUDE_STORAGE){
+      const r = await window.storage.get(key, true);
+      return r ? JSON.parse(r.value) : fallback;
+    } else {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    }
+  }catch(e){ return fallback; }
+}
+async function storeSet(key, value){
+  if(supabaseOk){
+    try{ await supabaseSet(key, value); return; }
+    catch(e){ console.error(e); supabaseOk = false; toast('Could not reach the database — saving locally instead.'); }
+  }
+  try{
+    if(HAS_CLAUDE_STORAGE){
+      await window.storage.set(key, JSON.stringify(value), true);
+    } else {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+  }catch(e){ console.error('storage set failed', key, e); }
+}
+async function loadAll(){
+  MENU = await storeGet('hibi-menu', MENU);
+  ADDONS = await storeGet('hibi-addons', ADDONS);
+  ORDERS = await storeGet('hibi-orders', []);
+  EOD = await storeGet('hibi-eod', {});
+  SETTINGS = await storeGet('hibi-settings', SETTINGS);
+  EXPENSES = await storeGet('hibi-expenses', []);
+}
+async function persistMenu(){ await storeSet('hibi-menu', MENU); }
+async function persistAddons(){ await storeSet('hibi-addons', ADDONS); }
+async function persistOrders(){ await storeSet('hibi-orders', ORDERS); }
+async function persistEod(){ await storeSet('hibi-eod', EOD); }
+async function persistSettings(){ await storeSet('hibi-settings', SETTINGS); }
+async function persistExpenses(){ await storeSet('hibi-expenses', EXPENSES); }
+
+/* ---------- Toast ---------- */
+function toast(msg){
+  const root = document.getElementById('toast-root');
+  const el = document.createElement('div');
+  el.className='toast'; el.textContent=msg;
+  root.appendChild(el);
+  setTimeout(()=>el.remove(), 2400);
+}
+
+/* ---------- Modal helper ---------- */
+function openModal(html){
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `<div class="modal-overlay" id="modal-overlay"><div class="modal">${html}</div></div>`;
+  root.querySelector('#modal-overlay').addEventListener('mousedown', (e)=>{ if(e.target.id==='modal-overlay') closeModal(); });
+}
+function closeModal(){ document.getElementById('modal-root').innerHTML=''; }
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+document.getElementById('nav-tabs').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-page]');
+  if(!btn) return;
+  goToPage(btn.dataset.page);
+});
+function goToPage(pageId){
+  document.querySelectorAll('#nav-tabs button').forEach(b=>b.classList.toggle('active', b.dataset.page===pageId));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-'+pageId).classList.add('active');
+  if(pageId==='pos') renderPOS();
+  if(pageId==='orders') renderOrdersPage();
+  if(pageId==='expenses') renderExpensesPage();
+  if(pageId==='dashboard') renderDashboard();
+  if(pageId==='reports') renderReports();
+  if(pageId==='menu') renderMenuMgmt();
+  if(pageId==='settings') renderSettings();
+}
+
+/* ---------- Clock ---------- */
+function tickClock(){
+  const d = new Date();
+  document.getElementById('clock').textContent = d.toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+setInterval(tickClock, 1000*15); tickClock();
+
+/* ============================================================
+   POS PAGE
+   ============================================================ */
+function renderPOS(){
+  document.getElementById('cashier-pill').textContent = 'Cashier: ' + (SETTINGS.cashierName||'Staff');
+  if(!activeCategory) activeCategory = MENU.categories[0];
+  const catTabs = document.getElementById('cat-tabs');
+  catTabs.innerHTML = MENU.categories.map(c=>
+    `<button class="cat-tab ${c===activeCategory?'active':''}" data-cat="${escAttr(c)}">${esc(c)}</button>`
+  ).join('') + `<button class="cat-tab ${activeCategory==='Add-Ons'?'active':''}" data-cat="Add-Ons">Add-Ons</button>`;
+  catTabs.querySelectorAll('.cat-tab').forEach(b=>b.addEventListener('click',()=>{ activeCategory=b.dataset.cat; renderPOS(); }));
+
+  const grid = document.getElementById('product-grid');
+  if(activeCategory==='Add-Ons'){
+    grid.innerHTML = ADDONS.map(a=>`
+      <button class="product-card ${a.active?'':'unavailable'}" data-addon="${a.id}">
+        <div class="pname">${esc(a.name)}</div>
+        <div class="pprice">${PESO(a.price)}</div>
+      </button>`).join('') || emptyGridMsg('No add-ons configured.');
+    grid.querySelectorAll('[data-addon]').forEach(b=>b.addEventListener('click',()=>{
+      addStandaloneAddonNote();
+    }));
+  } else {
+    const items = MENU.products.filter(p=>p.category===activeCategory);
+    grid.innerHTML = items.map(pr=>{
+      const sizeKeys = Object.keys(pr.sizes);
+      const priceLabel = sizeKeys.length===1 ? PESO(pr.sizes[sizeKeys[0]]) : PESO(Math.min(...sizeKeys.map(k=>pr.sizes[k]))) + ' +';
+      return `<button class="product-card ${pr.active?'':'unavailable'}" data-pid="${pr.id}">
+        ${pr.isDrink?'':'<span class="ptag">FOOD</span>'}
+        <div class="pname">${esc(pr.name)}</div>
+        <div class="pprice">${priceLabel}</div>
+      </button>`;
+    }).join('') || emptyGridMsg('No items in this category yet. Add some in Menu Management.');
+    grid.querySelectorAll('[data-pid]').forEach(b=>b.addEventListener('click',()=>{
+      const pr = MENU.products.find(x=>x.id===b.dataset.pid);
+      openProductModal(pr);
+    }));
+  }
+  renderOrderNumPreview();
+  renderCart();
+}
+function emptyGridMsg(msg){ return `<div class="empty-state" style="grid-column:1/-1;">${esc(msg)}</div>`; }
+function addStandaloneAddonNote(){ toast('Add-ons attach to a drink — tap the drink first, then choose add-ons.'); }
+
+function renderOrderNumPreview(){
+  document.getElementById('order-num-preview').textContent = 'Next: ' + formatOrderNum(SETTINGS.nextOrderNum);
+}
+function formatOrderNum(n){ return 'HIBI-' + String(n).padStart(4,'0'); }
+
+/* ---- Product modal (size + addons + qty) ---- */
+function openProductModal(pr){
+  const sizeKeys = Object.keys(pr.sizes).filter(k=>pr.sizes[k]!==null);
+  let chosenSize = sizeKeys.length ? sizeKeys[0] : null;
+  let chosenAddons = new Set();
+  let qty = 1;
+
+  function body(){
+    return `
+      <div class="modal-head">
+        <h3>${esc(pr.name)}</h3>
+        <div class="msub">${esc(pr.category)}</div>
+      </div>
+      <div class="modal-body">
+        ${sizeKeys.length>1 ? `
+          <div class="section-title">Choose size</div>
+          <div id="size-list">
+            ${sizeKeys.map(k=>`
+              <div class="size-option ${k===chosenSize?'selected':''}" data-size="${escAttr(k)}">
+                <span>${esc(k)}</span><span class="sprice">${PESO(pr.sizes[k])}</span>
+              </div>`).join('')}
+          </div>` : ''}
+        ${pr.addonEligible && ADDONS.some(a=>a.active) ? `
+          <div class="section-title" style="margin-top:16px;">Add-ons (optional)</div>
+          <div id="addon-list">
+            ${ADDONS.filter(a=>a.active).map(a=>`
+              <div class="addon-row">
+                <input type="checkbox" id="ad-${a.id}" data-addon="${a.id}">
+                <label for="ad-${a.id}">${esc(a.name)}</label>
+                <span class="aprice">+${PESO(a.price)}</span>
+              </div>`).join('')}
+          </div>` : ''}
+        <div class="section-title" style="margin-top:16px;">Quantity</div>
+        <div class="qty-stepper">
+          <button id="qty-minus">−</button>
+          <span class="n" id="qty-n">${qty}</span>
+          <button id="qty-plus">+</button>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-add">Add to Order</button>
+      </div>`;
+  }
+  function wire(){
+    document.getElementById('modal-cancel').onclick = closeModal;
+    document.querySelectorAll('#size-list .size-option').forEach(el=>{
+      el.onclick = ()=>{ chosenSize = el.dataset.size; render(); };
+    });
+    const minus = document.getElementById('qty-minus'), plus=document.getElementById('qty-plus');
+    if(minus) minus.onclick=()=>{ if(qty>1) qty--; document.getElementById('qty-n').textContent=qty; };
+    if(plus) plus.onclick=()=>{ qty++; document.getElementById('qty-n').textContent=qty; };
+    document.querySelectorAll('#addon-list input[type=checkbox]').forEach(cb=>{
+      cb.onchange=()=>{ cb.checked ? chosenAddons.add(cb.dataset.addon) : chosenAddons.delete(cb.dataset.addon); };
+    });
+    document.getElementById('modal-add').onclick = ()=>{
+      const addonObjs = ADDONS.filter(a=>chosenAddons.has(a.id));
+      addToCart(pr, chosenSize, addonObjs, qty);
+      closeModal();
+    };
+  }
+  function render(){ openModal(body()); wire(); }
+  render();
+}
+
+function addToCart(pr, size, addons, qty){
+  const addonKey = addons.map(a=>a.id).sort().join(',');
+  const key = pr.id + '|' + (size||'') + '|' + addonKey;
+  const unitPrice = (size ? pr.sizes[size] : Object.values(pr.sizes)[0]) + addons.reduce((s,a)=>s+a.price,0);
+  const existing = CART.find(i=>i.key===key);
+  if(existing){ existing.qty += qty; }
+  else{
+    CART.push({
+      key, productId:pr.id, name:pr.name, category:pr.category, size, isDrink:pr.isDrink,
+      addons: addons.map(a=>({id:a.id,name:a.name,price:a.price})),
+      unitPrice, qty
+    });
+  }
+  renderCart();
+  toast(pr.name + ' added to order');
+}
+
+function renderCart(){
+  const wrap = document.getElementById('cart-items');
+  if(CART.length===0){
+    wrap.innerHTML = `<div class="cart-empty">Cart is empty.<br>Tap a menu item to begin an order.</div>`;
+  } else {
+    wrap.innerHTML = CART.map(it=>`
+      <div class="cart-item" data-key="${escAttr(it.key)}">
+        <div class="cart-item-top">
+          <div>
+            <div class="ciname">${esc(it.name)}</div>
+            <div class="cimeta">${it.size?esc(it.size):''}</div>
+            ${it.addons.length ? `<div class="ciaddons">+ ${it.addons.map(a=>esc(a.name)).join(', ')}</div>` : ''}
+          </div>
+          <div class="ciprice">${PESO(it.unitPrice*it.qty)}</div>
+        </div>
+        <div class="cart-item-bottom">
+          <div class="qty-ctrl">
+            <button data-act="dec">−</button>
+            <span class="qty-val">${it.qty}</span>
+            <button data-act="inc">+</button>
+          </div>
+          <button class="remove-btn" data-act="rm">Remove</button>
+        </div>
+      </div>`).join('');
+    wrap.querySelectorAll('.cart-item').forEach(row=>{
+      const key = row.dataset.key;
+      row.querySelector('[data-act=inc]').onclick=()=>{ changeQty(key,1); };
+      row.querySelector('[data-act=dec]').onclick=()=>{ changeQty(key,-1); };
+      row.querySelector('[data-act=rm]').onclick=()=>{ CART = CART.filter(i=>i.key!==key); renderCart(); };
+    });
+  }
+  const totalItems = CART.reduce((s,i)=>s+i.qty,0);
+  const totalCups = CART.filter(i=>i.isDrink).reduce((s,i)=>s+i.qty,0);
+  const subtotal = CART.reduce((s,i)=>s+i.unitPrice*i.qty,0);
+  document.getElementById('sum-items').textContent = totalItems;
+  document.getElementById('sum-cups').textContent = totalCups;
+  document.getElementById('sum-total').textContent = PESO(subtotal);
+  document.getElementById('checkout-btn').disabled = CART.length===0;
+}
+function changeQty(key, delta){
+  const it = CART.find(i=>i.key===key);
+  if(!it) return;
+  it.qty += delta;
+  if(it.qty<=0) CART = CART.filter(i=>i.key!==key);
+  renderCart();
+}
+document.getElementById('clear-cart-btn').addEventListener('click', ()=>{
+  if(CART.length===0) return;
+  if(confirm('Clear the current order?')){ CART=[]; renderCart(); }
+});
+document.getElementById('checkout-btn').addEventListener('click', openCheckoutModal);
+
+/* ---- Checkout modal ---- */
+function openCheckoutModal(){
+  const subtotal = CART.reduce((s,i)=>s+i.unitPrice*i.qty,0);
+  let method = 'Cash';
+  let received = '';
+  let ref = '';
+  let gcashConfirmed = false;
+  let submitting = false;
+
+  function body(){
+    const change = received!=='' ? (parseFloat(received)-subtotal) : null;
+    return `
+      <div class="modal-head"><h3>Checkout</h3><div class="msub">${CART.reduce((s,i)=>s+i.qty,0)} item(s) · ${CART.filter(i=>i.isDrink).reduce((s,i)=>s+i.qty,0)} cup(s)</div></div>
+      <div class="modal-body">
+        <div class="big-total"><div class="lbl">Order Total</div><div class="amt">${PESO(subtotal)}</div></div>
+        <div class="pay-tabs">
+          <button class="pay-tab ${method==='Cash'?'active':''}" id="tab-cash">Cash</button>
+          <button class="pay-tab ${method==='GCash'?'active':''}" id="tab-gcash">GCash</button>
+        </div>
+        ${method==='Cash' ? `
+          <div class="field">
+            <label>Amount Received</label>
+            <input type="number" inputmode="decimal" id="cash-received" placeholder="0.00" value="${received}">
+          </div>
+          ${received!=='' ? `<div class="change-row ${change<0?'negative':'positive'}">
+            <span>${change<0?'Insufficient — short by':'Change'}</span>
+            <span>${PESO(Math.abs(change))}</span>
+          </div>` : ''}
+        ` : `
+          <div class="field">
+            <label>GCash Reference Number (optional)</label>
+            <input type="text" id="gcash-ref" placeholder="e.g. 1234567890" value="${esc(ref)}">
+          </div>
+          <div class="addon-row" style="border:1.5px solid var(--line);border-radius:10px;padding:12px;">
+            <input type="checkbox" id="gcash-confirm" ${gcashConfirmed?'checked':''}>
+            <label for="gcash-confirm">Payment received via GCash</label>
+          </div>
+        `}
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-confirm" ${!canConfirm()?'disabled':''}>Confirm Payment</button>
+      </div>`;
+  }
+  function canConfirm(){
+    if(submitting) return false;
+    if(method==='Cash') return received!=='' && parseFloat(received)>=subtotal;
+    return gcashConfirmed;
+  }
+  function wire(){
+    document.getElementById('modal-cancel').onclick = closeModal;
+    document.getElementById('tab-cash').onclick = ()=>{ method='Cash'; render(); };
+    document.getElementById('tab-gcash').onclick = ()=>{ method='GCash'; render(); };
+    const cr = document.getElementById('cash-received');
+    if(cr) cr.oninput = (e)=>{ received = e.target.value; render(); document.getElementById('cash-received').focus(); document.getElementById('cash-received').setSelectionRange(999,999); };
+    const gr = document.getElementById('gcash-ref');
+    if(gr) gr.oninput = (e)=>{ ref = e.target.value; };
+    const gc = document.getElementById('gcash-confirm');
+    if(gc) gc.onchange = (e)=>{ gcashConfirmed = e.target.checked; render(); };
+    document.getElementById('modal-confirm').onclick = async ()=>{
+      if(!canConfirm() || submitting) return;
+      submitting = true;
+      await finalizeOrder({method, subtotal, received: received?parseFloat(received):null, ref});
+    };
+  }
+  function render(){ openModal(body()); wire(); }
+  render();
+}
+
+async function finalizeOrder({method, subtotal, received, ref}){
+  const orderNumber = formatOrderNum(SETTINGS.nextOrderNum);
+  const now = new Date();
+  const order = {
+    id: uid(),
+    orderNumber,
+    date: now.toISOString().slice(0,10),
+    time: now.toTimeString().slice(0,5),
+    timestamp: now.toISOString(),
+    items: CART.map(i=>({
+      productId:i.productId, name:i.name, category:i.category, size:i.size, isDrink:i.isDrink,
+      qty:i.qty, unitPrice:i.unitPrice, addons:i.addons, lineTotal: i.unitPrice*i.qty
+    })),
+    subtotal,
+    total: subtotal,
+    paymentMethod: method,
+    amountReceived: method==='Cash' ? received : subtotal,
+    changeGiven: method==='Cash' ? (received-subtotal) : 0,
+    gcashRef: method==='GCash' ? ref : null,
+    status: 'Completed',
+    cashier: SETTINGS.cashierName||'Staff'
+  };
+  ORDERS.unshift(order);
+  SETTINGS.nextOrderNum += 1;
+  await persistOrders();
+  await persistSettings();
+  showOrderConfirmation(order);
+  CART = [];
+  renderCart();
+  renderOrderNumPreview();
+}
+
+function showOrderConfirmation(order){
+  const change = order.paymentMethod==='Cash' ? order.changeGiven : null;
+  openModal(`
+    <div class="modal-body" style="text-align:center;padding-top:26px;">
+      <div class="success-check">✓</div>
+      <div class="confirm-order-num">${order.orderNumber}</div>
+      <div style="color:var(--text-dim);font-size:13.5px;margin-bottom:16px;">Payment confirmed — order complete</div>
+      <div style="text-align:left;background:var(--cream-dim);border-radius:10px;padding:14px 16px;">
+        <div class="sumrow"><span>Payment Method</span><span>${order.paymentMethod}</span></div>
+        <div class="sumrow"><span>Order Total</span><span>${PESO(order.total)}</span></div>
+        ${order.paymentMethod==='Cash' ? `
+          <div class="sumrow"><span>Amount Received</span><span>${PESO(order.amountReceived)}</span></div>
+          <div class="sumrow"><span>Change</span><span>${PESO(change)}</span></div>` : `
+          <div class="sumrow"><span>Reference No.</span><span>${order.gcashRef||'—'}</span></div>`}
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" id="modal-done" style="flex:1;">New Order</button>
+    </div>
+  `);
+  document.getElementById('modal-done').onclick = closeModal;
+}
+
+/* ============================================================
+   ORDERS PAGE
+   ============================================================ */
+function filteredOrders(filter){
+  return ORDERS.filter(o=>{
+    if(filter.status && filter.status!=='all' && o.status!==filter.status) return false;
+    if(filter.mode==='today') return o.date===todayStr();
+    if(filter.mode==='date') return o.date===filter.date;
+    if(filter.mode==='range') return o.date>=filter.start && o.date<=filter.end;
+    return true;
+  });
+}
+function renderOrdersPage(){
+  const bar = document.getElementById('orders-filter');
+  bar.innerHTML = `
+    <button class="filter-btn ${ordersFilter.mode==='today'?'active':''}" data-mode="today">Today</button>
+    <button class="filter-btn ${ordersFilter.mode==='all'?'active':''}" data-mode="all">All</button>
+    <input type="date" id="orders-date-input" value="${ordersFilter.date}" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);">
+    <select id="orders-status-select" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);">
+      <option value="all">All statuses</option>
+      <option value="New">New</option>
+      <option value="Preparing">Preparing</option>
+      <option value="Completed">Completed</option>
+      <option value="Cancelled">Cancelled</option>
+    </select>
+  `;
+  bar.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{ ordersFilter.mode=b.dataset.mode; renderOrdersPage(); });
+  bar.querySelector('#orders-date-input').onchange = (e)=>{ ordersFilter.mode='date'; ordersFilter.date=e.target.value; renderOrdersPage(); };
+  bar.querySelector('#orders-status-select').value = ordersFilter.status;
+  bar.querySelector('#orders-status-select').onchange = (e)=>{ ordersFilter.status=e.target.value; renderOrdersPage(); };
+
+  const rows = filteredOrders(ordersFilter);
+  const table = document.getElementById('orders-table');
+  table.innerHTML = `
+    <thead><tr><th>Order #</th><th>Date</th><th>Time</th><th>Items</th><th>Payment</th><th class="num">Total</th><th>Status</th><th>Cashier</th><th></th></tr></thead>
+    <tbody>
+      ${rows.length ? rows.map(o=>`
+        <tr>
+          <td class="mono" style="font-weight:700;">${o.orderNumber}</td>
+          <td>${o.date}</td>
+          <td>${o.time}</td>
+          <td>${o.items.reduce((s,i)=>s+i.qty,0)}</td>
+          <td><span class="pm-badge pm-${o.paymentMethod}">${o.paymentMethod}</span></td>
+          <td class="num">${PESO(o.total)}</td>
+          <td><span class="status-badge status-${o.status}">${o.status}</span></td>
+          <td>${esc(o.cashier)}</td>
+          <td><button class="icon-btn" data-view="${o.id}">View</button></td>
+        </tr>`).join('') : `<tr><td colspan="9"><div class="empty-state">No orders match this filter.</div></td></tr>`}
+    </tbody>`;
+  table.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>openOrderDetail(b.dataset.view));
+}
+
+function openOrderDetail(id){
+  const o = ORDERS.find(x=>x.id===id);
+  if(!o) return;
+  function body(){
+    return `
+      <div class="modal-head"><h3>${o.orderNumber}</h3><div class="msub">${o.date} · ${o.time} · ${esc(o.cashier)}</div></div>
+      <div class="modal-body">
+        ${o.items.map(i=>`
+          <div class="cart-item" style="padding:10px 0;">
+            <div class="cart-item-top">
+              <div>
+                <div class="ciname">${i.qty} × ${esc(i.name)}</div>
+                <div class="cimeta">${i.size?esc(i.size):''}</div>
+                ${i.addons.length?`<div class="ciaddons">+ ${i.addons.map(a=>esc(a.name)).join(', ')}</div>`:''}
+              </div>
+              <div class="ciprice">${PESO(i.lineTotal)}</div>
+            </div>
+          </div>`).join('')}
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">
+          <div class="sumrow"><span>Payment</span><span>${o.paymentMethod}</span></div>
+          ${o.paymentMethod==='Cash'?`<div class="sumrow"><span>Received / Change</span><span>${PESO(o.amountReceived)} / ${PESO(o.changeGiven)}</span></div>`:`<div class="sumrow"><span>Reference</span><span>${o.gcashRef||'—'}</span></div>`}
+          <div class="sumrow grand"><span>Total</span><span>${PESO(o.total)}</span></div>
+        </div>
+        <div class="section-title" style="margin-top:16px;">Order Status</div>
+        <select id="status-select" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);font-size:14px;">
+          ${['New','Preparing','Completed','Cancelled'].map(s=>`<option value="${s}" ${s===o.status?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-secondary" id="modal-close">Close</button>
+        <button class="btn btn-primary" id="modal-save-status">Update Status</button>
+      </div>`;
+  }
+  openModal(body());
+  document.getElementById('modal-close').onclick = closeModal;
+  document.getElementById('modal-save-status').onclick = async ()=>{
+    const newStatus = document.getElementById('status-select').value;
+    o.status = newStatus;
+    await persistOrders();
+    closeModal();
+    renderOrdersPage();
+    toast('Order ' + o.orderNumber + ' marked ' + newStatus);
+  };
+}
+
+/* ============================================================
+   EXPENSES PAGE
+   ============================================================ */
+function matchesPeriod(dateStr, filter){
+  if(filter.mode==='today') return dateStr===todayStr();
+  if(filter.mode==='date') return dateStr===filter.date;
+  if(filter.mode==='range') return dateStr>=filter.start && dateStr<=filter.end;
+  if(filter.mode==='month') return dateStr.slice(0,7)===todayStr().slice(0,7);
+  return true;
+}
+function filteredExpenses(filter){
+  return EXPENSES.filter(x=>matchesPeriod(x.date, filter)).sort((a,b)=> (a.date+a.time < b.date+b.time ? 1 : -1));
+}
+function renderExpensesPage(){
+  const el = document.getElementById('expenses-content');
+  const rows = filteredExpenses(expensesFilter);
+  const total = rows.reduce((s,x)=>s+x.amount,0);
+  el.innerHTML = `
+    <div class="page-title">
+      <div><h1>Expenses</h1><div class="psub">Cash outflows during the day — coffee beans, repairs, supplies, etc.</div></div>
+      <button class="btn btn-primary" id="add-expense-btn">+ Add Expense</button>
+    </div>
+    <div class="filter-bar">
+      <button class="filter-btn ${expensesFilter.mode==='today'?'active':''}" data-em="today">Today</button>
+      <button class="filter-btn ${expensesFilter.mode==='all'?'active':''}" data-em="all">All</button>
+      <input type="date" id="expense-date-input" value="${expensesFilter.mode==='date'?expensesFilter.date:todayStr()}">
+    </div>
+    <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));">
+      <div class="stat-card accent"><div class="slabel">Total Expenses (period)</div><div class="sval">${PESO(total)}</div></div>
+      <div class="stat-card"><div class="slabel">Number of Entries</div><div class="sval">${rows.length}</div></div>
+    </div>
+    <div class="card" style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>Date</th><th>Time</th><th>Note</th><th class="num">Amount</th><th>Cashier</th><th></th></tr></thead>
+        <tbody>
+          ${rows.length ? rows.map(x=>`
+            <tr>
+              <td>${x.date}</td>
+              <td>${x.time}</td>
+              <td>${esc(x.note)}</td>
+              <td class="num">${PESO(x.amount)}</td>
+              <td>${esc(x.cashier)}</td>
+              <td><button class="icon-btn danger" data-del-exp="${x.id}">Delete</button></td>
+            </tr>`).join('') : `<tr><td colspan="6"><div class="empty-state">No expenses logged for this period.</div></td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+  el.querySelectorAll('[data-em]').forEach(b=>b.onclick=()=>{ expensesFilter.mode=b.dataset.em; renderExpensesPage(); });
+  el.querySelector('#expense-date-input').onchange = (e)=>{ expensesFilter.mode='date'; expensesFilter.date=e.target.value; renderExpensesPage(); };
+  el.querySelector('#add-expense-btn').onclick = openAddExpenseModal;
+  el.querySelectorAll('[data-del-exp]').forEach(b=>b.onclick=async()=>{
+    if(confirm('Delete this expense entry?')){
+      EXPENSES = EXPENSES.filter(x=>x.id!==b.dataset.delExp);
+      await persistExpenses();
+      renderExpensesPage();
+    }
+  });
+}
+function openAddExpenseModal(){
+  openModal(`
+    <div class="modal-head"><h3>Add Expense</h3><div class="msub">Every expense needs a short note explaining what it was for</div></div>
+    <div class="modal-body">
+      <div class="field"><label>Amount</label><input type="number" inputmode="decimal" id="exp-amount" placeholder="0.00"></div>
+      <div class="field"><label>Note (required)</label><input type="text" id="exp-note" placeholder="e.g. Bought extra oat milk from grocery"></div>
+      <div class="field"><label>Date</label><input type="date" id="exp-date" value="${todayStr()}"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="modal-save">Save Expense</button>
+    </div>`);
+  document.getElementById('modal-cancel').onclick = closeModal;
+  document.getElementById('modal-save').onclick = async ()=>{
+    const amount = parseFloat(document.getElementById('exp-amount').value);
+    const note = document.getElementById('exp-note').value.trim();
+    const date = document.getElementById('exp-date').value || todayStr();
+    if(!amount || amount<=0){ toast('Enter a valid amount.'); return; }
+    if(!note){ toast('A note is required for every expense.'); return; }
+    const now = new Date();
+    EXPENSES.unshift({
+      id: uid(), amount, note, date, time: now.toTimeString().slice(0,5),
+      timestamp: now.toISOString(), cashier: SETTINGS.cashierName||'Staff'
+    });
+    await persistExpenses();
+    closeModal();
+    renderExpensesPage();
+    toast('Expense recorded');
+  };
+}
+
+/* ============================================================
+   METRICS ENGINE (shared by Dashboard + Reports)
+   ============================================================ */
+function computeMetrics(orders){
+  const completed = orders.filter(o=>o.status!=='Cancelled');
+  const cancelled = orders.filter(o=>o.status==='Cancelled');
+  const totalSales = completed.reduce((s,o)=>s+o.total,0);
+  const totalTx = completed.length;
+  let cups=0, foodItems=0;
+  const cupBySize = {'Hot 12oz':0,'Iced 16oz':0,'Iced 20oz':0};
+  const productAgg = {}; // name -> {qty, sales, sizes:{}}
+  const pmAgg = {}; // method -> {count, sales}
+  completed.forEach(o=>{
+    pmAgg[o.paymentMethod] = pmAgg[o.paymentMethod] || {count:0,sales:0};
+    pmAgg[o.paymentMethod].count++;
+    pmAgg[o.paymentMethod].sales += o.total;
+    o.items.forEach(it=>{
+      if(it.isDrink){
+        cups += it.qty;
+        if(it.size && cupBySize.hasOwnProperty(it.size)) cupBySize[it.size]+=it.qty;
+      } else {
+        foodItems += it.qty;
+      }
+      productAgg[it.name] = productAgg[it.name] || {qty:0, sales:0, isDrink:it.isDrink, sizes:{}};
+      productAgg[it.name].qty += it.qty;
+      productAgg[it.name].sales += it.lineTotal;
+      if(it.size){
+        productAgg[it.name].sizes[it.size] = (productAgg[it.name].sizes[it.size]||0) + it.qty;
+      }
+      // add-on revenue folded into product sales already via lineTotal
+    });
+  });
+  const avgOrder = totalTx ? totalSales/totalTx : 0;
+  const products = Object.entries(productAgg).map(([name,v])=>({name,...v}));
+  products.sort((a,b)=>b.qty-a.qty);
+  const bestByQty = products[0] || null;
+  const bestByRevenue = [...products].sort((a,b)=>b.sales-a.sales)[0] || null;
+  const bestFood = [...products].filter(p=>!p.isDrink).sort((a,b)=>b.qty-a.qty)[0] || null;
+  const leastSelling = products.length ? [...products].sort((a,b)=>a.qty-b.qty)[0] : null;
+  const popularSize = Object.entries(cupBySize).sort((a,b)=>b[1]-a[1])[0];
+  const cancelledAmount = cancelled.reduce((s,o)=>s+o.total,0);
+  return {totalSales,totalTx,cups,foodItems,avgOrder,cupBySize,products,pmAgg,bestByQty,bestByRevenue,bestFood,leastSelling,popularSize,cancelled,cancelledAmount};
+}
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+function renderDashboard(){
+  const todaysOrders = ORDERS.filter(o=>o.date===todayStr());
+  const m = computeMetrics(todaysOrders);
+  const todaysExpenses = EXPENSES.filter(x=>x.date===todayStr());
+  const expenseTotal = todaysExpenses.reduce((s,x)=>s+x.amount,0);
+  const netSales = m.totalSales - expenseTotal;
+  const el = document.getElementById('dashboard-content');
+  el.innerHTML = `
+    <div class="page-title"><div><h1>Dashboard</h1><div class="psub">Today · ${new Date().toLocaleDateString('en-PH',{weekday:'long',month:'long',day:'numeric'})}</div></div></div>
+    <div class="stat-grid">
+      <div class="stat-card accent"><div class="slabel">Today's Sales</div><div class="sval">${PESO(m.totalSales)}</div></div>
+      <div class="stat-card"><div class="slabel">Transactions</div><div class="sval">${m.totalTx}</div></div>
+      <div class="stat-card"><div class="slabel">Cups Sold</div><div class="sval">${m.cups}</div></div>
+      <div class="stat-card"><div class="slabel">Average Order</div><div class="sval">${PESO(m.avgOrder)}</div></div>
+    </div>
+    <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-top:-6px;">
+      <div class="stat-card"><div class="slabel">Today's Expenses</div><div class="sval" style="font-size:22px;color:var(--rust);">${PESO(expenseTotal)}</div></div>
+      <div class="stat-card"><div class="slabel">Net Sales (after expenses)</div><div class="sval" style="font-size:22px;">${PESO(netSales)}</div></div>
+    </div>
+    <div class="two-col">
+      <div class="card" style="padding:18px 20px;">
+        <div class="section-title">Payment Breakdown</div>
+        <table>
+          <thead><tr><th>Method</th><th class="num">Orders</th><th class="num">Sales</th></tr></thead>
+          <tbody>
+            ${['Cash','GCash'].map(pm=>`<tr><td>${pm}</td><td class="num">${m.pmAgg[pm]?.count||0}</td><td class="num">${PESO(m.pmAgg[pm]?.sales||0)}</td></tr>`).join('')}
+            <tr style="font-weight:700;"><td>Total</td><td class="num">${m.totalTx}</td><td class="num">${PESO(m.totalSales)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card" style="padding:18px 20px;">
+        <div class="section-title">Cup Size Breakdown</div>
+        <table>
+          <thead><tr><th>Size</th><th class="num">Cups</th></tr></thead>
+          <tbody>
+            ${CUP_SIZES.map(s=>`<tr><td>${s}</td><td class="num">${m.cupBySize[s]}</td></tr>`).join('')}
+            <tr style="font-weight:700;"><td>Total</td><td class="num">${m.cups}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card" style="padding:18px 20px;margin-top:16px;">
+      <div class="section-title">Best Sellers Today</div>
+      <div class="stat-grid">
+        <div><div class="slabel" style="text-transform:uppercase;font-size:11px;color:var(--text-dim);font-weight:700;">Best by Quantity</div><div style="font-weight:700;margin-top:4px;">${m.bestByQty?esc(m.bestByQty.name)+' ('+m.bestByQty.qty+')':'—'}</div></div>
+        <div><div class="slabel" style="text-transform:uppercase;font-size:11px;color:var(--text-dim);font-weight:700;">Best by Revenue</div><div style="font-weight:700;margin-top:4px;">${m.bestByRevenue?esc(m.bestByRevenue.name)+' ('+PESO(m.bestByRevenue.sales)+')':'—'}</div></div>
+        <div><div class="slabel" style="text-transform:uppercase;font-size:11px;color:var(--text-dim);font-weight:700;">Best Food Item</div><div style="font-weight:700;margin-top:4px;">${m.bestFood?esc(m.bestFood.name):'—'}</div></div>
+        <div><div class="slabel" style="text-transform:uppercase;font-size:11px;color:var(--text-dim);font-weight:700;">Most Popular Size</div><div style="font-weight:700;margin-top:4px;">${m.popularSize&&m.popularSize[1]>0?esc(m.popularSize[0]):'—'}</div></div>
+      </div>
+    </div>
+  `;
+}
+
+/* ============================================================
+   REPORTS PAGE
+   ============================================================ */
+function ordersForReportFilter(){
+  return ORDERS.filter(o=>{
+    if(reportsFilter.mode==='today') return o.date===todayStr();
+    if(reportsFilter.mode==='date') return o.date===reportsFilter.date;
+    if(reportsFilter.mode==='range') return o.date>=reportsFilter.start && o.date<=reportsFilter.end;
+    if(reportsFilter.mode==='month'){
+      const ym = todayStr().slice(0,7);
+      return o.date.slice(0,7)===ym;
+    }
+    return true;
+  });
+}
+function renderReports(){
+  const orders = ordersForReportFilter();
+  const m = computeMetrics(orders);
+  const expenses = filteredExpenses(reportsFilter);
+  const expenseTotal = expenses.reduce((s,x)=>s+x.amount,0);
+  const netSales = m.totalSales - expenseTotal;
+  const el = document.getElementById('reports-content');
+  const rangeLabel = reportsFilter.mode==='today' ? 'Today' : reportsFilter.mode==='date' ? reportsFilter.date : reportsFilter.mode==='month' ? 'This Month' : `${reportsFilter.start} → ${reportsFilter.end}`;
+  const eod = EOD[reportsFilter.mode==='date'?reportsFilter.date:todayStr()] || {};
+
+  el.innerHTML = `
+    <div class="page-title">
+      <div><h1>Daily Reports</h1><div class="psub">Showing: ${esc(rangeLabel)}</div></div>
+      <button class="btn btn-secondary" id="export-report-btn">⬇ Export CSV</button>
+    </div>
+    <div class="filter-bar">
+      <button class="filter-btn ${reportsFilter.mode==='today'?'active':''}" data-rm="today">Today</button>
+      <button class="filter-btn ${reportsFilter.mode==='month'?'active':''}" data-rm="month">This Month</button>
+      <span style="color:var(--text-dim);font-size:12px;">or pick date:</span>
+      <input type="date" id="report-date" value="${reportsFilter.mode==='date'?reportsFilter.date:todayStr()}">
+      <span style="color:var(--text-dim);font-size:12px;">or range:</span>
+      <input type="date" id="report-start" value="${reportsFilter.start}">
+      <span style="color:var(--text-dim);">–</span>
+      <input type="date" id="report-end" value="${reportsFilter.end}">
+      <button class="filter-btn" id="report-apply-range">Apply Range</button>
+    </div>
+
+    <div class="stat-grid">
+      <div class="stat-card accent"><div class="slabel">Total Sales</div><div class="sval">${PESO(m.totalSales)}</div></div>
+      <div class="stat-card"><div class="slabel">Transactions</div><div class="sval">${m.totalTx}</div></div>
+      <div class="stat-card"><div class="slabel">Drinks / Cups Sold</div><div class="sval">${m.cups}</div></div>
+      <div class="stat-card"><div class="slabel">Food Items Sold</div><div class="sval">${m.foodItems}</div></div>
+    </div>
+    <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-top:-6px;">
+      <div class="stat-card"><div class="slabel">Average Order Value</div><div class="sval" style="font-size:22px;">${PESO(m.avgOrder)}</div></div>
+      <div class="stat-card"><div class="slabel">Total Expenses</div><div class="sval" style="font-size:22px;color:var(--rust);">${PESO(expenseTotal)}</div></div>
+      <div class="stat-card"><div class="slabel">Net Sales (after expenses)</div><div class="sval" style="font-size:22px;">${PESO(netSales)}</div></div>
+    </div>
+
+    <div class="two-col">
+      <div class="card" style="padding:18px 20px;">
+        <div class="section-title">Payment Breakdown</div>
+        <table>
+          <thead><tr><th>Method</th><th class="num">Transactions</th><th class="num">Sales</th></tr></thead>
+          <tbody>
+            ${['Cash','GCash'].map(pm=>`<tr><td>${pm}</td><td class="num">${m.pmAgg[pm]?.count||0}</td><td class="num">${PESO(m.pmAgg[pm]?.sales||0)}</td></tr>`).join('')}
+            <tr style="font-weight:700;"><td>Total</td><td class="num">${m.totalTx}</td><td class="num">${PESO(m.totalSales)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card" style="padding:18px 20px;">
+        <div class="section-title">Cup Breakdown</div>
+        <table>
+          <thead><tr><th>Cup Size</th><th class="num">Cups Sold</th></tr></thead>
+          <tbody>
+            ${CUP_SIZES.map(s=>`<tr><td>${s}</td><td class="num">${m.cupBySize[s]}</td></tr>`).join('')}
+            <tr style="font-weight:700;"><td>Total Cups Sold</td><td class="num">${m.cups}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="padding:18px 20px;margin-top:16px;overflow-x:auto;">
+      <div class="section-title">Product Performance</div>
+      <table>
+        <thead><tr><th>Product</th><th class="num">Hot 12oz</th><th class="num">Iced 16oz</th><th class="num">Iced 20oz</th><th class="num">Qty Sold</th><th class="num">Total Sales</th></tr></thead>
+        <tbody>
+          ${m.products.length ? m.products.map(p=>`
+            <tr>
+              <td>${esc(p.name)}${p.isDrink?'':' <span class="badge-inactive">FOOD</span>'}</td>
+              <td class="num">${p.sizes['Hot 12oz']||''}</td>
+              <td class="num">${p.sizes['Iced 16oz']||''}</td>
+              <td class="num">${p.sizes['Iced 20oz']||''}</td>
+              <td class="num" style="font-weight:700;">${p.qty}</td>
+              <td class="num">${PESO(p.sales)}</td>
+            </tr>`).join('') : `<tr><td colspan="6"><div class="empty-state">No sales in this period.</div></td></tr>`}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" style="padding:18px 20px;margin-top:16px;">
+      <div class="section-title">Best-Selling Products</div>
+      <div class="stat-grid">
+        <div><div style="font-size:11px;color:var(--text-dim);font-weight:700;text-transform:uppercase;">Best by Quantity</div><div style="font-weight:700;margin-top:4px;">${m.bestByQty?esc(m.bestByQty.name)+' ('+m.bestByQty.qty+')':'—'}</div></div>
+        <div><div style="font-size:11px;color:var(--text-dim);font-weight:700;text-transform:uppercase;">Best by Revenue</div><div style="font-weight:700;margin-top:4px;">${m.bestByRevenue?esc(m.bestByRevenue.name)+' ('+PESO(m.bestByRevenue.sales)+')':'—'}</div></div>
+        <div><div style="font-size:11px;color:var(--text-dim);font-weight:700;text-transform:uppercase;">Best Food Item</div><div style="font-weight:700;margin-top:4px;">${m.bestFood?esc(m.bestFood.name):'—'}</div></div>
+        <div><div style="font-size:11px;color:var(--text-dim);font-weight:700;text-transform:uppercase;">Most Popular Cup Size</div><div style="font-weight:700;margin-top:4px;">${m.popularSize&&m.popularSize[1]>0?esc(m.popularSize[0]):'—'}</div></div>
+        <div><div style="font-size:11px;color:var(--text-dim);font-weight:700;text-transform:uppercase;">Least-Selling Product</div><div style="font-weight:700;margin-top:4px;">${m.leastSelling?esc(m.leastSelling.name)+' ('+m.leastSelling.qty+')':'—'}</div></div>
+      </div>
+    </div>
+
+    <div class="card" style="padding:18px 20px;margin-top:16px;">
+      <div class="section-title">Cancelled Orders</div>
+      <div class="sumrow"><span>Number of Cancelled Orders</span><span>${m.cancelled.length}</span></div>
+      <div class="sumrow"><span>Cancelled Order Amount</span><span>${PESO(m.cancelledAmount)}</span></div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:6px;">Excluded from all sales totals above.</div>
+    </div>
+
+    <div class="card" style="padding:18px 20px;margin-top:16px;overflow-x:auto;">
+      <div class="page-title" style="margin-bottom:10px;">
+        <div class="section-title" style="margin:0;">Expenses</div>
+        <span style="font-weight:700;">${PESO(expenseTotal)}</span>
+      </div>
+      <table>
+        <thead><tr><th>Date</th><th>Note</th><th class="num">Amount</th><th>Cashier</th></tr></thead>
+        <tbody>
+          ${expenses.length ? expenses.map(x=>`
+            <tr><td>${x.date}</td><td>${esc(x.note)}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.cashier)}</td></tr>
+          `).join('') : `<tr><td colspan="4"><div class="empty-state">No expenses logged in this period.</div></td></tr>`}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" style="padding:18px 20px;margin-top:16px;">
+      <div class="section-title">End-of-Day Cash Reconciliation ${reportsFilter.mode!=='date'&&reportsFilter.mode!=='today'?'<span style="font-weight:400;font-size:12px;color:var(--text-dim);">(pick a single date to edit)</span>':''}</div>
+      <div class="two-col">
+        <div class="field"><label>Opening Cash</label><input type="number" id="eod-opening" value="${eod.opening??''}" ${reportsFilter.mode==='range'||reportsFilter.mode==='month'?'disabled':''}></div>
+        <div class="field"><label>Actual Cash Counted</label><input type="number" id="eod-actual" value="${eod.actual??''}" ${reportsFilter.mode==='range'||reportsFilter.mode==='month'?'disabled':''}></div>
+      </div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:-6px;margin-bottom:10px;">Expenses logged for this day are assumed paid out of the cash drawer and are subtracted below.</div>
+      <div id="eod-calc"></div>
+      <button class="btn btn-primary" id="eod-save" style="margin-top:10px;" ${reportsFilter.mode==='range'||reportsFilter.mode==='month'?'disabled':''}>Save Reconciliation</button>
+    </div>
+  `;
+
+  // wire filter bar
+  el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ reportsFilter.mode=b.dataset.rm; renderReports(); });
+  el.querySelector('#report-date').onchange = (e)=>{ reportsFilter.mode='date'; reportsFilter.date=e.target.value; renderReports(); };
+  el.querySelector('#report-start').onchange = (e)=>{ reportsFilter.start=e.target.value; };
+  el.querySelector('#report-end').onchange = (e)=>{ reportsFilter.end=e.target.value; };
+  el.querySelector('#report-apply-range').onclick = ()=>{ reportsFilter.mode='range'; renderReports(); };
+  el.querySelector('#export-report-btn').onclick = ()=> exportReportCSV(m, rangeLabel, orders, expenses, expenseTotal, netSales);
+
+  function recalcEod(){
+    const opening = parseFloat(document.getElementById('eod-opening').value)||0;
+    const actual = document.getElementById('eod-actual').value;
+    const cashSales = m.pmAgg['Cash']?.sales || 0;
+    const gcashSales = m.pmAgg['GCash']?.sales || 0;
+    const expected = opening + cashSales - expenseTotal;
+    const calcDiv = document.getElementById('eod-calc');
+    if(actual===''){
+      calcDiv.innerHTML = `<div class="sumrow" style="margin-top:10px;"><span>Cash Sales</span><span>${PESO(cashSales)}</span></div>
+      <div class="sumrow"><span>Less: Expenses</span><span>−${PESO(expenseTotal)}</span></div>
+      <div class="sumrow"><span>Expected Cash</span><span>${PESO(expected)}</span></div>
+      <div class="sumrow"><span>GCash Sales (separate)</span><span>${PESO(gcashSales)}</span></div>`;
+      return;
+    }
+    const variance = parseFloat(actual) - expected;
+    const status = Math.abs(variance) < 0.005 ? 'Balanced' : variance>0 ? 'Over' : 'Short';
+    calcDiv.innerHTML = `
+      <div class="sumrow" style="margin-top:10px;"><span>Cash Sales</span><span>${PESO(cashSales)}</span></div>
+      <div class="sumrow"><span>Less: Expenses</span><span>−${PESO(expenseTotal)}</span></div>
+      <div class="sumrow"><span>Expected Cash</span><span>${PESO(expected)}</span></div>
+      <div class="change-row ${variance<0?'negative':variance>0?'':'positive'}">
+        <span>${status}${variance!==0?' by':''}</span><span>${variance!==0?PESO(Math.abs(variance)):''}</span>
+      </div>
+      <div class="sumrow" style="margin-top:8px;"><span>GCash Sales (separate)</span><span>${PESO(gcashSales)}</span></div>`;
+  }
+  el.querySelector('#eod-opening').addEventListener('input', recalcEod);
+  el.querySelector('#eod-actual').addEventListener('input', recalcEod);
+  recalcEod();
+  el.querySelector('#eod-save').onclick = async ()=>{
+    const dateKey = reportsFilter.mode==='date' ? reportsFilter.date : todayStr();
+    const opening = parseFloat(document.getElementById('eod-opening').value)||0;
+    const actual = parseFloat(document.getElementById('eod-actual').value)||0;
+    const cashSales = m.pmAgg['Cash']?.sales || 0;
+    const gcashSales = m.pmAgg['GCash']?.sales || 0;
+    const expected = opening + cashSales - expenseTotal;
+    EOD[dateKey] = {opening, actual, expected, variance: actual-expected, totalCashSales:cashSales, totalGcashSales:gcashSales, totalExpenses:expenseTotal};
+    await persistEod();
+    toast('Reconciliation saved for ' + dateKey);
+  };
+}
+
+/* ---------- CSV export ---------- */
+function csvField(v){
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+}
+function csvRow(arr){ return arr.map(csvField).join(',') + '\r\n'; }
+function downloadCSV(filename, content){
+  const blob = new Blob(['\ufeff' + content], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function exportReportCSV(m, rangeLabel, orders, expenses, expenseTotal, netSales){
+  let csv = '';
+  csv += csvRow(['Hibi Cafe — Daily Report']);
+  csv += csvRow(['Period', rangeLabel]);
+  csv += csvRow(['Generated', new Date().toLocaleString('en-PH')]);
+  csv += '\r\n';
+
+  csv += csvRow(['SALES SUMMARY']);
+  csv += csvRow(['Total Sales', m.totalSales.toFixed(2)]);
+  csv += csvRow(['Total Transactions', m.totalTx]);
+  csv += csvRow(['Total Drinks / Cups Sold', m.cups]);
+  csv += csvRow(['Total Food Items Sold', m.foodItems]);
+  csv += csvRow(['Average Order Value', m.avgOrder.toFixed(2)]);
+  csv += csvRow(['Total Expenses', expenseTotal.toFixed(2)]);
+  csv += csvRow(['Net Sales (after expenses)', netSales.toFixed(2)]);
+  csv += '\r\n';
+
+  csv += csvRow(['PAYMENT BREAKDOWN']);
+  csv += csvRow(['Method','Transactions','Sales']);
+  ['Cash','GCash'].forEach(pm=>{
+    csv += csvRow([pm, m.pmAgg[pm]?.count||0, (m.pmAgg[pm]?.sales||0).toFixed(2)]);
+  });
+  csv += csvRow(['Total', m.totalTx, m.totalSales.toFixed(2)]);
+  csv += '\r\n';
+
+  csv += csvRow(['CUP BREAKDOWN']);
+  csv += csvRow(['Cup Size','Cups Sold']);
+  CUP_SIZES.forEach(s=> csv += csvRow([s, m.cupBySize[s]]));
+  csv += csvRow(['Total Cups Sold', m.cups]);
+  csv += '\r\n';
+
+  csv += csvRow(['PRODUCT PERFORMANCE']);
+  csv += csvRow(['Product','Type','Hot 12oz','Iced 16oz','Iced 20oz','Qty Sold','Total Sales']);
+  m.products.forEach(p=>{
+    csv += csvRow([p.name, p.isDrink?'Drink':'Food', p.sizes['Hot 12oz']||'', p.sizes['Iced 16oz']||'', p.sizes['Iced 20oz']||'', p.qty, p.sales.toFixed(2)]);
+  });
+  csv += '\r\n';
+
+  csv += csvRow(['BEST-SELLING PRODUCTS']);
+  csv += csvRow(['Best by Quantity', m.bestByQty ? `${m.bestByQty.name} (${m.bestByQty.qty})` : '—']);
+  csv += csvRow(['Best by Revenue', m.bestByRevenue ? `${m.bestByRevenue.name} (${PESO(m.bestByRevenue.sales)})` : '—']);
+  csv += csvRow(['Best Food Item', m.bestFood ? m.bestFood.name : '—']);
+  csv += csvRow(['Most Popular Cup Size', (m.popularSize && m.popularSize[1]>0) ? m.popularSize[0] : '—']);
+  csv += csvRow(['Least-Selling Product', m.leastSelling ? `${m.leastSelling.name} (${m.leastSelling.qty})` : '—']);
+  csv += '\r\n';
+
+  csv += csvRow(['CANCELLED ORDERS']);
+  csv += csvRow(['Number of Cancelled Orders', m.cancelled.length]);
+  csv += csvRow(['Cancelled Order Amount', m.cancelledAmount.toFixed(2)]);
+  csv += '\r\n';
+
+  csv += csvRow(['EXPENSES']);
+  csv += csvRow(['Date','Time','Note','Amount','Cashier']);
+  (expenses||[]).forEach(x=>{
+    csv += csvRow([x.date, x.time, x.note, x.amount.toFixed(2), x.cashier]);
+  });
+  csv += csvRow(['Total Expenses', '', '', expenseTotal.toFixed(2), '']);
+  csv += '\r\n';
+
+  csv += csvRow(['ORDER DETAIL']);
+  csv += csvRow(['Order #','Date','Time','Items','Payment Method','Total','Status','Cashier']);
+  orders.forEach(o=>{
+    csv += csvRow([o.orderNumber, o.date, o.time, o.items.reduce((s,i)=>s+i.qty,0), o.paymentMethod, o.total.toFixed(2), o.status, o.cashier]);
+  });
+
+  const safeLabel = rangeLabel.replace(/[^a-z0-9]+/gi,'-').toLowerCase();
+  downloadCSV(`hibi-report-${safeLabel}-${todayStr()}.csv`, csv);
+  toast('Report exported');
+}
+
+/* ============================================================
+   MENU MANAGEMENT
+   ============================================================ */
+function renderMenuMgmt(){
+  const el = document.getElementById('menu-content');
+  el.innerHTML = `
+    <div class="page-title">
+      <div><h1>Menu Management</h1><div class="psub">Add products, edit prices, manage categories and add-ons</div></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" id="add-category-btn">+ Category</button>
+        <button class="btn btn-primary" id="add-product-btn">+ Product</button>
+      </div>
+    </div>
+    <div id="menu-categories"></div>
+    <div class="card" style="padding:18px 20px;margin-top:18px;">
+      <div class="page-title" style="margin-bottom:10px;">
+        <div class="section-title" style="margin:0;">Add-Ons</div>
+        <button class="btn btn-secondary" id="add-addon-btn">+ Add-on</button>
+      </div>
+      <div id="addon-mgmt-list"></div>
+    </div>
+  `;
+  document.getElementById('add-category-btn').onclick = openAddCategoryModal;
+  document.getElementById('add-product-btn').onclick = ()=>openEditProductModal(null);
+  document.getElementById('add-addon-btn').onclick = ()=>openEditAddonModal(null);
+
+  const catsWrap = document.getElementById('menu-categories');
+  catsWrap.innerHTML = MENU.categories.map(cat=>{
+    const items = MENU.products.filter(p=>p.category===cat);
+    return `
+      <div class="card" style="padding:16px 20px;margin-bottom:14px;">
+        <div class="section-title">${esc(cat)} <span style="font-weight:400;color:var(--text-dim);font-size:12px;">(${items.length})</span></div>
+        <div>
+          ${items.map(pr=>`
+            <div class="mgmt-row">
+              <div class="toggle ${pr.active?'on':''}" data-toggle="${pr.id}"><div class="knob"></div></div>
+              <div class="mname">${esc(pr.name)}${pr.isDrink?'':' <span class="badge-inactive">FOOD</span>'}</div>
+              <div class="mprices">${Object.entries(pr.sizes).map(([k,v])=>`${k}: ${PESO(v)}`).join(' · ')}</div>
+              <button class="icon-btn" data-edit="${pr.id}">Edit</button>
+              <button class="icon-btn danger" data-del="${pr.id}">Delete</button>
+            </div>`).join('') || `<div style="color:var(--text-dim);font-size:13px;padding:8px 0;">No products yet.</div>`}
+        </div>
+      </div>`;
+  }).join('');
+  catsWrap.querySelectorAll('[data-toggle]').forEach(t=>t.onclick=async()=>{
+    const pr = MENU.products.find(p=>p.id===t.dataset.toggle);
+    pr.active = !pr.active;
+    await persistMenu();
+    renderMenuMgmt();
+  });
+  catsWrap.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEditProductModal(MENU.products.find(p=>p.id===b.dataset.edit)));
+  catsWrap.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+    if(confirm('Delete this product? This cannot be undone.')){
+      MENU.products = MENU.products.filter(p=>p.id!==b.dataset.del);
+      await persistMenu();
+      renderMenuMgmt();
+    }
+  });
+
+  const addonWrap = document.getElementById('addon-mgmt-list');
+  addonWrap.innerHTML = ADDONS.map(a=>`
+    <div class="mgmt-row">
+      <div class="toggle ${a.active?'on':''}" data-atoggle="${a.id}"><div class="knob"></div></div>
+      <div class="mname">${esc(a.name)}</div>
+      <div class="mprices">${PESO(a.price)}</div>
+      <button class="icon-btn" data-aedit="${a.id}">Edit</button>
+      <button class="icon-btn danger" data-adel="${a.id}">Delete</button>
+    </div>`).join('') || `<div style="color:var(--text-dim);font-size:13px;">No add-ons yet.</div>`;
+  addonWrap.querySelectorAll('[data-atoggle]').forEach(t=>t.onclick=async()=>{
+    const a = ADDONS.find(x=>x.id===t.dataset.atoggle);
+    a.active=!a.active; await persistAddons(); renderMenuMgmt();
+  });
+  addonWrap.querySelectorAll('[data-aedit]').forEach(b=>b.onclick=()=>openEditAddonModal(ADDONS.find(a=>a.id===b.dataset.aedit)));
+  addonWrap.querySelectorAll('[data-adel]').forEach(b=>b.onclick=async()=>{
+    if(confirm('Delete this add-on?')){
+      ADDONS = ADDONS.filter(a=>a.id!==b.dataset.adel);
+      await persistAddons(); renderMenuMgmt();
+    }
+  });
+}
+
+function openAddCategoryModal(){
+  openModal(`
+    <div class="modal-head"><h3>New Category</h3></div>
+    <div class="modal-body">
+      <div class="field"><label>Category Name</label><input type="text" id="new-cat-name" placeholder="e.g. Seasonal Specials"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="modal-save">Add Category</button>
+    </div>`);
+  document.getElementById('modal-cancel').onclick = closeModal;
+  document.getElementById('modal-save').onclick = async ()=>{
+    const name = document.getElementById('new-cat-name').value.trim();
+    if(!name) return;
+    if(!MENU.categories.includes(name)) MENU.categories.push(name);
+    await persistMenu();
+    closeModal();
+    renderMenuMgmt();
+  };
+}
+
+function openEditProductModal(pr){
+  const isNew = !pr;
+  let name = pr?.name || '';
+  let category = pr?.category || MENU.categories[0];
+  let isDrink = pr ? pr.isDrink : true;
+  let addonEligible = pr ? pr.addonEligible : true;
+  let sizes = pr ? Object.entries(pr.sizes).map(([k,v])=>({name:k,price:v})) : [{name:'Hot 12oz',price:0}];
+
+  function body(){
+    return `
+      <div class="modal-head"><h3>${isNew?'New Product':'Edit Product'}</h3></div>
+      <div class="modal-body">
+        <div class="field"><label>Product Name</label><input type="text" id="f-name" value="${escAttr(name)}"></div>
+        <div class="field"><label>Category</label>
+          <select id="f-cat">${MENU.categories.map(c=>`<option value="${escAttr(c)}" ${c===category?'selected':''}>${esc(c)}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Sizes &amp; Prices</label>
+          <div id="size-rows">
+            ${sizes.map((s,idx)=>`
+              <div style="display:flex;gap:8px;margin-bottom:8px;" data-row="${idx}">
+                <input type="text" class="sz-name" placeholder="Size name" value="${escAttr(s.name)}" style="flex:1.3;padding:10px;border:1.5px solid var(--line);border-radius:9px;">
+                <input type="number" class="sz-price" placeholder="Price" value="${s.price}" style="flex:1;padding:10px;border:1.5px solid var(--line);border-radius:9px;">
+                <button class="icon-btn danger" data-rm-size="${idx}" type="button">✕</button>
+              </div>`).join('')}
+          </div>
+          <button class="icon-btn" id="add-size-row" type="button">+ Add size</button>
+        </div>
+        <div class="addon-row" style="border:1.5px solid var(--line);border-radius:10px;padding:12px;margin-top:12px;">
+          <input type="checkbox" id="f-isdrink" ${isDrink?'checked':''}>
+          <label for="f-isdrink">Counts as a drink / cup</label>
+        </div>
+        <div class="addon-row" style="border:1.5px solid var(--line);border-radius:10px;padding:12px;margin-top:8px;">
+          <input type="checkbox" id="f-addonok" ${addonEligible?'checked':''}>
+          <label for="f-addonok">Add-ons can be attached</label>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-save">Save Product</button>
+      </div>`;
+  }
+  function readSizesFromDom(){
+    const rows = document.querySelectorAll('#size-rows [data-row]');
+    sizes = Array.from(rows).map(r=>({
+      name: r.querySelector('.sz-name').value.trim(),
+      price: parseFloat(r.querySelector('.sz-price').value)||0
+    })).filter(s=>s.name);
+  }
+  function wire(){
+    document.getElementById('modal-cancel').onclick = closeModal;
+    document.getElementById('f-name').oninput = e=>name=e.target.value;
+    document.getElementById('f-cat').onchange = e=>category=e.target.value;
+    document.getElementById('f-isdrink').onchange = e=>isDrink=e.target.checked;
+    document.getElementById('f-addonok').onchange = e=>addonEligible=e.target.checked;
+    document.getElementById('add-size-row').onclick = ()=>{ readSizesFromDom(); sizes.push({name:'',price:0}); render(); };
+    document.querySelectorAll('[data-rm-size]').forEach(b=>b.onclick=()=>{ readSizesFromDom(); sizes.splice(parseInt(b.dataset.rmSize),1); render(); });
+    document.getElementById('modal-save').onclick = async ()=>{
+      readSizesFromDom();
+      if(!name.trim() || sizes.length===0){ toast('Please enter a name and at least one size/price.'); return; }
+      const sizeMap = {}; sizes.forEach(s=>sizeMap[s.name]=s.price);
+      if(isNew){
+        MENU.products.push({id:uid(), name:name.trim(), category, sizes:sizeMap, isDrink, addonEligible, active:true});
+      } else {
+        pr.name=name.trim(); pr.category=category; pr.sizes=sizeMap; pr.isDrink=isDrink; pr.addonEligible=addonEligible;
+      }
+      await persistMenu();
+      closeModal();
+      renderMenuMgmt();
+      toast('Product saved');
+    };
+  }
+  function render(){ openModal(body()); wire(); }
+  render();
+}
+
+function openEditAddonModal(a){
+  const isNew = !a;
+  let name = a?.name||'', price = a?.price||0;
+  openModal(`
+    <div class="modal-head"><h3>${isNew?'New Add-on':'Edit Add-on'}</h3></div>
+    <div class="modal-body">
+      <div class="field"><label>Add-on Name</label><input type="text" id="f-aname" value="${escAttr(name)}"></div>
+      <div class="field"><label>Price</label><input type="number" id="f-aprice" value="${price}"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="modal-save">Save Add-on</button>
+    </div>`);
+  document.getElementById('modal-cancel').onclick = closeModal;
+  document.getElementById('modal-save').onclick = async ()=>{
+    const n = document.getElementById('f-aname').value.trim();
+    const p = parseFloat(document.getElementById('f-aprice').value)||0;
+    if(!n) return;
+    if(isNew) ADDONS.push({id:uid(), name:n, price:p, active:true});
+    else { a.name=n; a.price=p; }
+    await persistAddons();
+    closeModal();
+    renderMenuMgmt();
+    toast('Add-on saved');
+  };
+}
+
+/* ============================================================
+   SETTINGS
+   ============================================================ */
+function renderSettings(){
+  const el = document.getElementById('settings-content');
+  el.innerHTML = `
+    <div class="page-title"><div><h1>Settings</h1><div class="psub">Cashier session &amp; data</div></div></div>
+    <div class="card" style="padding:18px 20px;max-width:480px;margin-bottom:16px;">
+      <div class="section-title">Current Cashier</div>
+      <div class="field"><label>Name</label><input type="text" id="s-cashier" value="${escAttr(SETTINGS.cashierName)}"></div>
+      <button class="btn btn-primary" id="save-cashier">Save</button>
+    </div>
+    <div class="card" style="padding:18px 20px;max-width:480px;">
+      <div class="section-title">Data</div>
+      <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">
+        ${ORDERS.length} orders on record. Next order number: ${formatOrderNum(SETTINGS.nextOrderNum)}.
+      </div>
+      <div style="font-size:12px;color:var(--text-dim);">${supabaseOk ? 'Connected to the shared database — all orders, expenses, and reports sync across every device.' : (HAS_CLAUDE_STORAGE ? 'Database unreachable — falling back to Claude\u2019s shared storage for this session.' : 'Database unreachable — falling back to this browser\u2019s local storage only (not shared across devices).')}</div>
+    </div>
+  `;
+  document.getElementById('save-cashier').onclick = async ()=>{
+    SETTINGS.cashierName = document.getElementById('s-cashier').value.trim() || 'Staff';
+    await persistSettings();
+    toast('Cashier updated');
+    document.getElementById('cashier-pill').textContent = 'Cashier: ' + SETTINGS.cashierName;
+  };
+}
+
+/* ---------- utils ---------- */
+function esc(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escAttr(s){ return esc(s); }
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+(async function boot(){
+  await loadAll();
+  renderPOS();
+  renderOrderNumPreview();
+})();
+</script>
+</body>
+</html>
