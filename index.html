@@ -192,6 +192,94 @@ td.num, th.num{text-align:right;font-family:'IBM Plex Mono',monospace;}
   .two-col{grid-template-columns:1fr;}
   nav.tabs{order:3;width:100%;}
 }
+
+/* ============================================================
+   HIBI CAFE — POS REDESIGN
+   Inspired by the visual language of the referenced Dribbble
+   coffee-shop POS: dark navigation rail, airy catalog, orange
+   action accents, compact product cards and a focused cart.
+   ============================================================ */
+:root{
+  --espresso:#1F1F1F; --espresso-soft:#2C2C2C; --cream:#F6F6F3;
+  --cream-dim:#F0F0EC; --panel:#FFFFFF; --caramel:#F28C28;
+  --caramel-dark:#D86F12; --matcha:#2F9B62; --matcha-dark:#23784B;
+  --rust:#D95B4A; --gold:#FFB15A; --line:#E7E7E2; --text-dim:#8A8A83;
+  --radius:12px; --shadow:0 3px 14px rgba(25,25,25,.06); --shadow-lg:0 14px 35px rgba(25,25,25,.12);
+}
+body{background:#F3F3F0;color:#202020;}
+#app{display:grid;grid-template-columns:96px minmax(0,1fr);grid-template-rows:100vh;height:100vh;overflow:hidden;}
+.topbar{grid-column:1;grid-row:1;height:100vh;width:96px;padding:18px 10px 14px;background:#202020;color:#fff;display:flex;flex-direction:column;align-items:center;gap:16px;border-right:0;z-index:20;}
+.brand{display:flex;flex-direction:column;gap:7px;width:100%;align-items:center;}
+.brand .mark{width:42px;height:42px;border-radius:12px;background:var(--caramel);color:#202020;font-size:20px;box-shadow:0 7px 18px rgba(242,140,40,.22);}
+.brand .name,.brand .sub{display:none;}
+nav.tabs{margin:0;width:100%;display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;}
+nav.tabs button{width:76px;min-height:61px;padding:8px 4px;border-radius:12px;background:transparent;color:#A7A7A3;font-weight:600;font-size:10px;line-height:1.1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:5px;transition:.16s;}
+nav.tabs button::before{font-size:18px;line-height:1;opacity:.9;}
+nav.tabs button[data-page="pos"]::before{content:"⌂";} nav.tabs button[data-page="orders"]::before{content:"▤";}
+nav.tabs button[data-page="expenses"]::before{content:"↘";} nav.tabs button[data-page="dashboard"]::before{content:"▥";}
+nav.tabs button[data-page="reports"]::before{content:"▦";} nav.tabs button[data-page="menu"]::before{content:"☷";}
+nav.tabs button[data-page="settings"]::before{content:"⚙";}
+nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{background:var(--caramel);color:#fff;box-shadow:0 8px 18px rgba(242,140,40,.18);}
+.topbar-right{margin:0;width:100%;display:flex;flex-direction:column;gap:7px;font-size:10px;color:#A7A7A3;text-align:center;}
+.cashier-pill{max-width:76px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#303030;padding:7px 5px;border-radius:10px;color:#EAEAE7;}
+.clock{font-size:9px;color:#8D8D89;white-space:nowrap;}
+.page{grid-column:2;grid-row:1;min-width:0;min-height:0;background:#F6F6F3;}
+.page.active{display:flex;min-width:0;min-height:0;} .page-scroll{padding:28px 32px;}
+#page-pos{background:#F7F7F5;} #pos-page{width:100%;height:100%;min-width:0;}
+.pos-left{flex:1;min-width:0;background:#F7F7F5;border-right:1px solid #E5E5E0;}
+.pos-toolbar{display:flex;align-items:center;justify-content:space-between;gap:22px;padding:22px 26px 14px;background:#F7F7F5;}
+.pos-eyebrow{color:var(--caramel);text-transform:uppercase;font-size:10px;letter-spacing:1.3px;font-weight:800;margin-bottom:2px;}
+.pos-toolbar h1{margin:0;font-family:'IBM Plex Sans',sans-serif;font-size:25px;font-weight:700;letter-spacing:-.4px;}
+.pos-search{width:min(390px,42vw);height:42px;display:flex;align-items:center;gap:8px;padding:0 13px;background:#fff;border:1px solid #E4E4DF;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.035);}
+.pos-search span{font-size:21px;color:#999;line-height:1;transform:rotate(-15deg);} .pos-search input{border:0;outline:0;width:100%;background:transparent;color:#333;font-size:13px;}
+.pos-search input::placeholder{color:#B2B2AC;}
+.cat-tabs{padding:4px 26px 15px;gap:7px;background:#F7F7F5;border-bottom:0;}
+.cat-tab{padding:8px 14px;border-radius:8px;background:transparent;color:#8A8A84;font-size:12px;border:1px solid transparent;}
+.cat-tab:hover{background:#ECECE8;color:#444;} .cat-tab.active{background:#252525;color:#fff;box-shadow:0 4px 10px rgba(0,0,0,.08);}
+.product-grid{padding:4px 26px 28px;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:15px;}
+.product-card{min-height:196px;padding:10px 12px 13px;border:1px solid #E4E4DF;border-radius:14px;background:#fff;box-shadow:0 3px 12px rgba(0,0,0,.045);overflow:hidden;}
+.product-card:hover{transform:translateY(-2px);border-color:#F0B16F;box-shadow:0 12px 24px rgba(0,0,0,.08);}
+.product-visual{height:94px;border-radius:10px;background:radial-gradient(circle at 28% 25%,rgba(255,255,255,.8),transparent 28%),linear-gradient(135deg,#D8C3A8,#9A6A45);display:flex;align-items:center;justify-content:center;margin-bottom:11px;position:relative;overflow:hidden;}
+.product-visual::after{content:"";position:absolute;width:72px;height:28px;border-radius:50%;bottom:18px;background:rgba(38,26,19,.22);filter:blur(8px);}
+.product-visual span{position:relative;z-index:1;font-size:43px;filter:drop-shadow(0 5px 5px rgba(0,0,0,.18));}
+.product-card[data-cat="Non-Coffee"] .product-visual{background:linear-gradient(135deg,#C8D3B5,#7F9160);}
+.product-card[data-cat="Frappe Coffee-Based"] .product-visual{background:linear-gradient(135deg,#D8B995,#865B3E);}
+.product-card[data-cat="Frappe Non-Coffee-Based"] .product-visual{background:linear-gradient(135deg,#D9C6B8,#A67B61);}
+.product-card[data-cat="Fizz"] .product-visual{background:linear-gradient(135deg,#BFDCE2,#5E9BAA);}
+.product-card[data-cat="House Specials"] .product-visual{background:linear-gradient(135deg,#E5C9A8,#B77B4A);}
+.product-card[data-cat="Cookies"] .product-visual{background:linear-gradient(135deg,#E1C09A,#A56C3F);}
+.product-card .pname{font-size:13px;font-weight:700;line-height:1.3;margin:0 24px 7px 1px;}
+.product-card .pprice{font-size:12px;color:#222;font-weight:700;margin-left:1px;}
+.product-card .ptag{top:105px;right:18px;background:#F2F2EE;color:#777;border-radius:5px;padding:3px 5px;font-size:8px;}
+.product-add{position:absolute;right:10px;bottom:10px;width:27px;height:27px;border-radius:50%;background:var(--caramel);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:500;line-height:1;box-shadow:0 4px 9px rgba(242,140,40,.25);}
+.pos-right{flex:0 0 360px;max-width:none;min-width:320px;background:#fff;border-left:0;box-shadow:-8px 0 24px rgba(0,0,0,.025);}
+.cart-header{padding:24px 22px 18px;border-bottom:1px solid #ECECE8;} .cart-header h2{font-family:'IBM Plex Sans',sans-serif;font-size:18px;font-weight:700;}
+.order-num-preview{padding:5px 8px;background:#F7F7F4;border-radius:7px;font-size:10px;color:#8A8A84;}
+.cart-items{padding:8px 16px;} .cart-item{padding:14px 6px;border-bottom:1px solid #EFEFEB;}
+.cart-item .ciname{font-size:13px;} .cart-item .cimeta{font-size:11px;color:#9A9A94;} .cart-item .ciaddons{font-size:10.5px;color:#4E8C6B;} .cart-item .ciprice{font-size:12px;}
+.qty-ctrl{background:#F1F1ED;border-radius:7px;} .qty-ctrl button{width:26px;height:26px;font-size:14px;} .qty-ctrl button:hover{background:var(--caramel);}
+.qty-ctrl .qty-val{width:24px;font-size:12px;} .remove-btn{font-size:10px;color:#A5A59F;}
+.cart-summary{padding:16px 20px 20px;border-top:1px solid #ECECE8;} .sumrow{font-size:12px;color:#92928C;}
+.sumrow.grand{font-family:'IBM Plex Sans',sans-serif;font-size:21px;margin-top:10px;}
+.checkout-btn{background:var(--caramel);border-radius:10px;font-size:14px;padding:14px;box-shadow:0 6px 14px rgba(242,140,40,.18);} .checkout-btn:hover{background:var(--caramel-dark);}
+.clear-cart-btn{color:#9A9A94;font-size:11px;} .clear-cart-btn:hover{background:#F7F7F4;color:#555;}
+.page-title h1{font-family:'IBM Plex Sans',sans-serif;font-size:25px;font-weight:700;} .page-title .psub{color:#90908A;}
+.card,.stat-card,.filter-bar{border-color:#E4E4DF;box-shadow:0 3px 12px rgba(0,0,0,.04);} .stat-card{border-radius:13px;}
+.stat-card.accent{background:linear-gradient(135deg,#252525,#353535);border-color:#252525;} .stat-card.accent .sval{color:#FFB15A;}
+.filter-btn{background:#ECECE8;color:#555;} .filter-btn.active{background:#252525;color:#fff;} th{background:#F0F0EC;color:#555;border-color:#E5E5E0;} td{border-color:#F0F0EC;}
+.btn-primary{background:var(--caramel);} .btn-primary:hover{background:var(--caramel-dark);} .btn-secondary{background:#ECECE8;}
+.modal{border-radius:14px;} .modal-overlay{background:rgba(22,22,22,.55);backdrop-filter:blur(2px);} .size-option.selected,.pay-tab.active{border-color:var(--caramel);background:#FFF4E8;}
+.field input,.field select{background:#FAFAF8;border-color:#E2E2DD;} .success-check{background:var(--matcha);} .toast{background:#252525;border-radius:9px;}
+@media (max-width:980px){#app{grid-template-columns:82px minmax(0,1fr);} .topbar{width:82px;} nav.tabs button{width:64px;} .pos-right{flex-basis:330px;} .product-grid{grid-template-columns:repeat(auto-fill,minmax(145px,1fr));}}
+@media (max-width:720px){
+  #app{display:flex;flex-direction:column;} .topbar{width:100%;height:auto;flex-direction:row;padding:9px 12px;gap:8px;overflow-x:auto;}
+  .brand{width:auto;flex-shrink:0;} .brand .mark{width:38px;height:38px;} nav.tabs{flex-direction:row;flex:1;width:auto;overflow-x:auto;justify-content:flex-start;}
+  nav.tabs button{min-width:60px;width:60px;min-height:50px;padding:5px 3px;} .topbar-right{display:none;} .page{min-height:0;flex:1;}
+  .page-scroll{padding:18px;} #pos-page{flex-direction:column;} .pos-toolbar{padding:16px 16px 10px;align-items:flex-start;flex-direction:column;}
+  .pos-search{width:100%;} .cat-tabs{padding:4px 16px 12px;} .product-grid{padding:4px 16px 20px;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+  .product-card{min-height:175px;} .pos-right{flex:0 0 auto;max-height:48vh;border-top:1px solid #E4E4DF;}
+}
+
 </style>
 </head>
 <body>
@@ -223,6 +311,16 @@ td.num, th.num{text-align:right;font-family:'IBM Plex Mono',monospace;}
   <div class="page active" id="page-pos">
     <div id="pos-page" style="flex:1;display:flex;overflow:hidden;">
       <div class="pos-left">
+        <div class="pos-toolbar">
+          <div>
+            <div class="pos-eyebrow">Hibi Cafe</div>
+            <h1>Menu</h1>
+          </div>
+          <div class="pos-search">
+            <span>⌕</span>
+            <input id="product-search" type="search" placeholder="Search coffee, food, etc." autocomplete="off">
+          </div>
+        </div>
         <div class="cat-tabs" id="cat-tabs"></div>
         <div class="product-grid" id="product-grid"></div>
       </div>
@@ -368,6 +466,7 @@ let SETTINGS = defaultSettings();
 let EXPENSES = [];
 let CART = [];
 let activeCategory = null;
+let productSearch = '';
 let ordersFilter = {mode:'today', date: todayStr(), start:null, end:null, status:'all'};
 let expensesFilter = {mode:'today', date: todayStr(), start: todayStr(), end: todayStr()};
 let reportsFilter = {mode:'today', date: todayStr(), start: todayStr(), end: todayStr()};
@@ -504,6 +603,12 @@ function renderPOS(){
   ).join('') + `<button class="cat-tab ${activeCategory==='Add-Ons'?'active':''}" data-cat="Add-Ons">Add-Ons</button>`;
   catTabs.querySelectorAll('.cat-tab').forEach(b=>b.addEventListener('click',()=>{ activeCategory=b.dataset.cat; renderPOS(); }));
 
+  const searchInput = document.getElementById('product-search');
+  if(searchInput){
+    searchInput.value = productSearch;
+    searchInput.oninput = e => { productSearch = e.target.value; renderPOS(); };
+  }
+
   const grid = document.getElementById('product-grid');
   if(activeCategory==='Add-Ons'){
     grid.innerHTML = ADDONS.map(a=>`
@@ -515,14 +620,20 @@ function renderPOS(){
       addStandaloneAddonNote();
     }));
   } else {
-    const items = MENU.products.filter(p=>p.category===activeCategory);
+    const query = productSearch.trim().toLowerCase();
+    const items = MENU.products.filter(p=>
+      p.category===activeCategory &&
+      (!query || p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query))
+    );
     grid.innerHTML = items.map(pr=>{
       const sizeKeys = Object.keys(pr.sizes);
       const priceLabel = sizeKeys.length===1 ? PESO(pr.sizes[sizeKeys[0]]) : PESO(Math.min(...sizeKeys.map(k=>pr.sizes[k]))) + ' +';
-      return `<button class="product-card ${pr.active?'':'unavailable'}" data-pid="${pr.id}">
+      return `<button class="product-card ${pr.active?'':'unavailable'}" data-pid="${pr.id}" data-cat="${escAttr(pr.category)}">
+        <div class="product-visual"><span>${productIcon(pr)}</span></div>
         ${pr.isDrink?'':'<span class="ptag">FOOD</span>'}
         <div class="pname">${esc(pr.name)}</div>
         <div class="pprice">${priceLabel}</div>
+        <span class="product-add">+</span>
       </button>`;
     }).join('') || emptyGridMsg('No items in this category yet. Add some in Menu Management.');
     grid.querySelectorAll('[data-pid]').forEach(b=>b.addEventListener('click',()=>{
@@ -533,6 +644,16 @@ function renderPOS(){
   renderOrderNumPreview();
   renderCart();
 }
+function productIcon(pr){
+  const c = (pr.category||'').toLowerCase();
+  if(c.includes('cookie')) return '🍪';
+  if(c.includes('fizz')) return '🥤';
+  if(c.includes('frappe')) return '🧋';
+  if(c.includes('house')) return '🍰';
+  if(c.includes('non-coffee') || c.includes('matcha')) return '🍵';
+  return '☕';
+}
+
 function emptyGridMsg(msg){ return `<div class="empty-state" style="grid-column:1/-1;">${esc(msg)}</div>`; }
 function addStandaloneAddonNote(){ toast('Add-ons attach to a drink — tap the drink first, then choose add-ons.'); }
 
