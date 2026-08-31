@@ -1762,11 +1762,21 @@ function renderReports(){
       const actualValue = document.getElementById('eod-actual').value;
       const actual = actualValue==='' ? null : parseFloat(actualValue);
       const cashSales = m.pmAgg['Cash']?.sales || 0;
+      const gcashSales = m.pmAgg['GCash']?.sales || 0;
       const expected = opening + cashSales - expenseTotal;
       const variance = actual===null ? null : actual - expected;
-      EOD[selectedEodDate] = {opening, actual, expected, variance};
+      const dateKey = selectedEodDate || (reportsFilter.mode==='date' ? reportsFilter.date : todayStr());
+      EOD[dateKey] = {...(EOD[dateKey]||{}), opening, actual, expected, variance, totalCashSales:cashSales, totalGcashSales:gcashSales, totalExpenses:expenseTotal};
       await storeSet('hibi-eod', EOD);
-      toast('Cash reconciliation saved.');
+      try{
+        const attachment = await exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, EOD[dateKey], {download:false});
+        const emailReport = buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expenseTotal, netSales, EOD[dateKey]);
+        await sendDailyReportEmail(emailReport, attachment);
+        toast('Cash reconciliation saved and daily report emailed.');
+      }catch(err){
+        console.error('Daily report email failed:', err);
+        toast('Cash reconciliation saved, but email failed: ' + (err.message || err));
+      }
       renderReports();
     };
   }
@@ -1899,16 +1909,16 @@ async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, 
 
 async function sendDailyReportEmail(report, attachment){
   const endpoint = `${SUPABASE_URL}/functions/v1/resend-email`;
-  const headers = {'Content-Type':'application/json'};
-  if(SUPABASE_ANON_KEY){
-    headers.apikey = SUPABASE_ANON_KEY;
-    headers.Authorization = `Bearer ${SUPABASE_ANON_KEY}`;
+  let accessToken = CURRENT_USER?.access_token || '';
+  if(supabaseClient?.auth?.getSession){
+    try{
+      const {data} = await supabaseClient.auth.getSession();
+      accessToken = data?.session?.access_token || accessToken;
+    }catch(e){ console.warn('Could not refresh Supabase session for daily report email:', e); }
   }
-  const res = await fetch(endpoint, {
-    method:'POST',
-    headers,
-    body:JSON.stringify({report, attachment})
-  });
+  if(!accessToken) throw new Error('You are not logged in. Please log in again before sending the daily report.');
+  const headers = {'Content-Type':'application/json','apikey':SUPABASE_ANON_KEY,'Authorization':`Bearer ${accessToken}`};
+  const res = await fetch(endpoint, {method:'POST',headers,body:JSON.stringify({report, attachment})});
   if(!res.ok){
     const text = await res.text();
     throw new Error(`Email report failed (${res.status}): ${text}`);
@@ -1918,37 +1928,22 @@ async function sendDailyReportEmail(report, attachment){
 
 function buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expenseTotal, netSales, eod){
   return {
-    date: dateKey,
-    period: rangeLabel,
+    date: dateKey, period: rangeLabel,
     totalSales: Number(m.totalSales)||0,
-    totalTransactions: Number(m.totalTx)||0,
-    transactions: Number(m.totalTx)||0,
-    cups: Number(m.cups)||0,
-    numberOfCups: Number(m.cups)||0,
-    cashSales: Number(m.pmAgg['Cash']?.sales||0),
-    gcashSales: Number(m.pmAgg['GCash']?.sales||0),
-    grabFoodSales: Number(m.pmAgg['GrabFood']?.sales||0),
-    startingCash: Number(eod?.opening)||0,
-    expenses: Number(expenseTotal)||0,
-    totalExpenses: Number(expenseTotal)||0,
-    actualCashCounted: Number(eod?.actual)||0,
-    expectedCash: Number(eod?.expected)||0,
-    cashVariance: Number(eod?.variance)||0,
+    totalTransactions: Number(m.totalTx)||0, transactions: Number(m.totalTx)||0,
+    cups: Number(m.cups)||0, numberOfCups: Number(m.cups)||0, foodItems: Number(m.foodItems)||0,
+    cashSales: Number(m.pmAgg['Cash']?.sales||0), gcashSales: Number(m.pmAgg['GCash']?.sales||0), grabFoodSales: Number(m.pmAgg['GrabFood']?.sales||0),
+    openingCash: Number(eod?.opening)||0, startingCash: Number(eod?.opening)||0,
+    expenses: Number(expenseTotal)||0, totalExpenses: Number(expenseTotal)||0,
+    actualCash: Number(eod?.actual)||0, actualCashCounted: Number(eod?.actual)||0,
+    expectedCash: Number(eod?.expected)||0, variance: Number(eod?.variance)||0, cashVariance: Number(eod?.variance)||0,
+    cashIn: Number(eod?.cashIn)||0, cashOut: Number(eod?.cashOut)||0, varianceReason: String(eod?.varianceReason||''),
     netSales: Number(netSales)||0,
-    orders: (orders||[]).map(o=>({
-      orderNumber:o.orderNumber, date:o.date, time:o.time, channel:o.channel,
-      paymentMethod:o.paymentMethod, payment:o.paymentMethod, cashier:o.cashier,
-      status:o.status, total:Number(o.total)||0, items:o.items||[]
-    })),
-    expenseDetails: (expenses||[]).map(x=>({
-      date:x.date, time:x.time, note:x.note, amount:Number(x.amount)||0, cashier:x.cashier
-    })),
-    expenseList: (expenses||[]).map(x=>({
-      date:x.date, time:x.time, note:x.note, amount:Number(x.amount)||0, cashier:x.cashier
-    }))
+    orders: (orders||[]).map(o=>({orderNumber:o.orderNumber,date:o.date,time:o.time,channel:o.channel,paymentMethod:o.paymentMethod,payment:o.paymentMethod,cashier:o.cashier,status:o.status,total:Number(o.total)||0,items:o.items||[]})),
+    expenseDetails: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier})),
+    expenseList: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier}))
   };
 }
-
 }
 
 /* ---------- Excel export ---------- */
@@ -2084,16 +2079,16 @@ async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, 
 
 async function sendDailyReportEmail(report, attachment){
   const endpoint = `${SUPABASE_URL}/functions/v1/resend-email`;
-  const headers = {'Content-Type':'application/json'};
-  if(SUPABASE_ANON_KEY){
-    headers.apikey = SUPABASE_ANON_KEY;
-    headers.Authorization = `Bearer ${SUPABASE_ANON_KEY}`;
+  let accessToken = CURRENT_USER?.access_token || '';
+  if(supabaseClient?.auth?.getSession){
+    try{
+      const {data} = await supabaseClient.auth.getSession();
+      accessToken = data?.session?.access_token || accessToken;
+    }catch(e){ console.warn('Could not refresh Supabase session for daily report email:', e); }
   }
-  const res = await fetch(endpoint, {
-    method:'POST',
-    headers,
-    body:JSON.stringify({report, attachment})
-  });
+  if(!accessToken) throw new Error('You are not logged in. Please log in again before sending the daily report.');
+  const headers = {'Content-Type':'application/json','apikey':SUPABASE_ANON_KEY,'Authorization':`Bearer ${accessToken}`};
+  const res = await fetch(endpoint, {method:'POST',headers,body:JSON.stringify({report, attachment})});
   if(!res.ok){
     const text = await res.text();
     throw new Error(`Email report failed (${res.status}): ${text}`);
@@ -2103,37 +2098,22 @@ async function sendDailyReportEmail(report, attachment){
 
 function buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expenseTotal, netSales, eod){
   return {
-    date: dateKey,
-    period: rangeLabel,
+    date: dateKey, period: rangeLabel,
     totalSales: Number(m.totalSales)||0,
-    totalTransactions: Number(m.totalTx)||0,
-    transactions: Number(m.totalTx)||0,
-    cups: Number(m.cups)||0,
-    numberOfCups: Number(m.cups)||0,
-    cashSales: Number(m.pmAgg['Cash']?.sales||0),
-    gcashSales: Number(m.pmAgg['GCash']?.sales||0),
-    grabFoodSales: Number(m.pmAgg['GrabFood']?.sales||0),
-    startingCash: Number(eod?.opening)||0,
-    expenses: Number(expenseTotal)||0,
-    totalExpenses: Number(expenseTotal)||0,
-    actualCashCounted: Number(eod?.actual)||0,
-    expectedCash: Number(eod?.expected)||0,
-    cashVariance: Number(eod?.variance)||0,
+    totalTransactions: Number(m.totalTx)||0, transactions: Number(m.totalTx)||0,
+    cups: Number(m.cups)||0, numberOfCups: Number(m.cups)||0, foodItems: Number(m.foodItems)||0,
+    cashSales: Number(m.pmAgg['Cash']?.sales||0), gcashSales: Number(m.pmAgg['GCash']?.sales||0), grabFoodSales: Number(m.pmAgg['GrabFood']?.sales||0),
+    openingCash: Number(eod?.opening)||0, startingCash: Number(eod?.opening)||0,
+    expenses: Number(expenseTotal)||0, totalExpenses: Number(expenseTotal)||0,
+    actualCash: Number(eod?.actual)||0, actualCashCounted: Number(eod?.actual)||0,
+    expectedCash: Number(eod?.expected)||0, variance: Number(eod?.variance)||0, cashVariance: Number(eod?.variance)||0,
+    cashIn: Number(eod?.cashIn)||0, cashOut: Number(eod?.cashOut)||0, varianceReason: String(eod?.varianceReason||''),
     netSales: Number(netSales)||0,
-    orders: (orders||[]).map(o=>({
-      orderNumber:o.orderNumber, date:o.date, time:o.time, channel:o.channel,
-      paymentMethod:o.paymentMethod, payment:o.paymentMethod, cashier:o.cashier,
-      status:o.status, total:Number(o.total)||0, items:o.items||[]
-    })),
-    expenseDetails: (expenses||[]).map(x=>({
-      date:x.date, time:x.time, note:x.note, amount:Number(x.amount)||0, cashier:x.cashier
-    })),
-    expenseList: (expenses||[]).map(x=>({
-      date:x.date, time:x.time, note:x.note, amount:Number(x.amount)||0, cashier:x.cashier
-    }))
+    orders: (orders||[]).map(o=>({orderNumber:o.orderNumber,date:o.date,time:o.time,channel:o.channel,paymentMethod:o.paymentMethod,payment:o.paymentMethod,cashier:o.cashier,status:o.status,total:Number(o.total)||0,items:o.items||[]})),
+    expenseDetails: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier})),
+    expenseList: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier}))
   };
 }
-
 /* ============================================================
    MENU MANAGEMENT
    ============================================================ */
