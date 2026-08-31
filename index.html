@@ -1468,6 +1468,17 @@ function ordersForReportFilter(){
     return true;
   });
 }
+function getPreviousDate(dateStr){
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0,10);
+}
+
+function openingCashForDate(dateStr){
+  const previous = EOD[getPreviousDate(dateStr)] || {};
+  return previous.actual ?? '';
+}
+
 function renderReports(){
   const orders = ordersForReportFilter();
   const m = computeMetrics(orders);
@@ -1476,7 +1487,9 @@ function renderReports(){
   const netSales = m.totalSales - expenseTotal;
   const el = document.getElementById('reports-content');
   const rangeLabel = reportsFilter.mode==='today' ? 'Today' : reportsFilter.mode==='date' ? reportsFilter.date : reportsFilter.mode==='month' ? 'This Month' : `${reportsFilter.start} → ${reportsFilter.end}`;
-  const eod = EOD[reportsFilter.mode==='date'?reportsFilter.date:todayStr()] || {};
+  const selectedEodDate = reportsFilter.mode==='date' ? reportsFilter.date : todayStr();
+  const eod = EOD[selectedEodDate] || {};
+  const openingCash = openingCashForDate(selectedEodDate);
 
   el.innerHTML = `
     <div class="page-title">
@@ -1584,7 +1597,7 @@ function renderReports(){
     <div class="card" style="padding:18px 20px;margin-top:16px;">
       <div class="section-title">End-of-Day Cash Reconciliation ${reportsFilter.mode!=='date'&&reportsFilter.mode!=='today'?'<span style="font-weight:400;font-size:12px;color:var(--text-dim);">(pick a single date to edit)</span>':''}</div>
       <div class="two-col">
-        <div class="field"><label>Opening Cash</label><input type="number" id="eod-opening" value="${eod.opening??''}" ${reportsFilter.mode==='range'||reportsFilter.mode==='month'?'disabled':''}></div>
+        <div class="field"><label>Opening Cash</label><input type="number" id="eod-opening" value="${openingCash}" disabled></div>
         <div class="field"><label>Actual Cash Counted</label><input type="number" id="eod-actual" value="${eod.actual??''}" ${reportsFilter.mode==='range'||reportsFilter.mode==='month'?'disabled':''}></div>
       </div>
       <div style="font-size:12px;color:var(--text-dim);margin-top:-6px;margin-bottom:10px;">Expenses logged for this day are assumed paid out of the cash drawer and are subtracted below.</div>
@@ -1626,8 +1639,22 @@ function renderReports(){
       </div>
       <div class="sumrow" style="margin-top:8px;"><span>GCash Sales (separate)</span><span>${PESO(gcashSales)}</span></div>`;
   }
-  el.querySelector('#eod-opening').addEventListener('input', recalcEod);
   el.querySelector('#eod-actual').addEventListener('input', recalcEod);
+  const saveBtn = el.querySelector('#eod-save');
+  if(saveBtn && !saveBtn.disabled){
+    saveBtn.onclick = async ()=>{
+      const opening = parseFloat(document.getElementById('eod-opening').value)||0;
+      const actualValue = document.getElementById('eod-actual').value;
+      const actual = actualValue==='' ? null : parseFloat(actualValue);
+      const cashSales = m.pmAgg['Cash']?.sales || 0;
+      const expected = opening + cashSales - expenseTotal;
+      const variance = actual===null ? null : actual - expected;
+      EOD[selectedEodDate] = {opening, actual, expected, variance};
+      await storeSet('hibi-eod', EOD);
+      toast('Cash reconciliation saved.');
+      renderReports();
+    };
+  }
   recalcEod();
 async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, eod, options={} ){
   if(typeof ExcelJS==='undefined'){ toast('Excel export library is not loaded.'); return null; }
