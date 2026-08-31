@@ -763,18 +763,74 @@ async function migrateLegacyProductImages(){
   if(changed) await persistMenu();
 }
 
+async function posApi(path, options={}){
+  if(!supabaseOk || !CURRENT_USER?.access_token) throw new Error('Database session is not available. Please sign in again.');
+  const headers={
+    apikey:SUPABASE_ANON_KEY,
+    Authorization:`Bearer ${CURRENT_USER.access_token}`,
+    'Content-Type':'application/json',
+    ...(options.headers||{})
+  };
+  const res=await fetch(`${SUPABASE_URL}${path}`, {...options, headers});
+  if(!res.ok) throw new Error(`Database request failed (${res.status}): ${await res.text()}`);
+  return res;
+}
+
+function mapDbOrder(row){
+  return {
+    id:row.id,
+    orderNumber:row.source==='GrabFood' ? (row.grab_code || row.order_code) : row.order_code,
+    dbOrderNumber:row.order_number,
+    date:row.order_date,
+    time:(row.order_time||'').slice(0,5),
+    timestamp:row.created_at,
+    source:row.source||'Walk-in',
+    grabCode:row.grab_code||null,
+    items:(row.pos_order_items||[]).map(i=>({
+      productId:i.product_id, name:i.name, category:i.category, size:i.size,
+      isDrink:!!i.is_drink, qty:Number(i.qty)||0, unitPrice:Number(i.unit_price)||0,
+      addons:Array.isArray(i.addons)?i.addons:[], lineTotal:Number(i.line_total)||0
+    })),
+    subtotal:Number(row.subtotal)||0,
+    discountType:row.discount_type||null,
+    discountAmount:Number(row.discount_amount)||0,
+    total:Number(row.total)||0,
+    paymentMethod:row.payment_method||'',
+    amountReceived:row.amount_received==null?null:Number(row.amount_received),
+    cashAmount:row.cash_amount==null?null:Number(row.cash_amount),
+    gcashAmount:row.gcash_amount==null?null:Number(row.gcash_amount),
+    changeGiven:Number(row.change_given)||0,
+    gcashRef:row.gcash_ref||null,
+    status:row.status||'Completed',
+    cashier:row.cashier||'Staff'
+  };
+}
+
+async function loadPosOrders(){
+  const res=await posApi('/rest/v1/pos_orders?select=*,pos_order_items(*)&order=created_at.desc');
+  const rows=await res.json();
+  ORDERS=rows.map(mapDbOrder);
+  const maxNum=rows.reduce((m,r)=>Math.max(m,Number(r.order_number)||0),0);
+  SETTINGS.nextOrderNum=Math.max(Number(SETTINGS.nextOrderNum)||1,maxNum+1);
+}
+
 async function loadAll(){
   MENU = await storeGet('hibi-menu', MENU);
   ADDONS = await storeGet('hibi-addons', ADDONS);
-  ORDERS = await storeGet('hibi-orders', []);
   EOD = await storeGet('hibi-eod', {});
   SETTINGS = await storeGet('hibi-settings', SETTINGS);
   EXPENSES = await storeGet('hibi-expenses', []);
+  if(supabaseOk && CURRENT_USER?.access_token){
+    await loadPosOrders();
+  }else{
+    ORDERS=[];
+  }
   await migrateLegacyProductImages();
 }
 async function persistMenu(){ await storeSet('hibi-menu', MENU); }
 async function persistAddons(){ await storeSet('hibi-addons', ADDONS); }
-async function persistOrders(){ await storeSet('hibi-orders', ORDERS); }
+// Orders are now stored one transaction per row in Supabase. Never overwrite the legacy JSON array.
+async function persistOrders(){ await loadPosOrders(); }
 async function persistEod(){ await storeSet('hibi-eod', EOD); }
 async function persistSettings(){ await storeSet('hibi-settings', SETTINGS); }
 async function persistExpenses(){ await storeSet('hibi-expenses', EXPENSES); }
@@ -1109,13 +1165,65 @@ function openCheckoutModal(){
 }
 
 async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,discountType='None',discountAmount=0}){
-  const orderNumber=orderChannel==='GrabFood' ? (grabCode.trim()||formatOrderNum(SETTINGS.nextOrderNum)) : formatOrderNum(SETTINGS.nextOrderNum);
+  if(!supabaseOk || !CURRENT_USER?.access_token){
+    toast('Database unavailable. The order was NOT saved. Please sign in again and retry.');
+    submitting=false;
+    return;
+  }
   const now=new Date();
   const total=Math.max(0,subtotal-(Number(discountAmount)||0));
-  const order={id:uid(),orderNumber,date:now.toISOString().slice(0,10),time:now.toTimeString().slice(0,5),timestamp:now.toISOString(),source:orderChannel,grabCode:orderChannel==='GrabFood'?grabCode:null,
-    items:CART.map(i=>({productId:i.productId,name:i.name,category:i.category,size:i.size,isDrink:i.isDrink,qty:i.qty,unitPrice:i.unitPrice,addons:i.addons,lineTotal:i.unitPrice*i.qty})),subtotal,discountType:orderChannel==='GrabFood'?discountType:null,discountAmount:orderChannel==='GrabFood'?Number(discountAmount)||0:0,total,
-    paymentMethod:method,amountReceived:method==='Cash'?received:method==='Cash + GCash'?(Number(cashPart)||0)+(Number(gcashPart)||0):total,cashAmount:method==='Cash + GCash'?cashPart:null,gcashAmount:method==='Cash + GCash'?gcashPart:null,changeGiven:method==='Cash'?(received-total):method==='Cash + GCash'?((Number(cashPart)||0)+(Number(gcashPart)||0)-total):0,gcashRef:(method==='GCash'||method==='Cash + GCash')?ref:null,status:'Completed',cashier:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')};
-  ORDERS.unshift(order); if(orderChannel==='Walk-in') SETTINGS.nextOrderNum+=1; await persistOrders();await persistSettings();showOrderConfirmation(order);CART=[];grabCode='';grabDiscountType='None';grabDiscountAmount=0;renderCart();renderOrderNumPreview();
+  const cashier=(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff');
+  const grabOrderCode=orderChannel==='GrabFood' ? (grabCode.trim()||null) : null;
+  const amountReceived=method==='Cash'?received:method==='Cash + GCash'?(Number(cashPart)||0)+(Number(gcashPart)||0):total;
+  const cashAmount=method==='Cash + GCash'?Number(cashPart)||0:null;
+  const gcashAmount=method==='Cash + GCash'?Number(gcashPart)||0:null;
+  const changeGiven=method==='Cash'?(Number(received)||0)-total:method==='Cash + GCash'?((Number(cashPart)||0)+(Number(gcashPart)||0)-total):0;
+  try{
+    // Atomic database operation: order number, order row, and all items are committed together.
+    const items=CART.map(i=>({
+      productId:i.productId, name:i.name, category:i.category, size:i.size,
+      isDrink:!!i.isDrink, qty:Number(i.qty)||1, unitPrice:Number(i.unitPrice)||0,
+      lineTotal:Number(i.unitPrice)*Number(i.qty), addons:Array.isArray(i.addons)?i.addons:[]
+    }));
+    const payload={
+      p_source:orderChannel,
+      p_grab_code:grabOrderCode,
+      p_order_date:now.toISOString().slice(0,10),
+      p_order_time:now.toTimeString().slice(0,8),
+      p_created_at:now.toISOString(),
+      p_subtotal:Number(subtotal)||0,
+      p_discount_type:orderChannel==='GrabFood'?discountType:null,
+      p_discount_amount:orderChannel==='GrabFood'?Number(discountAmount)||0:0,
+      p_total:total,
+      p_payment_method:method,
+      p_amount_received:amountReceived,
+      p_cash_amount:cashAmount,
+      p_gcash_amount:gcashAmount,
+      p_change_given:changeGiven,
+      p_gcash_ref:(method==='GCash'||method==='Cash + GCash')?ref:null,
+      p_status:'Completed',
+      p_cashier:cashier,
+      p_items:items
+    };
+    const res=await posApi('/rest/v1/rpc/create_hibi_pos_order',{method:'POST',body:JSON.stringify(payload)});
+    const dbOrder=await res.json();
+    if(!dbOrder?.id || !dbOrder?.order_number) throw new Error('The database did not confirm the order.');
+
+    const dbOrderNumber=Number(dbOrder.order_number);
+    SETTINGS.nextOrderNum=Math.max(Number(SETTINGS.nextOrderNum)||1,dbOrderNumber+1);
+    await persistSettings();
+
+    const order=mapDbOrder({...dbOrder,pos_order_items:dbOrder.items||[]});
+    order.orderNumber=orderChannel==='GrabFood'?(grabOrderCode||order.orderNumber):order.orderNumber;
+    ORDERS.unshift(order);
+    showOrderConfirmation(order);
+    CART=[];grabCode='';grabDiscountType='None';grabDiscountAmount=0;renderCart();renderOrderNumPreview();
+  }catch(e){
+    console.error('Order save failed:',e);
+    toast('Order was NOT saved. Please retry.');
+  }finally{
+    submitting=false;
+  }
 }
 
 function showOrderConfirmation(order){
@@ -1217,11 +1325,18 @@ function openOrderDetail(id){
   document.getElementById('modal-close').onclick = closeModal;
   document.getElementById('modal-save-status').onclick = async ()=>{
     const newStatus = document.getElementById('status-select').value;
-    o.status = newStatus;
-    await persistOrders();
-    closeModal();
-    renderOrdersPage();
-    toast('Order ' + o.orderNumber + ' marked ' + newStatus);
+    try{
+      const res=await posApi(`/rest/v1/pos_orders?id=eq.${encodeURIComponent(o.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({status:newStatus})});
+      const updated=await res.json();
+      if(!updated?.length) throw new Error('Order status was not updated.');
+      o.status=newStatus;
+      closeModal();
+      renderOrdersPage();
+      toast('Order ' + o.orderNumber + ' marked ' + newStatus);
+    }catch(e){
+      console.error(e);
+      toast('Could not update order status.');
+    }
   };
 }
 
