@@ -490,7 +490,19 @@ nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{bac
 
 const PESO = n => '₱' + (Math.round(n*100)/100).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const uid = () => Math.random().toString(36).slice(2,10);
-const todayStr = () => new Date().toISOString().slice(0,10);
+const todayStr = () => new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+const nowTimeStr = () => new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date());
+function isDateLocked(dateKey){ return !!(EOD && EOD[dateKey] && EOD[dateKey].locked); }
+function canCreateEntry(){
+  const d=todayStr();
+  if(isDateLocked(d)){ toast(`${d} is already reconciled and locked. No new entries can be added.`); return false; }
+  return true;
+}
+function canCreateEntryForDate(dateKey){
+  const d=dateKey||todayStr();
+  if(d!==todayStr()){ toast('Past-date entries are not allowed.'); return false; }
+  return canCreateEntry();
+}
 const CUP_SIZES = ['Hot 12oz','Iced 16oz','Iced 20oz'];
 
 /* ---------- Default data ---------- */
@@ -888,7 +900,7 @@ setInterval(tickClock, 1000*15); tickClock();
    ============================================================ */
 function renderPOS(){
   document.getElementById('cashier-pill').textContent = 'Cashier: ' + ((CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff'));
-  const posTitle=document.getElementById('pos-title'); if(posTitle) posTitle.textContent=orderChannel==='GrabFood'?'GrabFood Order':'Walk-in Order';
+  const posTitle=document.getElementById('pos-title'); if(posTitle) posTitle.textContent=(isDateLocked(todayStr())?'🔒 Day Reconciled — ':'')+(orderChannel==='GrabFood'?'GrabFood Order':'Walk-in Order');
   const wb=document.getElementById('walkin-mode-btn'), gb=document.getElementById('grab-mode-btn');
   if(wb){ wb.classList.toggle('active',orderChannel==='Walk-in'); wb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; grabCode=''; grabDiscountType='None'; grabDiscountAmount=0; orderChannel='Walk-in'; renderPOS(); }; }
   if(gb){ gb.classList.toggle('active',orderChannel==='GrabFood'); gb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; orderChannel='GrabFood'; renderPOS(); }; }
@@ -1084,7 +1096,7 @@ function renderCart(){
   document.getElementById('sum-items').textContent = totalItems;
   document.getElementById('sum-cups').textContent = totalCups;
   document.getElementById('sum-total').textContent = PESO(total);
-  document.getElementById('checkout-btn').disabled = CART.length===0;
+  document.getElementById('checkout-btn').disabled = CART.length===0 || isDateLocked(todayStr());
 }
 function changeQty(key, delta){
   const it = CART.find(i=>i.key===key);
@@ -1159,12 +1171,13 @@ function openCheckoutModal(){
       const da=document.getElementById('discount-amount'); if(da)da.oninput=e=>{discountAmount=e.target.value.replace(/[^0-9.]/g,'');grabDiscountAmount=Number(discountAmount)||0;updateUI();const totalEl=document.querySelector('.big-total .amt');if(totalEl)totalEl.textContent=PESO(total())};
     }
     updateUI();
-    document.getElementById('modal-confirm').onclick=async()=>{if(!canConfirm())return;submitting=true;await finalizeOrder({method,subtotal,received:received?parseFloat(received):null,ref,cashPart:cashPart?parseFloat(cashPart):null,gcashPart:gcashPart?parseFloat(gcashPart):null,discountType,discountAmount:discount()});};
+    document.getElementById('modal-confirm').onclick=async()=>{if(!canConfirm())return;if(!canCreateEntry())return;submitting=true;await finalizeOrder({method,subtotal,received:received?parseFloat(received):null,ref,cashPart:cashPart?parseFloat(cashPart):null,gcashPart:gcashPart?parseFloat(gcashPart):null,discountType,discountAmount:discount()});};
   }
   render();
 }
 
 async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,discountType='None',discountAmount=0}){
+  if(!canCreateEntry()) return;
   if(!supabaseOk || !CURRENT_USER?.access_token){
     toast('Database unavailable. The order was NOT saved. Please sign in again and retry.');
     submitting=false;
@@ -1188,8 +1201,8 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
     const payload={
       p_source:orderChannel,
       p_grab_code:grabOrderCode,
-      p_order_date:now.toISOString().slice(0,10),
-      p_order_time:now.toTimeString().slice(0,8),
+      p_order_date:todayStr(),
+      p_order_time:nowTimeStr(),
       p_created_at:now.toISOString(),
       p_subtotal:Number(subtotal)||0,
       p_discount_type:orderChannel==='GrabFood'?discountType:null,
@@ -1390,9 +1403,12 @@ function renderExpensesPage(){
   `;
   el.querySelectorAll('[data-em]').forEach(b=>b.onclick=()=>{ expensesFilter.mode=b.dataset.em; renderExpensesPage(); });
   el.querySelector('#expense-date-input').onchange = (e)=>{ expensesFilter.mode='date'; expensesFilter.date=e.target.value; renderExpensesPage(); };
-  el.querySelector('#add-expense-btn').onclick = openAddExpenseModal;
+  el.querySelector('#add-expense-btn').onclick = ()=>{ if(canCreateEntry()) openAddExpenseModal(); };
   el.querySelectorAll('[data-del-exp]').forEach(b=>b.onclick=async()=>{
     if(confirm('Delete this expense entry?')){
+      const item=EXPENSES.find(x=>x.id===b.dataset.delExp);
+      if(!item) return;
+      if(!canCreateEntryForDate(item.date)) return;
       EXPENSES = EXPENSES.filter(x=>x.id!==b.dataset.delExp);
       await persistExpenses();
       renderExpensesPage();
@@ -1405,7 +1421,7 @@ function openAddExpenseModal(){
     <div class="modal-body">
       <div class="field"><label>Amount</label><input type="number" inputmode="decimal" id="exp-amount" placeholder="0.00"></div>
       <div class="field"><label>Note (required)</label><input type="text" id="exp-note" placeholder="e.g. Bought extra oat milk from grocery"></div>
-      <div class="field"><label>Date</label><input type="date" id="exp-date" value="${todayStr()}"></div>
+      <div class="field"><label>Date</label><input type="date" id="exp-date" value="${todayStr()}" min="${todayStr()}" disabled></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
@@ -1418,9 +1434,10 @@ function openAddExpenseModal(){
     const date = document.getElementById('exp-date').value || todayStr();
     if(!amount || amount<=0){ toast('Enter a valid amount.'); return; }
     if(!note){ toast('A note is required for every expense.'); return; }
+    if(!canCreateEntryForDate(date)) return;
     const now = new Date();
     EXPENSES.unshift({
-      id: uid(), amount, note, date, time: now.toTimeString().slice(0,5),
+      id: uid(), amount, note, date, time: nowTimeStr().slice(0,5),
       timestamp: now.toISOString(), cashier: (CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')
     });
     await persistExpenses();
@@ -1591,7 +1608,7 @@ function getPreviousDate(dateStr){
 
 function openingCashForDate(dateStr){
   const previous = EOD[getPreviousDate(dateStr)] || {};
-  return previous.actual ?? '';
+  return previous.actual ?? 0;
 }
 
 function renderReports(){
@@ -1717,7 +1734,9 @@ function renderReports(){
       </div>
       <div style="font-size:12px;color:var(--text-dim);margin-top:-6px;margin-bottom:10px;">Expenses logged for this day are assumed paid out of the cash drawer and are subtracted below.</div>
       <div id="eod-calc"></div>
-      <button class="btn btn-primary" id="eod-save" style="margin-top:10px;" ${reportsFilter.mode==='range'||reportsFilter.mode==='month'?'disabled':''}>Save Reconciliation</button>
+      <div class="field" style="margin-top:12px;"><label>Cash Variance Reason</label><textarea id="eod-variance-reason" rows="2" placeholder="Required when actual cash differs from expected cash" ${eod.locked?'disabled':''}>${esc(eod.varianceReason||'')}</textarea></div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:8px;">${eod.locked?'🔒 This day is reconciled and locked.':'A reason is required if there is a cash variance.'}</div>
+      <button class="btn btn-primary" id="eod-save" style="margin-top:10px;" ${reportsFilter.mode==='range'||reportsFilter.mode==='month'||eod.locked?'disabled':''}>${eod.locked?'🔒 Reconciled & Locked':'Save Reconciliation'}</button>
     </div>
   `;
 
@@ -1765,8 +1784,13 @@ function renderReports(){
       const gcashSales = m.pmAgg['GCash']?.sales || 0;
       const expected = opening + cashSales - expenseTotal;
       const variance = actual===null ? null : actual - expected;
+      const varianceReason=(document.getElementById('eod-variance-reason')?.value||'').trim();
       const dateKey = selectedEodDate || (reportsFilter.mode==='date' ? reportsFilter.date : todayStr());
-      EOD[dateKey] = {...(EOD[dateKey]||{}), opening, actual, expected, variance, totalCashSales:cashSales, totalGcashSales:gcashSales, totalExpenses:expenseTotal};
+      if(dateKey!==todayStr()){ toast('Past-date reconciliation is not allowed.'); return; }
+      if(isDateLocked(dateKey)){ toast(`${dateKey} is already reconciled and locked.`); return; }
+      if(actual===null){ toast('Enter Actual Cash Counted before saving reconciliation.'); return; }
+      if(Math.abs(variance)>=0.005 && !varianceReason){ toast('Please enter a reason for the cash variance.'); return; }
+      EOD[dateKey] = {...(EOD[dateKey]||{}), opening, actual, expected, variance, totalCashSales:cashSales, totalGcashSales:gcashSales, totalExpenses:expenseTotal, varianceReason, locked:true, reconciledAt:new Date().toISOString(), reconciledBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')};
       await storeSet('hibi-eod', EOD);
       try{
         const attachment = await exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, EOD[dateKey], {download:false});
