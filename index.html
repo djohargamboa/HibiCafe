@@ -534,29 +534,33 @@ function openCashMovementModal(){
   document.getElementById('cm-cancel').onclick=closeModal;
   document.getElementById('cm-save').onclick=async()=>{
     const saveBtn=document.getElementById('cm-save');
-    if(saveBtn.disabled) return;
-    const amount=Number(document.getElementById('cm-amount').value)||0;
-    const type=document.getElementById('cm-type').value;
-    const reason=document.getElementById('cm-reason').value.trim();
+    if(!saveBtn || saveBtn.disabled) return;
+    const amount=Number(document.getElementById('cm-amount')?.value);
+    const type=document.getElementById('cm-type')?.value;
+    const reason=(document.getElementById('cm-reason')?.value||'').trim();
     const date=isSuperuser()?(document.getElementById('cm-date')?.value||todayStr()):todayStr();
-    if(amount<=0){toast('Enter a valid amount.');return;}
+    if(!Number.isFinite(amount) || amount<=0){toast('Enter a valid amount.');return;}
+    if(type!=='In' && type!=='Out'){toast('Select Cash In or Cash Out.');return;}
     if(!reason){toast('A reason is required.');return;}
     if(!canCreateEntryForDate(date)) return;
-    const now=new Date();
-    const item={id:uid(),date,time:nowTimeStr().slice(0,5),timestamp:now.toISOString(),type,amount,reason,cashier:currentActor(),status:'Active'};
     saveBtn.disabled=true;
+    saveBtn.textContent='Saving…';
+    const ph=phNowParts();
+    const item={id:uid(),date:ph.date,time:ph.time,timestamp:ph.timestamp,type,amount,reason,cashier:currentActor(),status:'Active'};
     try{
       CASH_MOVEMENTS.unshift(item);
       await persistCashMovements();
-      await writeAudit(type==='In'?'cash_in':'cash_out','cash_movement',item.id,reason,{amount,date,type});
-      closeModal(); renderExpensesPage(); toast(type==='In'?'Cash In recorded':'Cash Out recorded');
+      await writeAudit(type==='In'?'cash_in':'cash_out','cash_movement',item.id,reason,{amount,date,type,cashier:item.cashier});
+      closeModal();
+      renderExpensesPage();
+      toast(type==='In'?'Cash In recorded':'Cash Out recorded');
     }catch(err){
       CASH_MOVEMENTS=CASH_MOVEMENTS.filter(x=>x.id!==item.id);
-      saveBtn.disabled=false;
       console.error('Cash movement save failed:',err);
-      toast('Cash movement was NOT saved. Please retry.');
+      saveBtn.disabled=false;
+      saveBtn.textContent='Save Movement';
+      toast('Cash movement was NOT saved: '+(err?.message||'database error'));
     }
-  
   };
 }
 
@@ -725,6 +729,7 @@ async function writeAudit(action,entityType='',entityId='',reason='',details={})
   try{ await fetch(`${SUPABASE_URL}/rest/v1/audit_logs`,{method:'POST',headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${CURRENT_USER.access_token}`,'Content-Type':'application/json'},body:JSON.stringify({auth_user_id:CURRENT_USER.id,username:CURRENT_PROFILE?.username||'',action,entity_type:entityType,entity_id:entityId,reason,details})}); }catch(e){console.warn('Audit log failed',e);}
 }
 
+function currentActor(){ return CURRENT_PROFILE?.display_name || CURRENT_PROFILE?.username || 'Staff'; }
 function requireActionReason(label='this change'){
   const reason=prompt(`Reason / note for ${label}:`);
   if(!reason || !reason.trim()){ toast('A reason / note is required.'); return null; }
@@ -1314,8 +1319,6 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
       isDrink:!!i.isDrink, qty:Number(i.qty)||1, unitPrice:Number(i.unitPrice)||0,
       lineTotal:Number(i.unitPrice)*Number(i.qty), addons:Array.isArray(i.addons)?i.addons:[]
     }));
-    const orderNote=requireActionReason(`creating order ${orderChannel}`);
-    if(!orderNote){ submitting=false; return; }
     const payload={
       p_source:orderChannel,
       p_grab_code:grabOrderCode,
@@ -1347,7 +1350,7 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
     const order=mapDbOrder({...dbOrder,pos_order_items:dbOrder.items||[]});
     order.orderNumber=orderChannel==='GrabFood'?(grabOrderCode||order.orderNumber):order.orderNumber;
     ORDERS.unshift(order);
-    await writeAudit('create_order','order',order.id,orderNote,{orderNumber:order.orderNumber,date:order.date,total:order.total,source:order.source,paymentMethod:order.paymentMethod,status:order.status});
+    await writeAudit('create_order','order',order.id,'',{orderNumber:order.orderNumber,date:order.date,total:order.total,source:order.source,paymentMethod:order.paymentMethod,status:order.status});
     showOrderConfirmation(order);
     CART=[];grabCode='';grabDiscountType='None';grabDiscountAmount=0;renderCart();renderOrderNumPreview();
   }catch(e){
@@ -1457,9 +1460,13 @@ function openOrderDetail(id){
   openModal(body());
   document.getElementById('modal-close').onclick = closeModal;
   document.getElementById('modal-save-status').onclick = async ()=>{
-    if(isDateLocked(o.date)){ toast('This order date is reconciled and locked. Superuser must reopen it first.'); return; }
+    if(isDateLocked(o.date) && !isSuperuser()){ toast('This order date is reconciled and locked. Unlock the day first.'); return; }
     if(!isSuperuser() && o.date!==todayStr()){ toast('Staff cannot edit the status of previous-date orders.'); return; }
     const newStatus = document.getElementById('status-select').value;
+    if(newStatus===o.status){ toast('No status change was made.'); return; }
+    const reason = requireActionReason(`changing status of order ${o.orderNumber}`);
+    if(!reason) return;
+    const oldStatus=o.status;
     try{
       const res=await posApi(`/rest/v1/pos_orders?id=eq.${encodeURIComponent(o.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({status:newStatus})});
       const updated=await res.json();
@@ -1471,7 +1478,7 @@ function openOrderDetail(id){
       toast('Order ' + o.orderNumber + ' marked ' + newStatus);
     }catch(e){
       console.error(e);
-      toast('Could not update order status.');
+      toast('Could not update order status: '+(e?.message||'unknown error'));
     }
   };
 }
