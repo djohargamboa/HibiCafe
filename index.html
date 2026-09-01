@@ -515,6 +515,39 @@ function canCreateEntryForDate(dateKey){
   if(isDateLocked(d)){ toast(`${d} is already reconciled and locked.`); return false; }
   return true;
 }
+function cashMovementsForDate(dateKey){ return (CASH_MOVEMENTS||[]).filter(x=>x.date===dateKey && x.status!=='Voided'); }
+function cashMovementTotals(dateKey){
+  return cashMovementsForDate(dateKey).reduce((a,x)=>{ const amt=Number(x.amount)||0; if(x.type==='In') a.in+=amt; else a.out+=amt; return a; },{in:0,out:0});
+}
+function openCashMovementModal(){
+  const dateDefault=isSuperuser() ? (reportsFilter.mode==='date' ? reportsFilter.date : todayStr()) : todayStr();
+  openModal(`
+    <div class="modal-head"><h3>Cash Drawer Movement</h3><div class="msub">Use Cash In / Out for money added to or removed from the drawer outside normal sales and expenses.</div></div>
+    <div class="modal-body">
+      <div class="field"><label>Type</label><select id="cm-type"><option value="In">Cash In</option><option value="Out">Cash Out</option></select></div>
+      <div class="field"><label>Amount</label><input type="number" id="cm-amount" inputmode="decimal" placeholder="0.00"></div>
+      <div class="field"><label>Reason (required)</label><input type="text" id="cm-reason" placeholder="e.g. Owner added change fund"></div>
+      ${isSuperuser()?`<div class="field"><label>Date</label><input type="date" id="cm-date" value="${dateDefault}"></div>`:''}
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" id="cm-cancel">Cancel</button><button class="btn btn-primary" id="cm-save">Save Movement</button></div>`);
+  document.getElementById('cm-cancel').onclick=closeModal;
+  document.getElementById('cm-save').onclick=async()=>{
+    const amount=Number(document.getElementById('cm-amount').value)||0;
+    const type=document.getElementById('cm-type').value;
+    const reason=document.getElementById('cm-reason').value.trim();
+    const date=isSuperuser()?(document.getElementById('cm-date')?.value||todayStr()):todayStr();
+    if(amount<=0){toast('Enter a valid amount.');return;}
+    if(!reason){toast('A reason is required.');return;}
+    if(!canCreateEntryForDate(date)) return;
+    const now=new Date();
+    const item={id:uid(),date,time:nowTimeStr().slice(0,5),timestamp:now.toISOString(),type,amount,reason,cashier:currentActor(),status:'Active'};
+    CASH_MOVEMENTS.unshift(item);
+    await persistCashMovements();
+    await writeAudit(type==='In'?'cash_in':'cash_out','cash_movement',item.id,reason,{amount,date,type});
+    closeModal(); renderExpensesPage(); toast(type==='In'?'Cash In recorded':'Cash Out recorded');
+  };
+}
+
 let selectedOrderDate = todayStr();
 const CUP_SIZES = ['Hot 12oz','Iced 16oz','Iced 20oz'];
 
@@ -632,6 +665,7 @@ let ORDERS = [];
 let EOD = {};
 let SETTINGS = defaultSettings();
 let EXPENSES = [];
+let CASH_MOVEMENTS = [];
 let CART = [];
 let orderChannel = 'Walk-in';
 let grabCode = '';
@@ -684,11 +718,11 @@ async function doLogin(){
   showLoginError(''); const username=document.getElementById('login-username').value.trim().toLowerCase(); const password=document.getElementById('login-password').value;
   if(!username||!password){showLoginError('Enter your username and password.');return;}
   const btn=document.getElementById('login-btn'); btn.disabled=true; btn.textContent='Signing in…';
-  try{ const email=await getLoginProfile(username); if(!email) throw new Error('Invalid username or password.'); const {data,error}=await supabaseClient.auth.signInWithPassword({email,password}); if(error) throw error; CURRENT_USER=data.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); showApp(); await loadAll(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }
+  try{ const email=await getLoginProfile(username); if(!email) throw new Error('Invalid username or password.'); const {data,error}=await supabaseClient.auth.signInWithPassword({email,password}); if(error) throw error; CURRENT_USER=data.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); await writeAudit('login','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||username,role:CURRENT_PROFILE?.role||''}); showApp(); await loadAll(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }
   catch(e){ console.error(e); showLoginError(e.message==='Invalid login credentials'?'Invalid username or password.':e.message||'Unable to sign in.'); if(supabaseClient) await supabaseClient.auth.signOut(); }
   finally{btn.disabled=false;btn.textContent='Sign in';}
 }
-async function doLogout(){ if(supabaseClient) await supabaseClient.auth.signOut(); CURRENT_USER=null; CURRENT_PROFILE=null; document.getElementById('app').style.display='none'; document.getElementById('login-screen').style.display='flex'; document.getElementById('login-password').value=''; showLoginError(''); }
+async function doLogout(){ if(CURRENT_USER) await writeAudit('logout','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); if(supabaseClient) await supabaseClient.auth.signOut(); CURRENT_USER=null; CURRENT_PROFILE=null; document.getElementById('app').style.display='none'; document.getElementById('login-screen').style.display='flex'; document.getElementById('login-password').value=''; showLoginError(''); }
 
 const HAS_CLAUDE_STORAGE = (typeof window !== 'undefined' && !!window.storage);
 let supabaseOk = HAS_SUPABASE; // flips false if a request ever fails, so we fall back gracefully
@@ -891,6 +925,7 @@ async function loadAll(){
   SETTINGS = await storeGet('hibi-settings', SETTINGS);
   applyBranding();
   EXPENSES = await storeGet('hibi-expenses', []);
+  CASH_MOVEMENTS = await storeGet('hibi-cash-movements', []);
   if(supabaseOk && CURRENT_USER?.access_token){
     await loadPosOrders();
   }else{
@@ -905,6 +940,7 @@ async function persistOrders(){ await loadPosOrders(); }
 async function persistEod(){ await storeSet('hibi-eod', EOD); }
 async function persistSettings(){ await storeSet('hibi-settings', SETTINGS); }
 async function persistExpenses(){ await storeSet('hibi-expenses', EXPENSES); }
+async function persistCashMovements(){ await storeSet('hibi-cash-movements', CASH_MOVEMENTS); }
 
 /* ---------- Toast ---------- */
 function toast(msg){
@@ -1239,7 +1275,7 @@ function openCheckoutModal(){
 }
 
 async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,discountType='None',discountAmount=0}){
-  if(!canCreateEntry()) return;
+  if(!canCreateEntryForDate(selectedOrderDate)) return;
   if(!supabaseOk || !CURRENT_USER?.access_token){
     toast('Database unavailable. The order was NOT saved. Please sign in again and retry.');
     submitting=false;
@@ -1291,6 +1327,7 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
     const order=mapDbOrder({...dbOrder,pos_order_items:dbOrder.items||[]});
     order.orderNumber=orderChannel==='GrabFood'?(grabOrderCode||order.orderNumber):order.orderNumber;
     ORDERS.unshift(order);
+    await writeAudit('create_order','order',order.id,'',{orderNumber:order.orderNumber,date:order.date,total:order.total,source:order.source,paymentMethod:order.paymentMethod,status:order.status});
     showOrderConfirmation(order);
     CART=[];grabCode='';grabDiscountType='None';grabDiscountAmount=0;renderCart();renderOrderNumPreview();
   }catch(e){
@@ -1387,27 +1424,28 @@ function openOrderDetail(id){
           <div class="sumrow grand"><span>Total</span><span>${PESO(o.total)}</span></div>
         </div>
         <div class="section-title" style="margin-top:16px;">Order Status</div>
-        <select id="status-select" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);font-size:14px;" ${(!isSuperuser() && o.date!==todayStr())?'disabled':''}>
+        <select id="status-select" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);font-size:14px;" ${(isDateLocked(o.date)||(!isSuperuser() && o.date!==todayStr()))?'disabled':''}>
           ${['New','Preparing','Completed','Cancelled'].map(s=>`<option value="${s}" ${s===o.status?'selected':''}>${s}</option>`).join('')}
         </select>
         ${(!isSuperuser() && o.date!==todayStr())?`<div style="font-size:12px;color:var(--text-dim);margin-top:7px;">🔒 Previous-date orders cannot be edited by staff.</div>`:''}
       </div>
       <div class="modal-foot">
         <button class="btn btn-secondary" id="modal-close">Close</button>
-        <button class="btn btn-primary" id="modal-save-status" ${(!isSuperuser() && o.date!==todayStr())?'disabled':''}>Update Status</button>
+        <button class="btn btn-primary" id="modal-save-status" ${(isDateLocked(o.date)||(!isSuperuser() && o.date!==todayStr()))?'disabled':''}>Update Status</button>
       </div>`;
   }
   openModal(body());
   document.getElementById('modal-close').onclick = closeModal;
   document.getElementById('modal-save-status').onclick = async ()=>{
+    if(isDateLocked(o.date)){ toast('This order date is reconciled and locked. Superuser must reopen it first.'); return; }
     if(!isSuperuser() && o.date!==todayStr()){ toast('Staff cannot edit the status of previous-date orders.'); return; }
-    if(isDateLocked(o.date) && !isSuperuser()){ toast('This order date is reconciled and locked.'); return; }
     const newStatus = document.getElementById('status-select').value;
     try{
       const res=await posApi(`/rest/v1/pos_orders?id=eq.${encodeURIComponent(o.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({status:newStatus})});
       const updated=await res.json();
       if(!updated?.length) throw new Error('Order status was not updated.');
       o.status=newStatus;
+      await writeAudit('update_order_status','order',o.id,'',{orderNumber:o.orderNumber,date:o.date,oldStatus,newStatus});
       closeModal();
       renderOrdersPage();
       toast('Order ' + o.orderNumber + ' marked ' + newStatus);
@@ -1432,53 +1470,26 @@ function filteredExpenses(filter){
   return EXPENSES.filter(x=>matchesPeriod(x.date, filter)).sort((a,b)=> (a.date+a.time < b.date+b.time ? 1 : -1));
 }
 function renderExpensesPage(){
-  const el = document.getElementById('expenses-content');
-  const rows = filteredExpenses(expensesFilter);
-  const total = rows.reduce((s,x)=>s+x.amount,0);
-  el.innerHTML = `
-    <div class="page-title">
-      <div><h1>Expenses</h1><div class="psub">Cash outflows during the day — coffee beans, repairs, supplies, etc.</div></div>
-      <button class="btn btn-primary" id="add-expense-btn">+ Add Expense</button>
-    </div>
-    <div class="filter-bar">
-      <button class="filter-btn ${expensesFilter.mode==='today'?'active':''}" data-em="today">Today</button>
-      <button class="filter-btn ${expensesFilter.mode==='all'?'active':''}" data-em="all">All</button>
-      <input type="date" id="expense-date-input" value="${expensesFilter.mode==='date'?expensesFilter.date:todayStr()}">
-    </div>
-    <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));">
-      <div class="stat-card accent"><div class="slabel">Total Expenses (period)</div><div class="sval">${PESO(total)}</div></div>
-      <div class="stat-card"><div class="slabel">Number of Entries</div><div class="sval">${rows.length}</div></div>
-    </div>
-    <div class="card" style="overflow-x:auto;">
-      <table>
-        <thead><tr><th>Date</th><th>Time</th><th>Note</th><th class="num">Amount</th><th>Cashier</th><th></th></tr></thead>
-        <tbody>
-          ${rows.length ? rows.map(x=>`
-            <tr>
-              <td>${x.date}</td>
-              <td>${x.time}</td>
-              <td>${esc(x.note)}</td>
-              <td class="num">${PESO(x.amount)}</td>
-              <td>${esc(x.cashier)}</td>
-              <td><button class="icon-btn danger" data-del-exp="${x.id}">Delete</button></td>
-            </tr>`).join('') : `<tr><td colspan="6"><div class="empty-state">No expenses logged for this period.</div></td></tr>`}
-        </tbody>
-      </table>
-    </div>
-  `;
-  el.querySelectorAll('[data-em]').forEach(b=>b.onclick=()=>{ expensesFilter.mode=b.dataset.em; renderExpensesPage(); });
-  el.querySelector('#expense-date-input').onchange = (e)=>{ expensesFilter.mode='date'; expensesFilter.date=e.target.value; renderExpensesPage(); };
-  el.querySelector('#add-expense-btn').onclick = ()=>{ if(canCreateEntry()) openAddExpenseModal(); };
-  el.querySelectorAll('[data-del-exp]').forEach(b=>b.onclick=async()=>{
-    if(confirm('Delete this expense entry?')){
-      const item=EXPENSES.find(x=>x.id===b.dataset.delExp);
-      if(!item) return;
-      if(!canCreateEntryForDate(item.date)) return;
-      EXPENSES = EXPENSES.filter(x=>x.id!==b.dataset.delExp);
-      await persistExpenses();
-      renderExpensesPage();
-    }
-  });
+  const el=document.getElementById('expenses-content');
+  const rows=filteredExpenses(expensesFilter);
+  const activeRows=rows.filter(x=>x.status!=='Voided');
+  const total=activeRows.reduce((s,x)=>s+Number(x.amount||0),0);
+  const moves=(CASH_MOVEMENTS||[]).filter(x=>matchesPeriod(x.date,expensesFilter)).sort((a,b)=>(a.date+a.time<b.date+b.time?1:-1));
+  const activeMoves=moves.filter(x=>x.status!=='Voided');
+  const cashIn=activeMoves.filter(x=>x.type==='In').reduce((s,x)=>s+Number(x.amount||0),0);
+  const cashOut=activeMoves.filter(x=>x.type==='Out').reduce((s,x)=>s+Number(x.amount||0),0);
+  el.innerHTML=`
+    <div class="page-title"><div><h1>Expenses</h1><div class="psub">Expenses and cash drawer movements.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-secondary" id="add-cash-movement">+ Cash In / Out</button><button class="btn btn-primary" id="add-expense-btn">+ Add Expense</button></div></div>
+    <div class="filter-bar"><button class="filter-btn ${expensesFilter.mode==='today'?'active':''}" data-em="today">Today</button><button class="filter-btn ${expensesFilter.mode==='all'?'active':''}" data-em="all">All</button><input type="date" id="expense-date-input" value="${expensesFilter.mode==='date'?expensesFilter.date:todayStr()}"></div>
+    <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));"><div class="stat-card accent"><div class="slabel">Total Expenses</div><div class="sval">${PESO(total)}</div></div><div class="stat-card"><div class="slabel">Cash In</div><div class="sval" style="font-size:22px;">${PESO(cashIn)}</div></div><div class="stat-card"><div class="slabel">Cash Out</div><div class="sval" style="font-size:22px;color:var(--rust);">${PESO(cashOut)}</div></div><div class="stat-card"><div class="slabel">Expense Entries</div><div class="sval" style="font-size:22px;">${activeRows.length}</div></div></div>
+    <div class="card" style="padding:18px 20px;margin-bottom:16px;overflow-x:auto;"><div class="section-title">Cash Drawer Movements</div><table><thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Reason</th><th>Cashier</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>${moves.length?moves.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td><b>${esc(x.type)}</b></td><td>${esc(x.reason)}</td><td>${esc(x.cashier)}</td><td class="num">${PESO(x.amount)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':isDateLocked(x.date)?'<span class="badge-inactive">LOCKED</span>':'<button class="icon-btn danger" data-void-cash="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No cash drawer movements.</div></td></tr>'}</tbody></table></div>
+    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date</th><th>Time</th><th>Note</th><th class="num">Amount</th><th>Cashier</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td>${esc(x.note)}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.cashier)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':isDateLocked(x.date)?'<span class="badge-inactive">LOCKED</span>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td><td>${x.status==='Voided'?esc(x.voidReason||''):isDateLocked(x.date)?'<span style="font-size:11px;color:var(--text-dim);">Locked</span>':'<button class="icon-btn danger" data-del-exp="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No expenses logged for this period.</div></td></tr>'}</tbody></table></div>`;
+  el.querySelectorAll('[data-em]').forEach(b=>b.onclick=()=>{expensesFilter.mode=b.dataset.em;renderExpensesPage();});
+  el.querySelector('#expense-date-input').onchange=e=>{expensesFilter.mode='date';expensesFilter.date=e.target.value;renderExpensesPage();};
+  el.querySelector('#add-expense-btn').onclick=()=>{if(canCreateEntryForDate(todayStr()))openAddExpenseModal();};
+  el.querySelector('#add-cash-movement').onclick=openCashMovementModal;
+  el.querySelectorAll('[data-del-exp]').forEach(b=>b.onclick=async()=>{const x=EXPENSES.find(e=>e.id===b.dataset.delExp);if(!x)return;if(!canCreateEntryForDate(x.date))return;const reason=prompt('Reason for voiding this expense:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();await persistExpenses();await writeAudit('void_expense','expense',x.id,reason.trim(),{amount:x.amount,note:x.note,date:x.date});renderExpensesPage();toast('Expense voided — original record preserved');});
+  el.querySelectorAll('[data-void-cash]').forEach(b=>b.onclick=async()=>{const x=CASH_MOVEMENTS.find(m=>m.id===b.dataset.voidCash);if(!x||x.status==='Voided')return;if(!canCreateEntryForDate(x.date))return;const reason=prompt('Reason for voiding this cash movement:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();await persistCashMovements();await writeAudit('void_cash_movement','cash_movement',x.id,reason.trim(),{amount:x.amount,type:x.type,date:x.date});renderExpensesPage();toast('Cash movement voided — original record preserved');});
 }
 function openAddExpenseModal(){
   openModal(`
@@ -1506,6 +1517,7 @@ function openAddExpenseModal(){
       timestamp: now.toISOString(), cashier: (CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')
     });
     await persistExpenses();
+    await writeAudit('create_expense','expense',EXPENSES[0].id,'',{amount,note,date,cashier:EXPENSES[0].cashier});
     closeModal();
     renderExpensesPage();
     toast('Expense recorded');
@@ -1687,6 +1699,7 @@ function renderReports(){
   const selectedEodDate = reportsFilter.mode==='date' ? reportsFilter.date : todayStr();
   const eod = EOD[selectedEodDate] || {};
   const openingCash = openingCashForDate(selectedEodDate);
+  const drawerTotals = cashMovementTotals(selectedEodDate);
 
   el.innerHTML = `
     <div class="page-title">
@@ -1792,6 +1805,12 @@ function renderReports(){
     </div>
 
     <div class="card" style="padding:18px 20px;margin-top:16px;">
+      <div class="section-title">Cash Drawer Movements</div>
+      <div class="sumrow"><span>Cash In</span><span>${PESO(drawerTotals.in)}</span></div>
+      <div class="sumrow"><span>Cash Out</span><span>−${PESO(drawerTotals.out)}</span></div>
+    </div>
+
+    <div class="card" style="padding:18px 20px;margin-top:16px;">
       <div class="section-title">End-of-Day Cash Reconciliation ${reportsFilter.mode!=='date'&&reportsFilter.mode!=='today'?'<span style="font-weight:400;font-size:12px;color:var(--text-dim);">(pick a single date to edit)</span>':''}</div>
       <div class="two-col">
         <div class="field"><label>Opening Cash</label><input type="number" id="eod-opening" value="${openingCash}" disabled></div>
@@ -1829,7 +1848,7 @@ function renderReports(){
     const actual = document.getElementById('eod-actual').value;
     const cashSales = m.pmAgg['Cash']?.sales || 0;
     const gcashSales = m.pmAgg['GCash']?.sales || 0;
-    const expected = opening + cashSales - expenseTotal;
+    const expected = opening + drawerTotals.in + cashSales - drawerTotals.out - expenseTotal;
     const calcDiv = document.getElementById('eod-calc');
     if(actual===''){
       calcDiv.innerHTML = `<div class="sumrow" style="margin-top:10px;"><span>Cash Sales</span><span>${PESO(cashSales)}</span></div>
@@ -1858,7 +1877,7 @@ function renderReports(){
       const actual = actualValue==='' ? null : parseFloat(actualValue);
       const cashSales = m.pmAgg['Cash']?.sales || 0;
       const gcashSales = m.pmAgg['GCash']?.sales || 0;
-      const expected = opening + cashSales - expenseTotal;
+      const expected = opening + drawerTotals.in + cashSales - drawerTotals.out - expenseTotal;
       const variance = actual===null ? null : actual - expected;
       const varianceReason=(document.getElementById('eod-variance-reason')?.value||'').trim();
       const dateKey = selectedEodDate || (reportsFilter.mode==='date' ? reportsFilter.date : todayStr());
@@ -1866,8 +1885,9 @@ function renderReports(){
       if(isDateLocked(dateKey)){ toast(`${dateKey} is already reconciled and locked.`); return; }
       if(actual===null){ toast('Enter Actual Cash Counted before saving reconciliation.'); return; }
       if(Math.abs(variance)>=0.005 && !varianceReason){ toast('Please enter a reason for the cash variance.'); return; }
-      EOD[dateKey] = {...(EOD[dateKey]||{}), opening, actual, expected, variance, totalCashSales:cashSales, totalGcashSales:gcashSales, totalExpenses:expenseTotal, varianceReason, locked:true, reconciledAt:new Date().toISOString(), reconciledBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')};
+      EOD[dateKey] = {...(EOD[dateKey]||{}), opening, actual, expected, variance, totalCashSales:cashSales, cashIn:drawerTotals.in, cashOut:drawerTotals.out, totalGcashSales:gcashSales, totalExpenses:expenseTotal, varianceReason, locked:true, reconciledAt:new Date().toISOString(), reconciledBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')};
       await storeSet('hibi-eod', EOD);
+      await writeAudit('reconcile_day','eod',dateKey,varianceReason,{opening,actual,expected,variance,cashIn:drawerTotals.in,cashOut:drawerTotals.out,totalCashSales:cashSales,totalGcashSales:gcashSales,totalExpenses:expenseTotal});
       try{
         const attachment = await exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, EOD[dateKey], {download:false});
         const emailReport = buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expenseTotal, netSales, EOD[dateKey]);
@@ -1921,6 +1941,8 @@ async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, 
       ['GrabFood Sales', m.pmAgg['GrabFood']?.sales || 0],
       ['Number of Cups', m.cups],
       ['Starting Cash', eod?.opening ?? ''],
+      ['Cash In', eod?.cashIn ?? 0],
+      ['Cash Out', eod?.cashOut ?? 0],
       ['Expenses', expenseTotal],
       ['Actual Cash Counted', eod?.actual ?? ''],
       ['Expected Cash', eod?.expected ?? ((eod?.opening!=null) ? (eod.opening + (m.pmAgg['Cash']?.sales||0) - expenseTotal) : '')],
@@ -2033,6 +2055,7 @@ function buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expense
     totalTransactions: Number(m.totalTx)||0, transactions: Number(m.totalTx)||0,
     cups: Number(m.cups)||0, numberOfCups: Number(m.cups)||0, foodItems: Number(m.foodItems)||0,
     cashSales: Number(m.pmAgg['Cash']?.sales||0), gcashSales: Number(m.pmAgg['GCash']?.sales||0), grabFoodSales: Number(m.pmAgg['GrabFood']?.sales||0),
+    paymentBreakdown: ['Cash','GCash','GrabFood'].map(method=>({method,transactions:Number(m.pmAgg[method]?.count||0),sales:Number(m.pmAgg[method]?.sales||0)})),
     openingCash: Number(eod?.opening)||0, startingCash: Number(eod?.opening)||0,
     expenses: Number(expenseTotal)||0, totalExpenses: Number(expenseTotal)||0,
     actualCash: Number(eod?.actual)||0, actualCashCounted: Number(eod?.actual)||0,
@@ -2040,6 +2063,7 @@ function buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expense
     cashIn: Number(eod?.cashIn)||0, cashOut: Number(eod?.cashOut)||0, varianceReason: String(eod?.varianceReason||''),
     netSales: Number(netSales)||0,
     orders: (orders||[]).map(o=>({orderNumber:o.orderNumber,date:o.date,time:o.time,channel:o.channel,paymentMethod:o.paymentMethod,payment:o.paymentMethod,cashier:o.cashier,status:o.status,total:Number(o.total)||0,items:o.items||[]})),
+    expenseRows: (expenses||[]).map(x=>({cashier:x.cashier,date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0})),
     expenseDetails: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier})),
     expenseList: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier}))
   };
@@ -2203,6 +2227,7 @@ function buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expense
     totalTransactions: Number(m.totalTx)||0, transactions: Number(m.totalTx)||0,
     cups: Number(m.cups)||0, numberOfCups: Number(m.cups)||0, foodItems: Number(m.foodItems)||0,
     cashSales: Number(m.pmAgg['Cash']?.sales||0), gcashSales: Number(m.pmAgg['GCash']?.sales||0), grabFoodSales: Number(m.pmAgg['GrabFood']?.sales||0),
+    paymentBreakdown: ['Cash','GCash','GrabFood'].map(method=>({method,transactions:Number(m.pmAgg[method]?.count||0),sales:Number(m.pmAgg[method]?.sales||0)})),
     openingCash: Number(eod?.opening)||0, startingCash: Number(eod?.opening)||0,
     expenses: Number(expenseTotal)||0, totalExpenses: Number(expenseTotal)||0,
     actualCash: Number(eod?.actual)||0, actualCashCounted: Number(eod?.actual)||0,
@@ -2210,6 +2235,7 @@ function buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expense
     cashIn: Number(eod?.cashIn)||0, cashOut: Number(eod?.cashOut)||0, varianceReason: String(eod?.varianceReason||''),
     netSales: Number(netSales)||0,
     orders: (orders||[]).map(o=>({orderNumber:o.orderNumber,date:o.date,time:o.time,channel:o.channel,paymentMethod:o.paymentMethod,payment:o.paymentMethod,cashier:o.cashier,status:o.status,total:Number(o.total)||0,items:o.items||[]})),
+    expenseRows: (expenses||[]).map(x=>({cashier:x.cashier,date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0})),
     expenseDetails: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier})),
     expenseList: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier}))
   };
@@ -2524,7 +2550,7 @@ function openEditAddonModal(a){
 async function renderAuditLog(){
   const el=document.getElementById('audit-content');
   if(!isSuperuser()){ el.innerHTML='<div class="empty-state">Superuser access required.</div>'; return; }
-  el.innerHTML=`<div class="page-title"><div><h1>Audit Log</h1><div class="psub">Record of reconciliation locks, unlocks and system actions</div></div><button class="btn btn-secondary" id="audit-refresh">↻ Refresh</button></div><div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date / Time</th><th>User</th><th>Action</th><th>Entity</th><th>Reason</th><th>Details</th></tr></thead><tbody id="audit-rows"><tr><td colspan="6"><div class="empty-state">Loading…</div></td></tr></tbody></table></div>`;
+  el.innerHTML=`<div class="page-title"><div><h1>Audit Log</h1><div class="psub">Record of logins, orders, status changes, expenses, cash movements, reconciliation, unlocks and system actions</div></div><button class="btn btn-secondary" id="audit-refresh">↻ Refresh</button></div><div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date / Time</th><th>User</th><th>Action</th><th>Entity</th><th>Reason</th><th>Details</th></tr></thead><tbody id="audit-rows"><tr><td colspan="6"><div class="empty-state">Loading…</div></td></tr></tbody></table></div>`;
   document.getElementById('audit-refresh').onclick=renderAuditLog;
   try{
     const res=await fetch(`${SUPABASE_URL}/rest/v1/audit_logs?select=*&order=created_at.desc&limit=500`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${CURRENT_USER.access_token}`}});
@@ -2716,7 +2742,7 @@ function escAttr(s){ return esc(s); }
   document.getElementById('login-username').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('login-password').focus();});
   document.getElementById('logout-btn').onclick=doLogout;
   const {data}=await supabaseClient.auth.getSession();
-  if(data.session){ try{ CURRENT_USER=data.session.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); showApp(); await loadAll(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }catch(e){await doLogout();} }
+  if(data.session){ try{ CURRENT_USER=data.session.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); await writeAudit('login_session_restore','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); showApp(); await loadAll(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }catch(e){await doLogout();} }
 })();
 </script>
 </body>
