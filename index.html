@@ -362,6 +362,7 @@ nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{bac
 }
 </style>
 </style>
+<style>.filter-btn:disabled{opacity:.45;cursor:not-allowed;}</style>
 </head>
 <body>
 <div id="login-screen" class="login-screen">
@@ -545,8 +546,7 @@ function openCashMovementModal(){
     if(!canCreateEntryForDate(date)) return;
     saveBtn.disabled=true;
     saveBtn.textContent='Saving…';
-    const ph=phNowParts();
-    const item={id:uid(),date:ph.date,time:ph.time,timestamp:ph.timestamp,type,amount,reason,cashier:currentActor(),status:'Active'};
+    const item={id:uid(),date,time:nowTimeStr().slice(0,5),timestamp:new Date().toISOString(),type,amount,reason,cashier:currentActor(),status:'Active'};
     try{
       CASH_MOVEMENTS.unshift(item);
       await persistCashMovements();
@@ -1379,6 +1379,12 @@ function filteredOrders(filter){
     return true;
   });
 }
+function shiftDateKey(dateKey, delta){
+  const d=new Date((dateKey||todayStr())+'T12:00:00+08:00');
+  d.setUTCDate(d.getUTCDate()+delta);
+  return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+}
+
 function renderOrdersPage(){
   const bar = document.getElementById('orders-filter');
   bar.innerHTML = `
@@ -1393,6 +1399,8 @@ function renderOrdersPage(){
       <option value="Cancelled">Cancelled</option>
     </select>
     <select id="orders-source-select" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);"><option value="all">All sources</option><option value="Walk-in">Walk-in</option><option value="GrabFood">GrabFood</option></select>
+    <button class="filter-btn" id="orders-prev">‹ PREV</button>
+    <button class="filter-btn" id="orders-next" ${shiftDateKey(ordersFilter.date||todayStr(),1)<=todayStr()?'':'disabled'}>NEXT ›</button>
   `;
   bar.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{ ordersFilter.mode=b.dataset.mode; renderOrdersPage(); });
   bar.querySelector('#orders-date-input').onchange = (e)=>{ ordersFilter.mode='date'; ordersFilter.date=e.target.value; renderOrdersPage(); };
@@ -1400,6 +1408,8 @@ function renderOrdersPage(){
   bar.querySelector('#orders-status-select').onchange = (e)=>{ ordersFilter.status=e.target.value; renderOrdersPage(); };
   bar.querySelector('#orders-source-select').value = ordersFilter.source||'all';
   bar.querySelector('#orders-source-select').onchange = (e)=>{ ordersFilter.source=e.target.value; renderOrdersPage(); };
+  bar.querySelector('#orders-prev').onclick = ()=>{ ordersFilter.mode='date'; ordersFilter.date=shiftDateKey(ordersFilter.date||todayStr(),-1); renderOrdersPage(); };
+  bar.querySelector('#orders-next').onclick = ()=>{ const n=shiftDateKey(ordersFilter.date||todayStr(),1); if(n<=todayStr()){ ordersFilter.mode='date'; ordersFilter.date=n; renderOrdersPage(); } };
 
   const rows = filteredOrders(ordersFilter);
   const table = document.getElementById('orders-table');
@@ -1507,12 +1517,14 @@ function renderExpensesPage(){
   const cashOut=activeMoves.filter(x=>x.type==='Out').reduce((s,x)=>s+Number(x.amount||0),0);
   el.innerHTML=`
     <div class="page-title"><div><h1>Expenses</h1><div class="psub">Expenses and cash drawer movements.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-secondary" id="add-cash-movement">+ Cash In / Out</button><button class="btn btn-primary" id="add-expense-btn">+ Add Expense</button></div></div>
-    <div class="filter-bar"><button class="filter-btn ${expensesFilter.mode==='today'?'active':''}" data-em="today">Today</button><button class="filter-btn ${expensesFilter.mode==='all'?'active':''}" data-em="all">All</button><input type="date" id="expense-date-input" value="${expensesFilter.mode==='date'?expensesFilter.date:todayStr()}"></div>
+    <div class="filter-bar"><button class="filter-btn ${expensesFilter.mode==='today'?'active':''}" data-em="today">Today</button><button class="filter-btn ${expensesFilter.mode==='all'?'active':''}" data-em="all">All</button><input type="date" id="expense-date-input" value="${expensesFilter.mode==='date'?expensesFilter.date:todayStr()}"><button class="filter-btn" id="expenses-prev">‹ PREV</button><button class="filter-btn" id="expenses-next" ${shiftDateKey(expensesFilter.mode==='date'?expensesFilter.date:todayStr(),1)<=todayStr()?'':'disabled'}>NEXT ›</button></div>
     <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));"><div class="stat-card accent"><div class="slabel">Total Expenses</div><div class="sval">${PESO(total)}</div></div><div class="stat-card"><div class="slabel">Cash In</div><div class="sval" style="font-size:22px;">${PESO(cashIn)}</div></div><div class="stat-card"><div class="slabel">Cash Out</div><div class="sval" style="font-size:22px;color:var(--rust);">${PESO(cashOut)}</div></div><div class="stat-card"><div class="slabel">Expense Entries</div><div class="sval" style="font-size:22px;">${activeRows.length}</div></div></div>
     <div class="card" style="padding:18px 20px;margin-bottom:16px;overflow-x:auto;"><div class="section-title">Cash Drawer Movements</div><table><thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Reason</th><th>Cashier</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>${moves.length?moves.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td><b>${esc(x.type)}</b></td><td>${esc(x.reason)}</td><td>${esc(x.cashier)}</td><td class="num">${PESO(x.amount)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isDateLocked(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<button class="icon-btn danger" data-void-cash="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No cash drawer movements.</div></td></tr>'}</tbody></table></div>
     <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date</th><th>Time</th><th>Note</th><th class="num">Amount</th><th>Cashier</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td>${esc(x.note)}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.cashier)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':isDateLocked(x.date)?'<span class="badge-inactive">LOCKED</span>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td><td>${x.status==='Voided'?esc(x.voidReason||''):isDateLocked(x.date)?'<span style="font-size:11px;color:var(--text-dim);">Locked</span>':'<button class="icon-btn danger" data-del-exp="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No expenses logged for this period.</div></td></tr>'}</tbody></table></div>`;
   el.querySelectorAll('[data-em]').forEach(b=>b.onclick=()=>{expensesFilter.mode=b.dataset.em;renderExpensesPage();});
   el.querySelector('#expense-date-input').onchange=e=>{expensesFilter.mode='date';expensesFilter.date=e.target.value;renderExpensesPage();};
+  el.querySelector('#expenses-prev').onclick=()=>{const current=expensesFilter.mode==='date'?expensesFilter.date:todayStr();expensesFilter.mode='date';expensesFilter.date=shiftDateKey(current,-1);renderExpensesPage();};
+  el.querySelector('#expenses-next').onclick=()=>{const current=expensesFilter.mode==='date'?expensesFilter.date:todayStr();const n=shiftDateKey(current,1);if(n<=todayStr()){expensesFilter.mode='date';expensesFilter.date=n;renderExpensesPage();}};
   el.querySelector('#add-expense-btn').onclick=()=>{if(canCreateEntryForDate(todayStr()))openAddExpenseModal();};
   el.querySelector('#add-cash-movement').onclick=openCashMovementModal;
   el.querySelectorAll('[data-del-exp]').forEach(b=>b.onclick=async()=>{const x=EXPENSES.find(e=>e.id===b.dataset.delExp);if(!x)return;if(!canCreateEntryForDate(x.date))return;const reason=prompt('Reason for voiding this expense:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();await persistExpenses();await writeAudit('void_expense','expense',x.id,reason.trim(),{amount:x.amount,note:x.note,date:x.date});renderExpensesPage();toast('Expense voided — original record preserved');});
@@ -1743,6 +1755,8 @@ function renderReports(){
       <span style="color:var(--text-dim);">–</span>
       <input type="date" id="report-end" value="${reportsFilter.end}">
       <button class="filter-btn" id="report-apply-range">Apply Range</button>
+      <button class="filter-btn" id="reports-prev">‹ PREV</button>
+      <button class="filter-btn" id="reports-next" ${shiftDateKey(reportsFilter.mode==='date'?reportsFilter.date:todayStr(),1)<=todayStr()?'':'disabled'}>NEXT ›</button>
     </div>
 
     <div class="stat-grid">
@@ -1780,7 +1794,7 @@ function renderReports(){
       </div>
     </div>
 
-    <div class="card" style="padding:18px 20px;margin-top:16px;overflow-x:auto;">
+    <div class="card" style="padding:18px 20px;margin-top:16px;overflow-x:auto;${isSuperuser()?'':'display:none;'}">
       <div class="section-title">Product Performance</div>
       <table>
         <thead><tr><th>Product</th><th class="num">Hot 12oz</th><th class="num">Iced 16oz</th><th class="num">Iced 20oz</th><th class="num">Qty Sold</th><th class="num">Total Sales</th></tr></thead>
@@ -1857,6 +1871,8 @@ function renderReports(){
   el.querySelector('#report-date').onchange = (e)=>{ reportsFilter.mode='date'; reportsFilter.date=e.target.value; renderReports(); };
   el.querySelector('#report-start').onchange = (e)=>{ reportsFilter.start=e.target.value; };
   el.querySelector('#report-end').onchange = (e)=>{ reportsFilter.end=e.target.value; };
+  el.querySelector('#reports-prev').onclick=()=>{const current=reportsFilter.mode==='date'?reportsFilter.date:todayStr();reportsFilter.mode='date';reportsFilter.date=shiftDateKey(current,-1);renderReports();};
+  el.querySelector('#reports-next').onclick=()=>{const current=reportsFilter.mode==='date'?reportsFilter.date:todayStr();const n=shiftDateKey(current,1);if(n<=todayStr()){reportsFilter.mode='date';reportsFilter.date=n;renderReports();}};
   el.querySelector('#report-apply-range').onclick = ()=>{ reportsFilter.mode='range'; renderReports(); };
   el.querySelector('#export-report-btn').onclick = ()=> exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, eod);
   const unlockBtn=el.querySelector('#eod-unlock');
