@@ -511,7 +511,8 @@ function canCreateEntry(){
 }
 function canCreateEntryForDate(dateKey){
   const d=dateKey||todayStr();
-  if(!isSuperuser() && d!==todayStr()){ toast('Past-date entries are not allowed.'); return false; }
+  if(isSuperuser()) return true;
+  if(d!==todayStr()){ toast('Past-date entries are not allowed.'); return false; }
   if(isDateLocked(d)){ toast(`${d} is already reconciled and locked.`); return false; }
   return true;
 }
@@ -532,6 +533,8 @@ function openCashMovementModal(){
     <div class="modal-foot"><button class="btn btn-secondary" id="cm-cancel">Cancel</button><button class="btn btn-primary" id="cm-save">Save Movement</button></div>`);
   document.getElementById('cm-cancel').onclick=closeModal;
   document.getElementById('cm-save').onclick=async()=>{
+    const saveBtn=document.getElementById('cm-save');
+    if(saveBtn.disabled) return;
     const amount=Number(document.getElementById('cm-amount').value)||0;
     const type=document.getElementById('cm-type').value;
     const reason=document.getElementById('cm-reason').value.trim();
@@ -541,10 +544,19 @@ function openCashMovementModal(){
     if(!canCreateEntryForDate(date)) return;
     const now=new Date();
     const item={id:uid(),date,time:nowTimeStr().slice(0,5),timestamp:now.toISOString(),type,amount,reason,cashier:currentActor(),status:'Active'};
-    CASH_MOVEMENTS.unshift(item);
-    await persistCashMovements();
-    await writeAudit(type==='In'?'cash_in':'cash_out','cash_movement',item.id,reason,{amount,date,type});
-    closeModal(); renderExpensesPage(); toast(type==='In'?'Cash In recorded':'Cash Out recorded');
+    saveBtn.disabled=true;
+    try{
+      CASH_MOVEMENTS.unshift(item);
+      await persistCashMovements();
+      await writeAudit(type==='In'?'cash_in':'cash_out','cash_movement',item.id,reason,{amount,date,type});
+      closeModal(); renderExpensesPage(); toast(type==='In'?'Cash In recorded':'Cash Out recorded');
+    }catch(err){
+      CASH_MOVEMENTS=CASH_MOVEMENTS.filter(x=>x.id!==item.id);
+      saveBtn.disabled=false;
+      console.error('Cash movement save failed:',err);
+      toast('Cash movement was NOT saved. Please retry.');
+    }
+  
   };
 }
 
@@ -711,6 +723,12 @@ async function loadProfile(user){
 async function writeAudit(action,entityType='',entityId='',reason='',details={}){
   if(!CURRENT_USER) return;
   try{ await fetch(`${SUPABASE_URL}/rest/v1/audit_logs`,{method:'POST',headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${CURRENT_USER.access_token}`,'Content-Type':'application/json'},body:JSON.stringify({auth_user_id:CURRENT_USER.id,username:CURRENT_PROFILE?.username||'',action,entity_type:entityType,entity_id:entityId,reason,details})}); }catch(e){console.warn('Audit log failed',e);}
+}
+
+function requireActionReason(label='this change'){
+  const reason=prompt(`Reason / note for ${label}:`);
+  if(!reason || !reason.trim()){ toast('A reason / note is required.'); return null; }
+  return reason.trim();
 }
 function showApp(){ document.getElementById('login-screen').style.display='none'; document.getElementById('app').style.display=''; document.getElementById('cashier-pill').textContent='User: '+(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff'); applyPermissions(); }
 function showLoginError(msg){ const e=document.getElementById('login-error'); e.textContent=msg||''; }
@@ -1296,6 +1314,8 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
       isDrink:!!i.isDrink, qty:Number(i.qty)||1, unitPrice:Number(i.unitPrice)||0,
       lineTotal:Number(i.unitPrice)*Number(i.qty), addons:Array.isArray(i.addons)?i.addons:[]
     }));
+    const orderNote=requireActionReason(`creating order ${orderChannel}`);
+    if(!orderNote){ submitting=false; return; }
     const payload={
       p_source:orderChannel,
       p_grab_code:grabOrderCode,
@@ -1327,7 +1347,7 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
     const order=mapDbOrder({...dbOrder,pos_order_items:dbOrder.items||[]});
     order.orderNumber=orderChannel==='GrabFood'?(grabOrderCode||order.orderNumber):order.orderNumber;
     ORDERS.unshift(order);
-    await writeAudit('create_order','order',order.id,'',{orderNumber:order.orderNumber,date:order.date,total:order.total,source:order.source,paymentMethod:order.paymentMethod,status:order.status});
+    await writeAudit('create_order','order',order.id,orderNote,{orderNumber:order.orderNumber,date:order.date,total:order.total,source:order.source,paymentMethod:order.paymentMethod,status:order.status});
     showOrderConfirmation(order);
     CART=[];grabCode='';grabDiscountType='None';grabDiscountAmount=0;renderCart();renderOrderNumPreview();
   }catch(e){
@@ -1424,14 +1444,14 @@ function openOrderDetail(id){
           <div class="sumrow grand"><span>Total</span><span>${PESO(o.total)}</span></div>
         </div>
         <div class="section-title" style="margin-top:16px;">Order Status</div>
-        <select id="status-select" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);font-size:14px;" ${(isDateLocked(o.date)||(!isSuperuser() && o.date!==todayStr()))?'disabled':''}>
+        <select id="status-select" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);font-size:14px;" ${((isDateLocked(o.date)&&!isSuperuser())||(!isSuperuser() && o.date!==todayStr()))?'disabled':''}>
           ${['New','Preparing','Completed','Cancelled'].map(s=>`<option value="${s}" ${s===o.status?'selected':''}>${s}</option>`).join('')}
         </select>
         ${(!isSuperuser() && o.date!==todayStr())?`<div style="font-size:12px;color:var(--text-dim);margin-top:7px;">🔒 Previous-date orders cannot be edited by staff.</div>`:''}
       </div>
       <div class="modal-foot">
         <button class="btn btn-secondary" id="modal-close">Close</button>
-        <button class="btn btn-primary" id="modal-save-status" ${(isDateLocked(o.date)||(!isSuperuser() && o.date!==todayStr()))?'disabled':''}>Update Status</button>
+        <button class="btn btn-primary" id="modal-save-status" ${((isDateLocked(o.date)&&!isSuperuser())||(!isSuperuser() && o.date!==todayStr()))?'disabled':''}>Update Status</button>
       </div>`;
   }
   openModal(body());
@@ -1445,7 +1465,7 @@ function openOrderDetail(id){
       const updated=await res.json();
       if(!updated?.length) throw new Error('Order status was not updated.');
       o.status=newStatus;
-      await writeAudit('update_order_status','order',o.id,'',{orderNumber:o.orderNumber,date:o.date,oldStatus,newStatus});
+      await writeAudit('update_order_status','order',o.id,reason,{orderNumber:o.orderNumber,date:o.date,oldStatus,newStatus});
       closeModal();
       renderOrdersPage();
       toast('Order ' + o.orderNumber + ' marked ' + newStatus);
@@ -1482,7 +1502,7 @@ function renderExpensesPage(){
     <div class="page-title"><div><h1>Expenses</h1><div class="psub">Expenses and cash drawer movements.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-secondary" id="add-cash-movement">+ Cash In / Out</button><button class="btn btn-primary" id="add-expense-btn">+ Add Expense</button></div></div>
     <div class="filter-bar"><button class="filter-btn ${expensesFilter.mode==='today'?'active':''}" data-em="today">Today</button><button class="filter-btn ${expensesFilter.mode==='all'?'active':''}" data-em="all">All</button><input type="date" id="expense-date-input" value="${expensesFilter.mode==='date'?expensesFilter.date:todayStr()}"></div>
     <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));"><div class="stat-card accent"><div class="slabel">Total Expenses</div><div class="sval">${PESO(total)}</div></div><div class="stat-card"><div class="slabel">Cash In</div><div class="sval" style="font-size:22px;">${PESO(cashIn)}</div></div><div class="stat-card"><div class="slabel">Cash Out</div><div class="sval" style="font-size:22px;color:var(--rust);">${PESO(cashOut)}</div></div><div class="stat-card"><div class="slabel">Expense Entries</div><div class="sval" style="font-size:22px;">${activeRows.length}</div></div></div>
-    <div class="card" style="padding:18px 20px;margin-bottom:16px;overflow-x:auto;"><div class="section-title">Cash Drawer Movements</div><table><thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Reason</th><th>Cashier</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>${moves.length?moves.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td><b>${esc(x.type)}</b></td><td>${esc(x.reason)}</td><td>${esc(x.cashier)}</td><td class="num">${PESO(x.amount)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':isDateLocked(x.date)?'<span class="badge-inactive">LOCKED</span>':'<button class="icon-btn danger" data-void-cash="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No cash drawer movements.</div></td></tr>'}</tbody></table></div>
+    <div class="card" style="padding:18px 20px;margin-bottom:16px;overflow-x:auto;"><div class="section-title">Cash Drawer Movements</div><table><thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Reason</th><th>Cashier</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>${moves.length?moves.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td><b>${esc(x.type)}</b></td><td>${esc(x.reason)}</td><td>${esc(x.cashier)}</td><td class="num">${PESO(x.amount)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isDateLocked(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<button class="icon-btn danger" data-void-cash="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No cash drawer movements.</div></td></tr>'}</tbody></table></div>
     <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date</th><th>Time</th><th>Note</th><th class="num">Amount</th><th>Cashier</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td>${esc(x.note)}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.cashier)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':isDateLocked(x.date)?'<span class="badge-inactive">LOCKED</span>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td><td>${x.status==='Voided'?esc(x.voidReason||''):isDateLocked(x.date)?'<span style="font-size:11px;color:var(--text-dim);">Locked</span>':'<button class="icon-btn danger" data-del-exp="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No expenses logged for this period.</div></td></tr>'}</tbody></table></div>`;
   el.querySelectorAll('[data-em]').forEach(b=>b.onclick=()=>{expensesFilter.mode=b.dataset.em;renderExpensesPage();});
   el.querySelector('#expense-date-input').onchange=e=>{expensesFilter.mode='date';expensesFilter.date=e.target.value;renderExpensesPage();};
@@ -1517,7 +1537,7 @@ function openAddExpenseModal(){
       timestamp: now.toISOString(), cashier: (CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')
     });
     await persistExpenses();
-    await writeAudit('create_expense','expense',EXPENSES[0].id,'',{amount,note,date,cashier:EXPENSES[0].cashier});
+    await writeAudit('create_expense','expense',EXPENSES[0].id,note,{amount,note,date,cashier:EXPENSES[0].cashier});
     closeModal();
     renderExpensesPage();
     toast('Expense recorded');
@@ -1836,9 +1856,11 @@ function renderReports(){
   if(unlockBtn) unlockBtn.onclick=async()=>{
     if(!isSuperuser()) return;
     if(!confirm(`Unlock reconciled day ${selectedEodDate}?`)) return;
+    const reason=requireActionReason(`unlocking reconciled day ${selectedEodDate}`);
+    if(!reason) return;
     EOD[selectedEodDate]={...(EOD[selectedEodDate]||{}),locked:false,unlockedAt:new Date().toISOString(),unlockedBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Superuser')};
     await persistEod();
-    await writeAudit('UNLOCK_RECONCILED_DAY','eod',selectedEodDate,'Superuser unlocked reconciled day',{date:selectedEodDate});
+    await writeAudit('UNLOCK_RECONCILED_DAY','eod',selectedEodDate,reason,{date:selectedEodDate});
     toast(`${selectedEodDate} unlocked.`);
     renderReports();
   };
@@ -1852,6 +1874,8 @@ function renderReports(){
     const calcDiv = document.getElementById('eod-calc');
     if(actual===''){
       calcDiv.innerHTML = `<div class="sumrow" style="margin-top:10px;"><span>Cash Sales</span><span>${PESO(cashSales)}</span></div>
+      <div class="sumrow"><span>Cash In</span><span>+${PESO(drawerTotals.in)}</span></div>
+      <div class="sumrow"><span>Cash Out</span><span>−${PESO(drawerTotals.out)}</span></div>
       <div class="sumrow"><span>Less: Expenses</span><span>−${PESO(expenseTotal)}</span></div>
       <div class="sumrow"><span>Expected Cash</span><span>${PESO(expected)}</span></div>
       <div class="sumrow"><span>GCash Sales (separate)</span><span>${PESO(gcashSales)}</span></div>`;
@@ -1882,9 +1906,9 @@ function renderReports(){
       const varianceReason=(document.getElementById('eod-variance-reason')?.value||'').trim();
       const dateKey = selectedEodDate || (reportsFilter.mode==='date' ? reportsFilter.date : todayStr());
       if(!isSuperuser() && dateKey!==todayStr()){ toast('Past-date reconciliation is not allowed.'); return; }
-      if(isDateLocked(dateKey)){ toast(`${dateKey} is already reconciled and locked.`); return; }
+      if(isDateLocked(dateKey) && !isSuperuser()){ toast(`${dateKey} is already reconciled and locked.`); return; }
       if(actual===null){ toast('Enter Actual Cash Counted before saving reconciliation.'); return; }
-      if(Math.abs(variance)>=0.005 && !varianceReason){ toast('Please enter a reason for the cash variance.'); return; }
+      if(!varianceReason){ toast('Please enter a reconciliation note/reason.'); return; }
       EOD[dateKey] = {...(EOD[dateKey]||{}), opening, actual, expected, variance, totalCashSales:cashSales, cashIn:drawerTotals.in, cashOut:drawerTotals.out, totalGcashSales:gcashSales, totalExpenses:expenseTotal, varianceReason, locked:true, reconciledAt:new Date().toISOString(), reconciledBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')};
       await storeSet('hibi-eod', EOD);
       await writeAudit('reconcile_day','eod',dateKey,varianceReason,{opening,actual,expected,variance,cashIn:drawerTotals.in,cashOut:drawerTotals.out,totalCashSales:cashSales,totalGcashSales:gcashSales,totalExpenses:expenseTotal});
@@ -2289,8 +2313,11 @@ function renderMenuMgmt(){
   }).join('');
   catsWrap.querySelectorAll('[data-toggle]').forEach(t=>t.onclick=async()=>{
     const pr = MENU.products.find(p=>p.id===t.dataset.toggle);
+    const reason=requireActionReason(`${pr.active?'deactivating':'activating'} product ${pr.name}`);
+    if(!reason) return;
     pr.active = !pr.active;
     await persistMenu();
+    await writeAudit('toggle_product','product',pr.id,reason,{name:pr.name,active:pr.active});
     renderMenuMgmt();
   });
   catsWrap.querySelectorAll('[data-photo]').forEach(b=>b.onclick=()=>{
@@ -2304,6 +2331,8 @@ function renderMenuMgmt(){
     if(file.size>10*1024*1024){ toast('Please choose an image smaller than 10 MB.'); input.value=''; return; }
     const pr=MENU.products.find(p=>p.id===input.dataset.photoInput);
     if(!pr) return;
+    const reason=requireActionReason(`changing photo for ${pr.name}`);
+    if(!reason) { input.value=''; return; }
     try{
       if(!HAS_SUPABASE || !supabaseOk){ toast('Supabase Storage is not available. Please check the connection.'); return; }
       toast('Uploading photo…');
@@ -2313,6 +2342,7 @@ function renderMenuMgmt(){
       pr.imagePath=result.path;
       await persistMenu();
       if(oldPath && oldPath!==result.path) await deleteProductImage(oldPath);
+      await writeAudit('update_product_photo','product',pr.id,reason,{name:pr.name});
       renderMenuMgmt();
       toast('Product photo updated');
     }catch(err){ console.error(err); toast('Could not save this photo. Check Supabase Storage setup.'); }
@@ -2320,8 +2350,11 @@ function renderMenuMgmt(){
   catsWrap.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEditProductModal(MENU.products.find(p=>p.id===b.dataset.edit)));
   catsWrap.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
     if(confirm('Delete this product? This cannot be undone.')){
+      const pr=MENU.products.find(p=>p.id===b.dataset.del); if(!pr)return;
+      const reason=requireActionReason(`deleting product ${pr.name}`); if(!reason)return;
       MENU.products = MENU.products.filter(p=>p.id!==b.dataset.del);
       await persistMenu();
+      await writeAudit('delete_product','product',pr.id,reason,{name:pr.name});
       renderMenuMgmt();
     }
   });
@@ -2337,13 +2370,16 @@ function renderMenuMgmt(){
     </div>`).join('') || `<div style="color:var(--text-dim);font-size:13px;">No add-ons yet.</div>`;
   addonWrap.querySelectorAll('[data-atoggle]').forEach(t=>t.onclick=async()=>{
     const a = ADDONS.find(x=>x.id===t.dataset.atoggle);
-    a.active=!a.active; await persistAddons(); renderMenuMgmt();
+    const reason=requireActionReason(`${a.active?'deactivating':'activating'} add-on ${a.name}`); if(!reason)return;
+    a.active=!a.active; await persistAddons(); await writeAudit('toggle_addon','addon',a.id,reason,{name:a.name,active:a.active}); renderMenuMgmt();
   });
   addonWrap.querySelectorAll('[data-aedit]').forEach(b=>b.onclick=()=>openEditAddonModal(ADDONS.find(a=>a.id===b.dataset.aedit)));
   addonWrap.querySelectorAll('[data-adel]').forEach(b=>b.onclick=async()=>{
     if(confirm('Delete this add-on?')){
+      const a=ADDONS.find(x=>x.id===b.dataset.adel); if(!a)return;
+      const reason=requireActionReason(`deleting add-on ${a.name}`); if(!reason)return;
       ADDONS = ADDONS.filter(a=>a.id!==b.dataset.adel);
-      await persistAddons(); renderMenuMgmt();
+      await persistAddons(); await writeAudit('delete_addon','addon',a.id,reason,{name:a.name}); renderMenuMgmt();
     }
   });
 }
@@ -2362,8 +2398,10 @@ function openAddCategoryModal(){
   document.getElementById('modal-save').onclick = async ()=>{
     const name = document.getElementById('new-cat-name').value.trim();
     if(!name) return;
+    const reason=requireActionReason(`adding category ${name}`); if(!reason)return;
     if(!MENU.categories.includes(name)) MENU.categories.push(name);
     await persistMenu();
+    await writeAudit('create_category','category',name,reason,{name});
     closeModal();
     renderMenuMgmt();
   };
@@ -2482,6 +2520,7 @@ function openEditProductModal(pr){
     document.getElementById('modal-save').onclick = async ()=>{
       readSizesFromDom();
       if(!name.trim() || sizes.length===0){ toast('Please enter a name and at least one size/price.'); return; }
+      const reason=requireActionReason(`${isNew?'creating':'editing'} product ${name.trim()}`); if(!reason)return;
       const sizeMap = {}; const grabMap={}; sizes.forEach(s=>{sizeMap[s.name]=s.price;grabMap[s.name]=s.grabPrice;});
       let imagePath = pr?.imagePath || extractProductImagePath(pr?.image);
       try{
@@ -2507,6 +2546,7 @@ function openEditProductModal(pr){
         }
       }catch(err){ console.error(err); toast('Could not upload the product photo. Product was not saved.'); return; }
       await persistMenu();
+      await writeAudit(isNew?'create_product':'edit_product','product',isNew?productId:pr.id,reason,{name:name.trim(),category});
       closeModal();
       renderMenuMgmt();
       toast('Product saved');
@@ -2535,9 +2575,12 @@ function openEditAddonModal(a){
     const p = parseFloat(document.getElementById('f-aprice').value)||0;
     const gp = parseFloat(document.getElementById('f-agrabprice').value)||p;
     if(!n) return;
-    if(isNew) ADDONS.push({id:uid(), name:n, price:p, grabPrice:gp, active:true});
+    const reason=requireActionReason(`${isNew?'creating':'editing'} add-on ${n}`); if(!reason)return;
+    const id=isNew?uid():a.id;
+    if(isNew) ADDONS.push({id, name:n, price:p, grabPrice:gp, active:true});
     else { a.name=n; a.price=p; a.grabPrice=gp; }
     await persistAddons();
+    await writeAudit(isNew?'create_addon':'edit_addon','addon',id,reason,{name:n,price:p,grabPrice:gp});
     closeModal();
     renderMenuMgmt();
     toast('Add-on saved');
@@ -2550,13 +2593,47 @@ function openEditAddonModal(a){
 async function renderAuditLog(){
   const el=document.getElementById('audit-content');
   if(!isSuperuser()){ el.innerHTML='<div class="empty-state">Superuser access required.</div>'; return; }
-  el.innerHTML=`<div class="page-title"><div><h1>Audit Log</h1><div class="psub">Record of logins, orders, status changes, expenses, cash movements, reconciliation, unlocks and system actions</div></div><button class="btn btn-secondary" id="audit-refresh">↻ Refresh</button></div><div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date / Time</th><th>User</th><th>Action</th><th>Entity</th><th>Reason</th><th>Details</th></tr></thead><tbody id="audit-rows"><tr><td colspan="6"><div class="empty-state">Loading…</div></td></tr></tbody></table></div>`;
-  document.getElementById('audit-refresh').onclick=renderAuditLog;
+  el.innerHTML=`<div class="page-title"><div><h1>Audit Log</h1><div class="psub">Record of logins, orders, status changes, expenses, cash movements, reconciliation, unlocks and system actions</div></div><button class="btn btn-secondary" id="audit-refresh">↻ Refresh</button></div>
+    <div class="filter-bar" style="align-items:flex-end;">
+      <div class="field" style="margin:0;min-width:140px;"><label>From</label><input type="date" id="audit-from"></div>
+      <div class="field" style="margin:0;min-width:140px;"><label>To</label><input type="date" id="audit-to"></div>
+      <div class="field" style="margin:0;min-width:150px;"><label>User</label><input type="text" id="audit-user" placeholder="username"></div>
+      <div class="field" style="margin:0;min-width:170px;"><label>Action</label><select id="audit-action"><option value="">All actions</option></select></div>
+      <div class="field" style="margin:0;min-width:150px;"><label>Entity</label><select id="audit-entity"><option value="">All entities</option></select></div>
+      <div class="field" style="margin:0;min-width:220px;flex:1;"><label>Search</label><input type="search" id="audit-search" placeholder="Search reason or details…"></div>
+      <button class="btn btn-secondary" id="audit-clear" type="button">Clear</button>
+    </div>
+    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date / Time</th><th>User</th><th>Action</th><th>Entity</th><th>Reason</th><th>Details</th></tr></thead><tbody id="audit-rows"><tr><td colspan="6"><div class="empty-state">Loading…</div></td></tr></tbody></table></div>`;
+  const renderRows=(rows)=>{
+    const from=document.getElementById('audit-from').value;
+    const to=document.getElementById('audit-to').value;
+    const user=document.getElementById('audit-user').value.trim().toLowerCase();
+    const action=document.getElementById('audit-action').value;
+    const entity=document.getElementById('audit-entity').value;
+    const search=document.getElementById('audit-search').value.trim().toLowerCase();
+    const filtered=rows.filter(x=>{
+      const dt=new Date(x.created_at); const localDate=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(dt);
+      if(from && localDate<from) return false; if(to && localDate>to) return false;
+      if(user && !(x.username||'').toLowerCase().includes(user)) return false;
+      if(action && x.action!==action) return false;
+      if(entity && (x.entity_type||'')!==entity) return false;
+      if(search){ const hay=((x.reason||'')+' '+(typeof x.details==='string'?x.details:JSON.stringify(x.details||{}))).toLowerCase(); if(!hay.includes(search)) return false; }
+      return true;
+    });
+    document.getElementById('audit-rows').innerHTML=filtered.length?filtered.map(x=>`<tr><td>${esc(new Date(x.created_at).toLocaleString('en-PH',{timeZone:'Asia/Manila'}))}</td><td>${esc(x.username||'')}</td><td><b>${esc(x.action||'')}</b></td><td>${esc((x.entity_type||'')+(x.entity_id?': '+x.entity_id:''))}</td><td>${esc(x.reason||'')}</td><td><code style="font-size:11px;white-space:pre-wrap;">${esc(typeof x.details==='string'?x.details:JSON.stringify(x.details||{}))}</code></td></tr>`).join(''):`<tr><td colspan="6"><div class="empty-state">No audit entries match these filters.</div></td></tr>`;
+  };
   try{
-    const res=await fetch(`${SUPABASE_URL}/rest/v1/audit_logs?select=*&order=created_at.desc&limit=500`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${CURRENT_USER.access_token}`}});
+    const res=await fetch(`${SUPABASE_URL}/rest/v1/audit_logs?select=*&order=created_at.desc&limit=1000`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${CURRENT_USER.access_token}`}});
     if(!res.ok) throw new Error(await res.text());
     const rows=await res.json();
-    document.getElementById('audit-rows').innerHTML=rows.length?rows.map(x=>`<tr><td>${esc(new Date(x.created_at).toLocaleString('en-PH',{timeZone:'Asia/Manila'}))}</td><td>${esc(x.username||'')}</td><td><b>${esc(x.action||'')}</b></td><td>${esc((x.entity_type||'')+(x.entity_id?': '+x.entity_id:''))}</td><td>${esc(x.reason||'')}</td><td><code style="font-size:11px;white-space:pre-wrap;">${esc(typeof x.details==='string'?x.details:JSON.stringify(x.details||{}))}</code></td></tr>`).join(''):`<tr><td colspan="6"><div class="empty-state">No audit entries yet.</div></td></tr>`;
+    const actions=[...new Set(rows.map(x=>x.action).filter(Boolean))].sort();
+    const entities=[...new Set(rows.map(x=>x.entity_type).filter(Boolean))].sort();
+    document.getElementById('audit-action').innerHTML='<option value="">All actions</option>'+actions.map(x=>`<option value="${escAttr(x)}">${esc(x)}</option>`).join('');
+    document.getElementById('audit-entity').innerHTML='<option value="">All entities</option>'+entities.map(x=>`<option value="${escAttr(x)}">${esc(x)}</option>`).join('');
+    ['audit-from','audit-to','audit-user','audit-action','audit-entity','audit-search'].forEach(id=>document.getElementById(id).addEventListener(id==='audit-search'?'input':'change',()=>renderRows(rows)));
+    document.getElementById('audit-clear').onclick=()=>{['audit-from','audit-to','audit-user','audit-search'].forEach(id=>document.getElementById(id).value='');document.getElementById('audit-action').value='';document.getElementById('audit-entity').value='';renderRows(rows);};
+    document.getElementById('audit-refresh').onclick=renderAuditLog;
+    renderRows(rows);
   }catch(e){ console.error(e); document.getElementById('audit-rows').innerHTML=`<tr><td colspan="6"><div class="empty-state">Could not load audit log.</div></td></tr>`; }
 }
 
@@ -2628,6 +2705,7 @@ function renderSettings(){
     const rows = await r.json();
     if(rows[0]) CURRENT_PROFILE = {...CURRENT_PROFILE, ...rows[0]};
     SETTINGS.cashierName = CURRENT_PROFILE.display_name || CURRENT_PROFILE.username || 'Staff';
+    await writeAudit('change_display_name','profile',CURRENT_USER.id,reason,{displayName:name});
     document.getElementById('cashier-pill').textContent='User: '+SETTINGS.cashierName;
     toast('Display name updated');
   };
@@ -2653,16 +2731,22 @@ function renderSettings(){
     }
     if(saveLogoBtn) saveLogoBtn.onclick=async()=>{
       if(pendingLogo===undefined) pendingLogo=SETTINGS.logoUrl||'';
+      if(pendingLogo===(SETTINGS.logoUrl||'')) return;
+      const reason=requireActionReason('changing the POS logo'); if(!reason)return;
       SETTINGS.logoUrl=pendingLogo||'';
       await persistSettings();
+      await writeAudit('change_branding','settings','logo',reason,{hasLogo:!!SETTINGS.logoUrl});
       applyBranding();
       toast(SETTINGS.logoUrl?'Logo updated.':'Logo removed.');
       renderSettings();
     };
     if(removeLogoBtn) removeLogoBtn.onclick=async()=>{
+      if(!SETTINGS.logoUrl) return;
+      const reason=requireActionReason('removing the POS logo'); if(!reason)return;
       pendingLogo='';
       SETTINGS.logoUrl='';
       await persistSettings();
+      await writeAudit('remove_branding','settings','logo',reason,{});
       applyBranding();
       toast('Logo removed.');
       renderSettings();
@@ -2702,6 +2786,7 @@ async function wireUserManagement(){
   form.save.onclick=async()=>{
     let auth_user_id=form.authId.value.trim(), username=form.username.value.trim().toLowerCase(), display_name=form.display.value.trim(), role=form.role.value, password=form.password.value, active=form.active.value==='true';
     if(!username){toast('Username is required.');return;}
+    const reason=requireActionReason(`${editingId?'updating':'creating'} user ${username}`); if(!reason)return;
     if(!editingId && !auth_user_id){
       if(!password || password.length<6){toast('For a new user, enter a password of at least 6 characters.');return;}
       try{
@@ -2719,6 +2804,7 @@ async function wireUserManagement(){
     const method=editingId?'PATCH':'POST';
     const r=await fetch(url,{method,headers:{...headers,Prefer:'return=minimal'},body:JSON.stringify(payload)});
     if(!r.ok){toast('Could not save user: '+await r.text());return;}
+    await writeAudit(editingId?'update_user':'create_user','user',auth_user_id,reason,{username,display_name,role,active,permissions});
     toast(editingId?'User access updated':'User profile created'); resetForm(); await renderUsers();
   };
   resetForm();
