@@ -220,6 +220,10 @@ body{background:#F3F3F0;color:#202020;}
 .topbar{grid-column:1;grid-row:1;height:100vh;width:96px;padding:18px 10px 14px;background:#202020;color:#fff;display:flex;flex-direction:column;align-items:center;gap:16px;border-right:0;z-index:20;}
 .brand{display:flex;flex-direction:column;gap:7px;width:100%;align-items:center;}
 .brand .mark{width:42px;height:42px;border-radius:12px;background:var(--caramel);color:#202020;font-size:20px;box-shadow:0 7px 18px rgba(242,140,40,.22);}
+.login-mark.has-logo,.brand .mark.has-logo{background:transparent;box-shadow:none;}
+.login-mark.has-logo img,.brand .mark.has-logo img{width:100%;height:100%;object-fit:contain;display:block;border-radius:inherit;}
+.logo-preview{width:96px;height:96px;border:1px solid #E4E4DF;border-radius:12px;background:#FAFAF8;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.logo-preview img{max-width:100%;max-height:100%;object-fit:contain;display:block;}
 .brand .name,.brand .sub{display:none;}
 nav.tabs{margin:0;width:100%;display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;}
 nav.tabs button{width:76px;min-height:61px;padding:8px 4px;border-radius:12px;background:transparent;color:#A7A7A3;font-weight:600;font-size:10px;line-height:1.1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:5px;transition:.16s;}
@@ -573,7 +577,52 @@ function defaultAddons(){
   ];
 }
 function defaultSettings(){
-  return {nextOrderNum:1, cashierName:'Staff'};
+  return {nextOrderNum:1, cashierName:'Staff', logoUrl:''};
+}
+
+/* ---------- Branding ---------- */
+function applyBranding(){
+  const logo=SETTINGS?.logoUrl||'';
+  document.querySelectorAll('.login-mark, .brand .mark').forEach(el=>{
+    el.textContent='';
+    el.classList.toggle('has-logo',!!logo);
+    if(logo){
+      const img=document.createElement('img');
+      img.src=logo;
+      img.alt='Hibi Cafe logo';
+      el.appendChild(img);
+    }else{
+      el.textContent='H';
+    }
+  });
+}
+
+function optimizeLogoImage(file){
+  return new Promise((resolve,reject)=>{
+    if(!file || !file.type.startsWith('image/')) return reject(new Error('Please select an image file.'));
+    if(file.size>5*1024*1024) return reject(new Error('Logo image must be 5MB or smaller.'));
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error('Could not read the logo image.'));
+    reader.onload=ev=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error('Invalid logo image.'));
+      img.onload=()=>{
+        const maxSide=700;
+        const scale=Math.min(1,maxSide/Math.max(img.naturalWidth,img.naturalHeight));
+        const w=Math.max(1,Math.round(img.naturalWidth*scale));
+        const h=Math.max(1,Math.round(img.naturalHeight*scale));
+        const canvas=document.createElement('canvas');
+        canvas.width=w; canvas.height=h;
+        const ctx=canvas.getContext('2d');
+        ctx.clearRect(0,0,w,h);
+        ctx.drawImage(img,0,0,w,h);
+        const webp=canvas.toDataURL('image/webp',0.88);
+        resolve(webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/png'));
+      };
+      img.src=ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 /* ---------- State ---------- */
@@ -635,7 +684,7 @@ async function doLogin(){
   showLoginError(''); const username=document.getElementById('login-username').value.trim().toLowerCase(); const password=document.getElementById('login-password').value;
   if(!username||!password){showLoginError('Enter your username and password.');return;}
   const btn=document.getElementById('login-btn'); btn.disabled=true; btn.textContent='Signing in…';
-  try{ const email=await getLoginProfile(username); if(!email) throw new Error('Invalid username or password.'); const {data,error}=await supabaseClient.auth.signInWithPassword({email,password}); if(error) throw error; CURRENT_USER=data.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); showApp(); await loadAll(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }
+  try{ const email=await getLoginProfile(username); if(!email) throw new Error('Invalid username or password.'); const {data,error}=await supabaseClient.auth.signInWithPassword({email,password}); if(error) throw error; CURRENT_USER=data.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); showApp(); await loadAll(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }
   catch(e){ console.error(e); showLoginError(e.message==='Invalid login credentials'?'Invalid username or password.':e.message||'Unable to sign in.'); if(supabaseClient) await supabaseClient.auth.signOut(); }
   finally{btn.disabled=false;btn.textContent='Sign in';}
 }
@@ -840,6 +889,7 @@ async function loadAll(){
   ADDONS = await storeGet('hibi-addons', ADDONS);
   EOD = await storeGet('hibi-eod', {});
   SETTINGS = await storeGet('hibi-settings', SETTINGS);
+  applyBranding();
   EXPENSES = await storeGet('hibi-expenses', []);
   if(supabaseOk && CURRENT_USER?.access_token){
     await loadPosOrders();
@@ -2512,8 +2562,25 @@ function renderSettings(){
       </div>
       <div style="margin-top:16px;overflow-x:auto;"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Active</th><th>Access</th></tr></thead><tbody id="users-list"><tr><td colspan="5">Loading…</td></tr></tbody></table></div>
     </div>` : '';
+  const brandingSection = isSuperuser() ? `
+    <div class="card" style="padding:18px 20px;max-width:600px;margin-bottom:16px;">
+      <div class="section-title">Branding</div>
+      <p class="permission-note">Upload the Hibi Cafe logo shown on the login screen and in the upper-left corner of the POS.</p>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <div class="logo-preview" id="logo-preview">${SETTINGS.logoUrl?`<img src="${escAttr(SETTINGS.logoUrl)}" alt="Current logo">`:'<span style="font-size:13px;color:var(--text-dim);">H</span>'}</div>
+        <div style="flex:1;min-width:220px;">
+          <div class="field" style="margin-bottom:8px;"><label>Logo Image</label><input type="file" id="s-logo" accept="image/png,image/jpeg,image/webp,image/svg+xml"></div>
+          <div class="image-upload-help">PNG, JPG, WebP or SVG. The logo is resized for reliable storage and used across the POS.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+        <button class="btn btn-primary" id="save-logo" type="button">Save Logo</button>
+        <button class="btn btn-secondary" id="remove-logo" type="button" ${SETTINGS.logoUrl?'':'disabled'}>Remove Logo</button>
+      </div>
+    </div>` : '';
   el.innerHTML = `
     <div class="page-title"><div><h1>Settings</h1><div class="psub">Account, cashier session &amp; data</div></div></div>
+    ${brandingSection}
     <div class="card" style="padding:18px 20px;max-width:480px;margin-bottom:16px;">
       <div class="section-title">Current User</div>
       <div class="field"><label>Display Name</label><input type="text" id="s-cashier" value="${escAttr(currentDisplayName)}"></div>
@@ -2538,6 +2605,43 @@ function renderSettings(){
     document.getElementById('cashier-pill').textContent='User: '+SETTINGS.cashierName;
     toast('Display name updated');
   };
+  if(isSuperuser()){
+    let pendingLogo=SETTINGS.logoUrl||'';
+    const logoInput=document.getElementById('s-logo');
+    const logoPreview=document.getElementById('logo-preview');
+    const saveLogoBtn=document.getElementById('save-logo');
+    const removeLogoBtn=document.getElementById('remove-logo');
+    if(logoInput){
+      logoInput.onchange=async e=>{
+        const file=e.target.files?.[0];
+        if(!file) return;
+        try{
+          pendingLogo=await optimizeLogoImage(file);
+          logoPreview.innerHTML=`<img src="${escAttr(pendingLogo)}" alt="Logo preview">`;
+          removeLogoBtn.disabled=false;
+        }catch(err){
+          e.target.value='';
+          toast(err.message||'Could not load logo.');
+        }
+      };
+    }
+    if(saveLogoBtn) saveLogoBtn.onclick=async()=>{
+      if(pendingLogo===undefined) pendingLogo=SETTINGS.logoUrl||'';
+      SETTINGS.logoUrl=pendingLogo||'';
+      await persistSettings();
+      applyBranding();
+      toast(SETTINGS.logoUrl?'Logo updated.':'Logo removed.');
+      renderSettings();
+    };
+    if(removeLogoBtn) removeLogoBtn.onclick=async()=>{
+      pendingLogo='';
+      SETTINGS.logoUrl='';
+      await persistSettings();
+      applyBranding();
+      toast('Logo removed.');
+      renderSettings();
+    };
+  }
   if(isSuperuser()) wireUserManagement();
 }
 async function wireUserManagement(){
@@ -2605,12 +2709,14 @@ function escAttr(s){ return esc(s); }
    ============================================================ */
 (async function boot(){
   if(!supabaseClient){ showLoginError('Supabase authentication is unavailable.'); return; }
+  try{ SETTINGS = await storeGet('hibi-settings', SETTINGS); }catch(e){}
+  applyBranding();
   document.getElementById('login-btn').onclick=doLogin;
   document.getElementById('login-password').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
   document.getElementById('login-username').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('login-password').focus();});
   document.getElementById('logout-btn').onclick=doLogout;
   const {data}=await supabaseClient.auth.getSession();
-  if(data.session){ try{ CURRENT_USER=data.session.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); showApp(); await loadAll(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }catch(e){await doLogout();} }
+  if(data.session){ try{ CURRENT_USER=data.session.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); showApp(); await loadAll(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }catch(e){await doLogout();} }
 })();
 </script>
 </body>
