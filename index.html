@@ -1266,11 +1266,19 @@ function loyaltyRewardForItem(item){
   const pr=MENU.products.find(p=>p.id===item.productId);
   if(!pr) return {eligible:false, base:0, charge:0, discount:0};
   const priceMap=orderChannel==='GrabFood'?(pr.grabPrices||pr.sizes):pr.sizes;
-  const base16=Number(priceMap['Iced 16oz'] ?? pr.sizes['Iced 16oz']);
-  const chosen=Number(priceMap[item.size] ?? pr.sizes[item.size] ?? item.unitPrice);
+  const keys=Object.keys(priceMap||{});
+  const findSizeKey=(patterns)=>keys.find(k=>patterns.some(re=>re.test(String(k))));
+  const key16=findSizeKey([/^Iced\s*16oz$/i,/^16oz$/i,/16\s*oz/i]);
+  const key20=findSizeKey([/^Iced\s*20oz$/i,/^20oz$/i,/20\s*oz/i]);
+  const base16=key16!=null ? Number(priceMap[key16]) : NaN;
+  const chosen=Number(priceMap[item.size] ?? pr.sizes?.[item.size] ?? item.unitPrice);
   if(!Number.isFinite(chosen)) return {eligible:false,base:0,charge:0,discount:0};
-  if(item.size==='Iced 20oz' && Number.isFinite(base16)) return {eligible:true,base:chosen,charge:Math.max(0,chosen-base16),discount:Math.max(0,base16),label:'20oz — pay '+PESO(Math.max(0,chosen-base16))+' difference'};
-  return {eligible:true,base:chosen,charge:0,discount:chosen,label:item.size+' — FREE'};
+  const is20=(item.size===key20) || /20\s*oz/i.test(String(item.size||''));
+  if(is20 && Number.isFinite(base16)){
+    const difference=Math.max(0,chosen-base16);
+    return {eligible:true,base:chosen,charge:difference,discount:Math.min(chosen,base16),label:'20oz — pay '+PESO(difference)+' difference'};
+  }
+  return {eligible:true,base:chosen,charge:0,discount:chosen,label:(item.size||'Drink')+' — FREE'};
 }
 
 function openCheckoutModal(){
