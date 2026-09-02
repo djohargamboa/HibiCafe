@@ -634,6 +634,22 @@ function defaultSettings(){
   return {nextOrderNum:1, cashierName:'Staff', logoUrl:''};
 }
 
+// Treat legacy/custom menu items with drink-sized options as drinks even if an
+// older saved menu record is missing (or incorrectly stored) the isDrink flag.
+function productIsDrink(pr){
+  if(!pr) return false;
+  if(pr.isDrink===true) return true;
+  const sizeKeys=Object.keys(pr.sizes||{});
+  const looksLikeDrink=sizeKeys.some(k=>/\boz\b/i.test(String(k)) || /^(hot|iced)\b/i.test(String(k)));
+  if(looksLikeDrink) return true;
+  return pr.isDrink!==false;
+}
+function cartItemIsDrink(item){
+  if(!item) return false;
+  const pr=MENU?.products?.find(p=>p.id===item.productId);
+  return productIsDrink(pr) || item.isDrink===true;
+}
+
 /* ---------- Branding ---------- */
 function applyBranding(){
   const logo=SETTINGS?.logoUrl||'';
@@ -1074,7 +1090,7 @@ function renderPOS(){
       const priceLabel = sizeKeys.length===1 ? PESO(priceMap[sizeKeys[0]]??pr.sizes[sizeKeys[0]]) : PESO(Math.min(...sizeKeys.map(k=>priceMap[k]??pr.sizes[k]))) + ' +';
       return `<button class="product-card ${pr.active?'':'unavailable'}" data-pid="${pr.id}" data-cat="${escAttr(pr.category)}">
         <div class="product-visual ${pr.image?'has-image':''}">${pr.image?`<img src="${pr.image}" alt="${escAttr(pr.name)}" loading="lazy">`:`<span>${productIcon(pr)}</span>`}</div>
-        ${pr.isDrink?'':'<span class="ptag">FOOD</span>'}
+        ${productIsDrink(pr)?'':'<span class="ptag">FOOD</span>'}
         <div class="pname">${esc(pr.name)}</div>
         <div class="pprice">${priceLabel}</div>
         <span class="product-add">+</span>
@@ -1180,7 +1196,7 @@ function addToCart(pr, size, addons, qty){
   if(existing){ existing.qty += qty; }
   else{
     CART.push({
-      key, productId:pr.id, name:pr.name, category:pr.category, size, isDrink:pr.isDrink,
+      key, productId:pr.id, name:pr.name, category:pr.category, size, isDrink:productIsDrink(pr),
       addons: addons.map(a=>({id:a.id,name:a.name,price:a.price})),
       unitPrice, qty
     });
@@ -1222,7 +1238,7 @@ function renderCart(){
     });
   }
   const totalItems = CART.reduce((s,i)=>s+i.qty,0);
-  const totalCups = CART.filter(i=>i.isDrink).reduce((s,i)=>s+i.qty,0);
+  const totalCups = CART.filter(i=>cartItemIsDrink(i)).reduce((s,i)=>s+i.qty,0);
   const subtotal = CART.reduce((s,i)=>s+i.unitPrice*i.qty,0);
   const discount=orderChannel==='GrabFood'?Math.min(Math.max(0,Number(grabDiscountAmount)||0),subtotal):0;
   const total=subtotal-discount;
@@ -1246,7 +1262,7 @@ document.getElementById('checkout-btn').addEventListener('click', ()=>{ if(!canC
 
 /* ---- Checkout modal ---- */
 function loyaltyRewardForItem(item){
-  if(!item || !item.isDrink) return {eligible:false, base:0, charge:0, discount:0};
+  if(!item || !cartItemIsDrink(item)) return {eligible:false, base:0, charge:0, discount:0};
   const pr=MENU.products.find(p=>p.id===item.productId);
   if(!pr) return {eligible:false, base:0, charge:0, discount:0};
   const priceMap=orderChannel==='GrabFood'?(pr.grabPrices||pr.sizes):pr.sizes;
@@ -1264,10 +1280,10 @@ function openCheckoutModal(){
   let discountType = orderChannel==='GrabFood' ? (grabDiscountType||'None') : 'None';
   let discountAmount = orderChannel==='GrabFood' ? (Number(grabDiscountAmount)||0) : 0;
   let submitting=false;
-  let selectedLoyaltyKey = loyaltyRewardKey && CART.some(i=>i.key===loyaltyRewardKey && i.isDrink) ? loyaltyRewardKey : null;
+  let selectedLoyaltyKey = loyaltyRewardKey && CART.some(i=>i.key===loyaltyRewardKey && cartItemIsDrink(i)) ? loyaltyRewardKey : null;
   function loyalty(){
     if(orderChannel!=='Walk-in' || !selectedLoyaltyKey) return {discount:0,charge:0,item:null};
-    const item=CART.find(i=>i.key===selectedLoyaltyKey && i.isDrink);
+    const item=CART.find(i=>i.key===selectedLoyaltyKey && cartItemIsDrink(i));
     if(!item) return {discount:0,charge:0,item:null};
     const r=loyaltyRewardForItem(item); return {discount:r.discount,charge:r.charge,item,r};
   }
@@ -1281,9 +1297,9 @@ function openCheckoutModal(){
     return Number(cashPart)>0 && Number(gcashPart)>0 && Number(cashPart)+Number(gcashPart)>=total() && gcashConfirmed;
   }
   function body(){
-    const eligible=CART.filter(i=>i.isDrink);
+    const eligible=CART.filter(i=>cartItemIsDrink(i));
     const lr=loyalty();
-    return `<div class="modal-head"><h3>${orderChannel==='GrabFood'?'Save GrabFood Order':'Checkout'}</h3><div class="msub">${CART.reduce((s,i)=>s+i.qty,0)} item(s) · ${CART.filter(i=>i.isDrink).reduce((s,i)=>s+i.qty,0)} cup(s)</div></div>
+    return `<div class="modal-head"><h3>${orderChannel==='GrabFood'?'Save GrabFood Order':'Checkout'}</h3><div class="msub">${CART.reduce((s,i)=>s+i.qty,0)} item(s) · ${CART.filter(i=>cartItemIsDrink(i)).reduce((s,i)=>s+i.qty,0)} cup(s)</div></div>
     <div class="modal-body">
       ${orderChannel==='Walk-in' && eligible.length ? `<div class="field"><label>Loyalty Card Reward</label><select id="loyalty-reward"><option value="">No loyalty reward</option>${eligible.map(i=>{const r=loyaltyRewardForItem(i);return r.eligible?`<option value="${escAttr(i.key)}" ${selectedLoyaltyKey===i.key?'selected':''}>10th drink free — ${esc(i.name)} ${i.size?`(${esc(i.size)})`:''} · ${esc(r.label)}</option>`:''}).join('')}</select><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">Present/verify the completed loyalty card. One 10th drink reward per order.</div></div>` : ''}
       ${orderChannel==='GrabFood'?`<div class="field"><label>GrabFood Code</label><input id="modal-grab-code" type="text" value="${escAttr(grabCode)}" placeholder="e.g. GF123456"></div>
@@ -1346,11 +1362,11 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
   try{
     // Atomic database operation: order number, order row, and all items are committed together.
     const items=CART.map(i=>{
-      const reward=(loyaltyItemKey===i.key && i.isDrink)?loyaltyRewardForItem(i):null;
+      const reward=(loyaltyItemKey===i.key && cartItemIsDrink(i))?loyaltyRewardForItem(i):null;
       const effectiveUnitPrice=reward?.eligible ? (reward.charge + i.addons.reduce((s,a)=>s+Number(a.price||0),0)) : Number(i.unitPrice)||0;
       return {
         productId:i.productId, name:i.name, category:i.category, size:i.size,
-        isDrink:!!i.isDrink, qty:Number(i.qty)||1, unitPrice:effectiveUnitPrice,
+        isDrink:cartItemIsDrink(i), qty:Number(i.qty)||1, unitPrice:effectiveUnitPrice,
         lineTotal:effectiveUnitPrice*Number(i.qty), addons:Array.isArray(i.addons)?i.addons:[], loyaltyReward:!!reward?.eligible
       };
     });
