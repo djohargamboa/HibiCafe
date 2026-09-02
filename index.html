@@ -504,16 +504,20 @@ const PESO = n => '₱' + (Math.round(n*100)/100).toLocaleString('en-PH',{minimu
 const uid = () => Math.random().toString(36).slice(2,10);
 const todayStr = () => new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const nowTimeStr = () => new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date());
+function calendarDateForTimestamp(ts=new Date()){ return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ts)); }
+function shiftCalendarDate(dateKey,delta){ const d=new Date(dateKey+'T12:00:00+08:00'); d.setUTCDate(d.getUTCDate()+delta); return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(d); }
+function businessDayKey(ts=new Date()){ const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',hour12:false}).formatToParts(new Date(ts)); const hour=Number(parts.find(p=>p.type==='hour')?.value||0); const cal=calendarDateForTimestamp(ts); return hour<3 ? shiftCalendarDate(cal,-1) : cal; }
+function isBusinessDayClosing(ts=new Date()){ const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',hour12:false}).formatToParts(new Date(ts)); return Number(parts.find(p=>p.type==='hour')?.value||0)<3; }
+function businessDayStatus(){ return {date:businessDayKey(),status:isBusinessDayClosing()?'CLOSING':'OPEN'}; }
+function isLateEntryForBusinessDate(dateKey,ts=new Date()){ return calendarDateForTimestamp(ts)!==dateKey; }
 function isDateLocked(dateKey){ return !!(EOD && EOD[dateKey] && EOD[dateKey].locked); }
-function canCreateEntry(){
-  const d=todayStr();
-  if(isDateLocked(d)){ toast(`${d} is already reconciled and locked. No new entries can be added.`); return false; }
-  return true;
-}
+function isBusinessDayPast(dateKey){ return String(dateKey||'') < String(businessDayKey()); }
+function isStaffLockedDate(dateKey){ return isDateLocked(dateKey) || isBusinessDayPast(dateKey); }
+function canCreateEntry(){ return canCreateEntryForDate(businessDayKey()); }
 function canCreateEntryForDate(dateKey){
-  const d=dateKey||todayStr();
+  const d=dateKey||businessDayKey();
   if(isSuperuser()) return true;
-  if(d!==todayStr()){ toast('Past-date entries are not allowed.'); return false; }
+  if(d!==businessDayKey()){ toast(`Only the current Business Day (${businessDayKey()}) is available for staff entries.`); return false; }
   if(isDateLocked(d)){ toast(`${d} is already reconciled and locked.`); return false; }
   return true;
 }
@@ -522,7 +526,7 @@ function cashMovementTotals(dateKey){
   return cashMovementsForDate(dateKey).reduce((a,x)=>{ const amt=Number(x.amount)||0; if(x.type==='In') a.in+=amt; else a.out+=amt; return a; },{in:0,out:0});
 }
 function openCashMovementModal(){
-  const dateDefault=isSuperuser() ? (reportsFilter.mode==='date' ? reportsFilter.date : todayStr()) : todayStr();
+  const dateDefault=isSuperuser() ? (reportsFilter.mode==='date' ? reportsFilter.date : businessDayKey()) : businessDayKey();
   openModal(`
     <div class="modal-head"><h3>Cash Drawer Movement</h3><div class="msub">Use Cash In / Out for money added to or removed from the drawer outside normal sales and expenses.</div></div>
     <div class="modal-body">
@@ -564,7 +568,7 @@ function openCashMovementModal(){
   };
 }
 
-let selectedOrderDate = todayStr();
+let selectedOrderDate = businessDayKey(); let LAST_BUSINESS_DAY = businessDayKey();
 const CUP_SIZES = ['Hot 12oz','Iced 16oz','Iced 20oz'];
 
 /* ---------- Default data ---------- */
@@ -911,6 +915,7 @@ function mapDbOrder(row){
     date:row.order_date,
     time:(row.order_time||'').slice(0,5),
     timestamp:row.created_at,
+    lateEntry: row.created_at ? isLateEntryForBusinessDate(row.order_date,new Date(row.created_at)) : false,
     source:row.source||'Walk-in',
     grabCode:row.grab_code||null,
     items:(row.pos_order_items||[]).map(i=>({
@@ -1011,6 +1016,8 @@ function goToPage(pageId){
 function tickClock(){
   const d = new Date();
   document.getElementById('clock').textContent = d.toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  const bd=businessDayKey();
+  if(bd!==LAST_BUSINESS_DAY){ LAST_BUSINESS_DAY=bd; if(!isSuperuser()) selectedOrderDate=bd; const active=document.querySelector('nav.tabs button.active')?.dataset.page; if(active==='pos') renderPOS(); else if(active==='dashboard') renderDashboard(); else if(active==='orders') renderOrdersPage(); else if(active==='expenses') renderExpensesPage(); else if(active==='reports') renderReports(); }
 }
 setInterval(tickClock, 1000*15); tickClock();
 
@@ -1018,9 +1025,13 @@ setInterval(tickClock, 1000*15); tickClock();
    POS PAGE
    ============================================================ */
 function renderPOS(){
+  const oldBanner=document.getElementById('business-day-banner'); if(oldBanner) oldBanner.remove();
   document.getElementById('cashier-pill').textContent = 'Cashier: ' + ((CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff'));
-  const posTitle=document.getElementById('pos-title'); if(posTitle) posTitle.textContent=(isDateLocked(selectedOrderDate)?'🔒 Day Reconciled — ':'')+(orderChannel==='GrabFood'?'GrabFood Order':'Walk-in Order');
-  const dateWrap=document.getElementById('pos-date-wrap'); if(dateWrap) dateWrap.innerHTML=isSuperuser()?`<label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px;">Entry Date</label><input type="date" id="pos-entry-date" value="${selectedOrderDate}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;background:var(--cream);font-size:13px;">`:`<span style="font-size:12px;color:var(--text-dim);">Date: ${todayStr()}</span>`;
+  const bd=businessDayStatus();
+  const lateMode=isBusinessDayClosing() && selectedOrderDate===bd.date;
+  const posTitle=document.getElementById('pos-title'); if(posTitle) posTitle.textContent=(isDateLocked(selectedOrderDate)?'🔒 Day Reconciled — ':lateMode?'🕒 Finish '+bd.date+' Closing — ':'')+(orderChannel==='GrabFood'?'GrabFood Order':'Walk-in Order');
+  const dateWrap=document.getElementById('pos-date-wrap'); if(dateWrap) dateWrap.innerHTML=isSuperuser()?`<label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px;">Business Date</label><input type="date" id="pos-entry-date" value="${selectedOrderDate}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;background:var(--cream);font-size:13px;">`:`<div style="font-size:12px;color:var(--text-dim);">Business Day: <strong>${bd.date}</strong> — ${bd.status}</div>`;
+  const bannerHost=document.getElementById('pos-title'); if(bannerHost && isBusinessDayClosing() && selectedOrderDate===businessDayKey() && !isDateLocked(selectedOrderDate)){ const b=document.createElement('div'); b.id='business-day-banner'; b.style.cssText='margin:0 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--cream);font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;'; b.innerHTML=`<span><strong>Business Day: ${bd.date}</strong> — CLOSING · entries before 3:00 AM stay on this business day.</span><button class="btn btn-secondary" id="finish-closing-btn" style="padding:7px 10px;">Finish ${bd.date} Closing</button>`; bannerHost.parentElement.insertBefore(b,bannerHost); document.getElementById('finish-closing-btn').onclick=()=>{ selectedOrderDate=bd.date; CART=[]; grabCode=''; renderPOS(); toast(`Finishing ${bd.date} Closing. Late GrabFood entries will stay on ${bd.date}.`); }; }
   const posDate=document.getElementById('pos-entry-date'); if(posDate) posDate.onchange=e=>{ selectedOrderDate=e.target.value||todayStr(); CART=[]; renderPOS(); };
   const wb=document.getElementById('walkin-mode-btn'), gb=document.getElementById('grab-mode-btn');
   if(wb){ wb.classList.toggle('active',orderChannel==='Walk-in'); wb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; grabCode=''; grabDiscountType='None'; grabDiscountAmount=0; orderChannel='Walk-in'; renderPOS(); }; }
@@ -1217,7 +1228,7 @@ function renderCart(){
   document.getElementById('sum-items').textContent = totalItems;
   document.getElementById('sum-cups').textContent = totalCups;
   document.getElementById('sum-total').textContent = PESO(total);
-  document.getElementById('checkout-btn').disabled = CART.length===0 || isDateLocked(selectedOrderDate) || (!isSuperuser() && selectedOrderDate!==todayStr());
+  document.getElementById('checkout-btn').disabled = CART.length===0 || isDateLocked(selectedOrderDate) || (!isSuperuser() && selectedOrderDate!==businessDayKey());
 }
 function changeQty(key, delta){
   const it = CART.find(i=>i.key===key);
@@ -1350,7 +1361,7 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
     const order=mapDbOrder({...dbOrder,pos_order_items:dbOrder.items||[]});
     order.orderNumber=orderChannel==='GrabFood'?(grabOrderCode||order.orderNumber):order.orderNumber;
     ORDERS.unshift(order);
-    await writeAudit('create_order','order',order.id,'',{orderNumber:order.orderNumber,date:order.date,total:order.total,source:order.source,paymentMethod:order.paymentMethod,status:order.status});
+    await writeAudit('create_order','order',order.id,'',{orderNumber:order.orderNumber,businessDate:order.date,actualEntryTimestamp:order.timestamp,lateEntry:!!order.lateEntry,total:order.total,source:order.source,paymentMethod:order.paymentMethod,status:order.status});
     showOrderConfirmation(order);
     CART=[];grabCode='';grabDiscountType='None';grabDiscountAmount=0;renderCart();renderOrderNumPreview();
   }catch(e){
@@ -1362,7 +1373,7 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
 }
 
 function showOrderConfirmation(order){
-  openModal(`<div class="modal-body" style="text-align:center;padding-top:26px;"><div class="success-check">✓</div><div class="confirm-order-num">${esc(order.orderNumber)}</div><div style="color:var(--text-dim);font-size:13.5px;margin-bottom:16px;">${order.source==='GrabFood'?'GrabFood order saved':'Payment confirmed — order complete'}</div><div style="text-align:left;background:var(--cream-dim);border-radius:10px;padding:14px 16px;"><div class="sumrow"><span>Source</span><span>${esc(order.source||'Walk-in')}</span></div><div class="sumrow"><span>Order Total</span><span>${PESO(order.total)}</span></div>${order.discountAmount?`<div class="sumrow"><span>Discount</span><span>−${PESO(order.discountAmount)}</span></div>`:''}<div class="sumrow"><span>Payment</span><span>${esc(order.paymentMethod)}</span></div>${order.paymentMethod==='Cash'||order.paymentMethod==='Cash + GCash'?`<div class="sumrow"><span>Change</span><span>${PESO(order.changeGiven)}</span></div>`:''}</div></div><div class="modal-foot"><button class="btn btn-primary" id="modal-done" style="flex:1;">New Order</button></div>`);
+  openModal(`<div class="modal-body" style="text-align:center;padding-top:26px;"><div class="success-check">✓</div><div class="confirm-order-num">${esc(order.orderNumber)}</div><div style="color:var(--text-dim);font-size:13.5px;margin-bottom:16px;">${order.source==='GrabFood'?'GrabFood order saved':'Payment confirmed — order complete'}${order.lateEntry?`<br><strong>Business Date: ${order.date} · Late Entry: Yes</strong><br><span style="font-size:12px;">Entered ${new Date(order.timestamp).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}</span>`:''}</div><div style="text-align:left;background:var(--cream-dim);border-radius:10px;padding:14px 16px;"><div class="sumrow"><span>Source</span><span>${esc(order.source||'Walk-in')}</span></div><div class="sumrow"><span>Order Total</span><span>${PESO(order.total)}</span></div>${order.discountAmount?`<div class="sumrow"><span>Discount</span><span>−${PESO(order.discountAmount)}</span></div>`:''}<div class="sumrow"><span>Payment</span><span>${esc(order.paymentMethod)}</span></div>${order.paymentMethod==='Cash'||order.paymentMethod==='Cash + GCash'?`<div class="sumrow"><span>Change</span><span>${PESO(order.changeGiven)}</span></div>`:''}</div></div><div class="modal-foot"><button class="btn btn-primary" id="modal-done" style="flex:1;">New Order</button></div>`);
   document.getElementById('modal-done').onclick=()=>{closeModal();renderPOS()};
 }
 
@@ -1373,7 +1384,7 @@ function filteredOrders(filter){
   return ORDERS.filter(o=>{
     if(filter.status && filter.status!=='all' && o.status!==filter.status) return false;
     if(filter.source && filter.source!=='all' && (o.source||'Walk-in')!==filter.source) return false;
-    if(filter.mode==='today') return o.date===todayStr();
+    if(filter.mode==='today') return o.date===businessDayKey();
     if(filter.mode==='date') return o.date===filter.date;
     if(filter.mode==='range') return o.date>=filter.start && o.date<=filter.end;
     return true;
@@ -1409,7 +1420,7 @@ function renderOrdersPage(){
   bar.querySelector('#orders-source-select').value = ordersFilter.source||'all';
   bar.querySelector('#orders-source-select').onchange = (e)=>{ ordersFilter.source=e.target.value; renderOrdersPage(); };
   bar.querySelector('#orders-prev').onclick = ()=>{ ordersFilter.mode='date'; ordersFilter.date=shiftDateKey(ordersFilter.date||todayStr(),-1); renderOrdersPage(); };
-  bar.querySelector('#orders-next').onclick = ()=>{ const n=shiftDateKey(ordersFilter.date||todayStr(),1); if(n<=todayStr()){ ordersFilter.mode='date'; ordersFilter.date=n; renderOrdersPage(); } };
+  bar.querySelector('#orders-next').onclick = ()=>{ const n=shiftDateKey(ordersFilter.date||todayStr(),1); if(n<=businessDayKey()){ ordersFilter.mode='date'; ordersFilter.date=n; renderOrdersPage(); } };
 
   const rows = filteredOrders(ordersFilter);
   const table = document.getElementById('orders-table');
@@ -1438,7 +1449,7 @@ function openOrderDetail(id){
   if(!o) return;
   function body(){
     return `
-      <div class="modal-head"><h3>${o.orderNumber}</h3><div class="msub">${o.date} · ${o.time} · ${esc(o.cashier)}</div></div>
+      <div class="modal-head"><h3>${o.orderNumber}</h3><div class="msub">Business Date: ${o.date} · ${o.time} · ${esc(o.cashier)}${o.lateEntry?' · <strong>Late Entry: Yes</strong> · Entered: '+new Date(o.timestamp).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):''}</div></div>
       <div class="modal-body">
         ${o.items.map(i=>`
           <div class="cart-item" style="padding:10px 0;">
@@ -1457,21 +1468,21 @@ function openOrderDetail(id){
           <div class="sumrow grand"><span>Total</span><span>${PESO(o.total)}</span></div>
         </div>
         <div class="section-title" style="margin-top:16px;">Order Status</div>
-        <select id="status-select" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);font-size:14px;" ${((isDateLocked(o.date)&&!isSuperuser())||(!isSuperuser() && o.date!==todayStr()))?'disabled':''}>
+        <select id="status-select" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);font-size:14px;" ${((isDateLocked(o.date)&&!isSuperuser())||(!isSuperuser() && o.date!==businessDayKey()))?'disabled':''}>
           ${['New','Preparing','Completed','Cancelled'].map(s=>`<option value="${s}" ${s===o.status?'selected':''}>${s}</option>`).join('')}
         </select>
-        ${(!isSuperuser() && o.date!==todayStr())?`<div style="font-size:12px;color:var(--text-dim);margin-top:7px;">🔒 Previous-date orders cannot be edited by staff.</div>`:''}
+        ${(!isSuperuser() && o.date!==businessDayKey())?`<div style="font-size:12px;color:var(--text-dim);margin-top:7px;">🔒 Previous-date orders cannot be edited by staff.</div>`:''}
       </div>
       <div class="modal-foot">
         <button class="btn btn-secondary" id="modal-close">Close</button>
-        <button class="btn btn-primary" id="modal-save-status" ${((isDateLocked(o.date)&&!isSuperuser())||(!isSuperuser() && o.date!==todayStr()))?'disabled':''}>Update Status</button>
+        <button class="btn btn-primary" id="modal-save-status" ${((isDateLocked(o.date)&&!isSuperuser())||(!isSuperuser() && o.date!==businessDayKey()))?'disabled':''}>Update Status</button>
       </div>`;
   }
   openModal(body());
   document.getElementById('modal-close').onclick = closeModal;
   document.getElementById('modal-save-status').onclick = async ()=>{
     if(isDateLocked(o.date) && !isSuperuser()){ toast('This order date is reconciled and locked. Unlock the day first.'); return; }
-    if(!isSuperuser() && o.date!==todayStr()){ toast('Staff cannot edit the status of previous-date orders.'); return; }
+    if(!isSuperuser() && o.date!==businessDayKey()){ toast('Staff cannot edit the status of previous-date orders.'); return; }
     const newStatus = document.getElementById('status-select').value;
     if(newStatus===o.status){ toast('No status change was made.'); return; }
     const reason = requireActionReason(`changing status of order ${o.orderNumber}`);
@@ -1497,7 +1508,7 @@ function openOrderDetail(id){
    EXPENSES PAGE
    ============================================================ */
 function matchesPeriod(dateStr, filter){
-  if(filter.mode==='today') return dateStr===todayStr();
+  if(filter.mode==='today') return dateStr===businessDayKey();
   if(filter.mode==='date') return dateStr===filter.date;
   if(filter.mode==='range') return dateStr>=filter.start && dateStr<=filter.end;
   if(filter.mode==='month') return dateStr.slice(0,7)===todayStr().slice(0,7);
@@ -1519,13 +1530,13 @@ function renderExpensesPage(){
     <div class="page-title"><div><h1>Expenses</h1><div class="psub">Expenses and cash drawer movements.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-secondary" id="add-cash-movement">+ Cash In / Out</button><button class="btn btn-primary" id="add-expense-btn">+ Add Expense</button></div></div>
     <div class="filter-bar"><button class="filter-btn ${expensesFilter.mode==='today'?'active':''}" data-em="today">Today</button><button class="filter-btn ${expensesFilter.mode==='all'?'active':''}" data-em="all">All</button><input type="date" id="expense-date-input" value="${expensesFilter.mode==='date'?expensesFilter.date:todayStr()}"><button class="filter-btn" id="expenses-prev">‹ PREV</button><button class="filter-btn" id="expenses-next" ${shiftDateKey(expensesFilter.mode==='date'?expensesFilter.date:todayStr(),1)<=todayStr()?'':'disabled'}>NEXT ›</button></div>
     <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));"><div class="stat-card accent"><div class="slabel">Total Expenses</div><div class="sval">${PESO(total)}</div></div><div class="stat-card"><div class="slabel">Cash In</div><div class="sval" style="font-size:22px;">${PESO(cashIn)}</div></div><div class="stat-card"><div class="slabel">Cash Out</div><div class="sval" style="font-size:22px;color:var(--rust);">${PESO(cashOut)}</div></div><div class="stat-card"><div class="slabel">Expense Entries</div><div class="sval" style="font-size:22px;">${activeRows.length}</div></div></div>
-    <div class="card" style="padding:18px 20px;margin-bottom:16px;overflow-x:auto;"><div class="section-title">Cash Drawer Movements</div><table><thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Reason</th><th>Cashier</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>${moves.length?moves.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td><b>${esc(x.type)}</b></td><td>${esc(x.reason)}</td><td>${esc(x.cashier)}</td><td class="num">${PESO(x.amount)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isDateLocked(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<button class="icon-btn danger" data-void-cash="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No cash drawer movements.</div></td></tr>'}</tbody></table></div>
-    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date</th><th>Time</th><th>Note</th><th class="num">Amount</th><th>Cashier</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td>${esc(x.note)}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.cashier)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isDateLocked(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td><td>${x.status==='Voided'?esc(x.voidReason||''):(isDateLocked(x.date)&&!isSuperuser())?'<span style="font-size:11px;color:var(--text-dim);">Locked</span>':'<button class="icon-btn danger" data-del-exp="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No expenses logged for this period.</div></td></tr>'}</tbody></table></div>`;
+    <div class="card" style="padding:18px 20px;margin-bottom:16px;overflow-x:auto;"><div class="section-title">Cash Drawer Movements</div><table><thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Reason</th><th>Cashier</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>${moves.length?moves.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td><b>${esc(x.type)}</b></td><td>${esc(x.reason)}</td><td>${esc(x.cashier)}</td><td class="num">${PESO(x.amount)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isStaffLockedDate(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<button class="icon-btn danger" data-void-cash="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No cash drawer movements.</div></td></tr>'}</tbody></table></div>
+    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date</th><th>Time</th><th>Note</th><th class="num">Amount</th><th>Cashier</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td>${esc(x.note)}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.cashier)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isStaffLockedDate(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td><td>${x.status==='Voided'?esc(x.voidReason||''):(isStaffLockedDate(x.date)&&!isSuperuser())?'<span style="font-size:11px;color:var(--text-dim);">Locked</span>':'<button class="icon-btn danger" data-del-exp="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No expenses logged for this period.</div></td></tr>'}</tbody></table></div>`;
   el.querySelectorAll('[data-em]').forEach(b=>b.onclick=()=>{expensesFilter.mode=b.dataset.em;renderExpensesPage();});
   el.querySelector('#expense-date-input').onchange=e=>{expensesFilter.mode='date';expensesFilter.date=e.target.value;renderExpensesPage();};
   el.querySelector('#expenses-prev').onclick=()=>{const current=expensesFilter.mode==='date'?expensesFilter.date:todayStr();expensesFilter.mode='date';expensesFilter.date=shiftDateKey(current,-1);renderExpensesPage();};
-  el.querySelector('#expenses-next').onclick=()=>{const current=expensesFilter.mode==='date'?expensesFilter.date:todayStr();const n=shiftDateKey(current,1);if(n<=todayStr()){expensesFilter.mode='date';expensesFilter.date=n;renderExpensesPage();}};
-  el.querySelector('#add-expense-btn').onclick=()=>{if(canCreateEntryForDate(todayStr()))openAddExpenseModal();};
+  el.querySelector('#expenses-next').onclick=()=>{const current=expensesFilter.mode==='date'?expensesFilter.date:todayStr();const n=shiftDateKey(current,1);if(n<=businessDayKey()){expensesFilter.mode='date';expensesFilter.date=n;renderExpensesPage();}};
+  el.querySelector('#add-expense-btn').onclick=()=>{if(canCreateEntryForDate(businessDayKey()))openAddExpenseModal();};
   el.querySelector('#add-cash-movement').onclick=openCashMovementModal;
   el.querySelectorAll('[data-del-exp]').forEach(b=>b.onclick=async()=>{const x=EXPENSES.find(e=>e.id===b.dataset.delExp);if(!x)return;if(!isSuperuser() && !canCreateEntryForDate(x.date))return;const reason=prompt('Reason for voiding this expense:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();await persistExpenses();await writeAudit('void_expense','expense',x.id,reason.trim(),{amount:x.amount,note:x.note,date:x.date});renderExpensesPage();toast('Expense voided — original record preserved');});
   el.querySelectorAll('[data-void-cash]').forEach(b=>b.onclick=async()=>{const x=CASH_MOVEMENTS.find(m=>m.id===b.dataset.voidCash);if(!x||x.status==='Voided')return;if(!isSuperuser() && !canCreateEntryForDate(x.date))return;const reason=prompt('Reason for voiding this cash movement:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();await persistCashMovements();await writeAudit('void_cash_movement','cash_movement',x.id,reason.trim(),{amount:x.amount,type:x.type,date:x.date});renderExpensesPage();toast('Cash movement voided — original record preserved');});
@@ -1631,14 +1642,14 @@ function computeMetrics(orders){
    DASHBOARD
    ============================================================ */
 function renderDashboard(){
-  const todaysOrders = ORDERS.filter(o=>o.date===todayStr());
+  const todaysOrders = ORDERS.filter(o=>o.date===businessDayKey());
   const m = computeMetrics(todaysOrders);
-  const todaysExpenses = EXPENSES.filter(x=>x.date===todayStr());
+  const todaysExpenses = EXPENSES.filter(x=>x.date===businessDayKey());
   const expenseTotal = todaysExpenses.reduce((s,x)=>s+x.amount,0);
   const netSales = m.totalSales - expenseTotal;
   const el = document.getElementById('dashboard-content');
   el.innerHTML = `
-    <div class="page-title"><div><h1>Dashboard</h1><div class="psub">Today · ${new Date().toLocaleDateString('en-PH',{weekday:'long',month:'long',day:'numeric'})}</div></div></div>
+    <div class="page-title"><div><h1>Dashboard</h1><div class="psub">Business Day: ${businessDayKey()} — ${isBusinessDayClosing()?'CLOSING':'OPEN'} · Calendar date: ${todayStr()}</div></div></div>
     <div class="stat-grid">
       <div class="stat-card accent"><div class="slabel">Today's Sales</div><div class="sval">${PESO(m.totalSales)}</div></div>
       <div class="stat-card"><div class="slabel">Transactions</div><div class="sval">${m.totalTx}</div></div>
@@ -1706,7 +1717,7 @@ function renderDashboard(){
    ============================================================ */
 function ordersForReportFilter(){
   return ORDERS.filter(o=>{
-    if(reportsFilter.mode==='today') return o.date===todayStr();
+    if(reportsFilter.mode==='today') return o.date===businessDayKey();
     if(reportsFilter.mode==='date') return o.date===reportsFilter.date;
     if(reportsFilter.mode==='range') return o.date>=reportsFilter.start && o.date<=reportsFilter.end;
     if(reportsFilter.mode==='month'){
@@ -1735,7 +1746,7 @@ function renderReports(){
   const netSales = m.totalSales - expenseTotal;
   const el = document.getElementById('reports-content');
   const rangeLabel = reportsFilter.mode==='today' ? 'Today' : reportsFilter.mode==='date' ? reportsFilter.date : reportsFilter.mode==='month' ? 'This Month' : `${reportsFilter.start} → ${reportsFilter.end}`;
-  const selectedEodDate = reportsFilter.mode==='date' ? reportsFilter.date : todayStr();
+  const selectedEodDate = reportsFilter.mode==='date' ? reportsFilter.date : businessDayKey();
   const eod = EOD[selectedEodDate] || {};
   const openingCash = openingCashForDate(selectedEodDate);
   const drawerTotals = cashMovementTotals(selectedEodDate);
@@ -1872,7 +1883,7 @@ function renderReports(){
   el.querySelector('#report-start').onchange = (e)=>{ reportsFilter.start=e.target.value; };
   el.querySelector('#report-end').onchange = (e)=>{ reportsFilter.end=e.target.value; };
   el.querySelector('#reports-prev').onclick=()=>{const current=reportsFilter.mode==='date'?reportsFilter.date:todayStr();reportsFilter.mode='date';reportsFilter.date=shiftDateKey(current,-1);renderReports();};
-  el.querySelector('#reports-next').onclick=()=>{const current=reportsFilter.mode==='date'?reportsFilter.date:todayStr();const n=shiftDateKey(current,1);if(n<=todayStr()){reportsFilter.mode='date';reportsFilter.date=n;renderReports();}};
+  el.querySelector('#reports-next').onclick=()=>{const current=reportsFilter.mode==='date'?reportsFilter.date:todayStr();const n=shiftDateKey(current,1);if(n<=businessDayKey()){reportsFilter.mode='date';reportsFilter.date=n;renderReports();}};
   el.querySelector('#report-apply-range').onclick = ()=>{ reportsFilter.mode='range'; renderReports(); };
   el.querySelector('#export-report-btn').onclick = ()=> exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, eod);
   const unlockBtn=el.querySelector('#eod-unlock');
@@ -1928,7 +1939,7 @@ function renderReports(){
       const variance = actual===null ? null : actual - expected;
       const varianceReason=(document.getElementById('eod-variance-reason')?.value||'').trim();
       const dateKey = selectedEodDate || (reportsFilter.mode==='date' ? reportsFilter.date : todayStr());
-      if(!isSuperuser() && dateKey!==todayStr()){ toast('Past-date reconciliation is not allowed.'); return; }
+      if(!isSuperuser() && dateKey!==businessDayKey()){ toast('Past-date reconciliation is not allowed.'); return; }
       if(isDateLocked(dateKey) && !isSuperuser()){ toast(`${dateKey} is already reconciled and locked.`); return; }
       if(actual===null){ toast('Enter Actual Cash Counted before saving reconciliation.'); return; }
       if(variance!==null && Math.abs(variance)>=0.005 && !varianceReason){ toast('Please enter a reason for the cash variance.'); return; }
