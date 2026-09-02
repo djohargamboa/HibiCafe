@@ -569,6 +569,7 @@ function openCashMovementModal(){
 }
 
 let selectedOrderDate = businessDayKey(); let LAST_BUSINESS_DAY = businessDayKey();
+let loyaltyRewardKey = null;
 const CUP_SIZES = ['Hot 12oz','Iced 16oz','Iced 20oz'];
 
 /* ---------- Default data ---------- */
@@ -1031,11 +1032,11 @@ function renderPOS(){
   const lateMode=isBusinessDayClosing() && selectedOrderDate===bd.date;
   const posTitle=document.getElementById('pos-title'); if(posTitle) posTitle.textContent=(isDateLocked(selectedOrderDate)?'🔒 Day Reconciled — ':lateMode?'🕒 Finish '+bd.date+' Closing — ':'')+(orderChannel==='GrabFood'?'GrabFood Order':'Walk-in Order');
   const dateWrap=document.getElementById('pos-date-wrap'); if(dateWrap) dateWrap.innerHTML=isSuperuser()?`<label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px;">Business Date</label><input type="date" id="pos-entry-date" value="${selectedOrderDate}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;background:var(--cream);font-size:13px;">`:`<div style="font-size:12px;color:var(--text-dim);">Business Day: <strong>${bd.date}</strong> — ${bd.status}</div>`;
-  const bannerHost=document.getElementById('pos-title'); if(bannerHost && isBusinessDayClosing() && selectedOrderDate===businessDayKey() && !isDateLocked(selectedOrderDate)){ const b=document.createElement('div'); b.id='business-day-banner'; b.style.cssText='margin:0 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--cream);font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;'; b.innerHTML=`<span><strong>Business Day: ${bd.date}</strong> — CLOSING · entries before 3:00 AM stay on this business day.</span><button class="btn btn-secondary" id="finish-closing-btn" style="padding:7px 10px;">Finish ${bd.date} Closing</button>`; bannerHost.parentElement.insertBefore(b,bannerHost); document.getElementById('finish-closing-btn').onclick=()=>{ selectedOrderDate=bd.date; CART=[]; grabCode=''; renderPOS(); toast(`Finishing ${bd.date} Closing. Late GrabFood entries will stay on ${bd.date}.`); }; }
-  const posDate=document.getElementById('pos-entry-date'); if(posDate) posDate.onchange=e=>{ selectedOrderDate=e.target.value||todayStr(); CART=[]; renderPOS(); };
+  const bannerHost=document.getElementById('pos-title'); if(bannerHost && isBusinessDayClosing() && selectedOrderDate===businessDayKey() && !isDateLocked(selectedOrderDate)){ const b=document.createElement('div'); b.id='business-day-banner'; b.style.cssText='margin:0 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--cream);font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;'; b.innerHTML=`<span><strong>Business Day: ${bd.date}</strong> — CLOSING · entries before 3:00 AM stay on this business day.</span><button class="btn btn-secondary" id="finish-closing-btn" style="padding:7px 10px;">Finish ${bd.date} Closing</button>`; bannerHost.parentElement.insertBefore(b,bannerHost); document.getElementById('finish-closing-btn').onclick=()=>{ selectedOrderDate=bd.date; CART=[]; loyaltyRewardKey=null; grabCode=''; renderPOS(); toast(`Finishing ${bd.date} Closing. Late GrabFood entries will stay on ${bd.date}.`); }; }
+  const posDate=document.getElementById('pos-entry-date'); if(posDate) posDate.onchange=e=>{ selectedOrderDate=e.target.value||todayStr(); CART=[]; loyaltyRewardKey=null; renderPOS(); };
   const wb=document.getElementById('walkin-mode-btn'), gb=document.getElementById('grab-mode-btn');
-  if(wb){ wb.classList.toggle('active',orderChannel==='Walk-in'); wb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; grabCode=''; grabDiscountType='None'; grabDiscountAmount=0; orderChannel='Walk-in'; renderPOS(); }; }
-  if(gb){ gb.classList.toggle('active',orderChannel==='GrabFood'); gb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; orderChannel='GrabFood'; renderPOS(); }; }
+  if(wb){ wb.classList.toggle('active',orderChannel==='Walk-in'); wb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; grabCode=''; grabDiscountType='None'; grabDiscountAmount=0; loyaltyRewardKey=null; orderChannel='Walk-in'; renderPOS(); }; }
+  if(gb){ gb.classList.toggle('active',orderChannel==='GrabFood'); gb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; loyaltyRewardKey=null; orderChannel='GrabFood'; renderPOS(); }; }
   const gcw=document.getElementById('grab-code-wrap'), gci=document.getElementById('grab-code-input');
   if(gcw){ gcw.style.display=orderChannel==='GrabFood'?'block':'none'; if(gci){ gci.value=grabCode; gci.oninput=e=>grabCode=e.target.value.trim(); } }
   if(!activeCategory) activeCategory = MENU.categories[0];
@@ -1244,19 +1245,34 @@ document.getElementById('clear-cart-btn').addEventListener('click', ()=>{
 document.getElementById('checkout-btn').addEventListener('click', ()=>{ if(!canCreateEntryForDate(selectedOrderDate)) return; openCheckoutModal(); });
 
 /* ---- Checkout modal ---- */
+function loyaltyRewardForItem(item){
+  if(!item || !item.isDrink) return {eligible:false, base:0, charge:0, discount:0};
+  const pr=MENU.products.find(p=>p.id===item.productId);
+  if(!pr) return {eligible:false, base:0, charge:0, discount:0};
+  const priceMap=orderChannel==='GrabFood'?(pr.grabPrices||pr.sizes):pr.sizes;
+  const base16=Number(priceMap['Iced 16oz'] ?? pr.sizes['Iced 16oz']);
+  const chosen=Number(priceMap[item.size] ?? pr.sizes[item.size] ?? item.unitPrice);
+  if(!Number.isFinite(chosen)) return {eligible:false,base:0,charge:0,discount:0};
+  if(item.size==='Iced 20oz' && Number.isFinite(base16)) return {eligible:true,base:chosen,charge:Math.max(0,chosen-base16),discount:Math.max(0,base16),label:'20oz — pay '+PESO(Math.max(0,chosen-base16))+' difference'};
+  return {eligible:true,base:chosen,charge:0,discount:chosen,label:item.size+' — FREE'};
+}
+
 function openCheckoutModal(){
   const subtotal = CART.reduce((s,i)=>s+i.unitPrice*i.qty,0);
   let method = orderChannel==='GrabFood' ? 'GrabFood' : 'Cash';
-  let received = '';
-  let cashPart = '';
-  let gcashPart = '';
-  let ref = '';
-  let gcashConfirmed = false;
+  let received = '', cashPart = '', gcashPart = '', ref = '', gcashConfirmed = false;
   let discountType = orderChannel==='GrabFood' ? (grabDiscountType||'None') : 'None';
   let discountAmount = orderChannel==='GrabFood' ? (Number(grabDiscountAmount)||0) : 0;
   let submitting=false;
-  function discount(){ return orderChannel==='GrabFood' ? Math.min(Math.max(0,Number(discountAmount)||0),subtotal) : 0; }
-  function total(){ return subtotal-discount(); }
+  let selectedLoyaltyKey = loyaltyRewardKey && CART.some(i=>i.key===loyaltyRewardKey && i.isDrink) ? loyaltyRewardKey : null;
+  function loyalty(){
+    if(orderChannel!=='Walk-in' || !selectedLoyaltyKey) return {discount:0,charge:0,item:null};
+    const item=CART.find(i=>i.key===selectedLoyaltyKey && i.isDrink);
+    if(!item) return {discount:0,charge:0,item:null};
+    const r=loyaltyRewardForItem(item); return {discount:r.discount,charge:r.charge,item,r};
+  }
+  function discount(){ return orderChannel==='GrabFood' ? Math.min(Math.max(0,Number(discountAmount)||0),subtotal) : loyalty().discount; }
+  function total(){ return Math.max(0,subtotal-discount()); }
   function canConfirm(){
     if(submitting) return false;
     if(orderChannel==='GrabFood') return !!grabCode.trim();
@@ -1265,11 +1281,15 @@ function openCheckoutModal(){
     return Number(cashPart)>0 && Number(gcashPart)>0 && Number(cashPart)+Number(gcashPart)>=total() && gcashConfirmed;
   }
   function body(){
+    const eligible=CART.filter(i=>i.isDrink);
+    const lr=loyalty();
     return `<div class="modal-head"><h3>${orderChannel==='GrabFood'?'Save GrabFood Order':'Checkout'}</h3><div class="msub">${CART.reduce((s,i)=>s+i.qty,0)} item(s) · ${CART.filter(i=>i.isDrink).reduce((s,i)=>s+i.qty,0)} cup(s)</div></div>
     <div class="modal-body">
+      ${orderChannel==='Walk-in' && eligible.length ? `<div class="field"><label>Loyalty Card Reward</label><select id="loyalty-reward"><option value="">No loyalty reward</option>${eligible.map(i=>{const r=loyaltyRewardForItem(i);return r.eligible?`<option value="${escAttr(i.key)}" ${selectedLoyaltyKey===i.key?'selected':''}>10th drink free — ${esc(i.name)} ${i.size?`(${esc(i.size)})`:''} · ${esc(r.label)}</option>`:''}).join('')}</select><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">Present/verify the completed loyalty card. One 10th drink reward per order.</div></div>` : ''}
       ${orderChannel==='GrabFood'?`<div class="field"><label>GrabFood Code</label><input id="modal-grab-code" type="text" value="${escAttr(grabCode)}" placeholder="e.g. GF123456"></div>
       <div class="field"><label>Grab Promo / Discount</label><select id="discount-type"><option ${discountType==='None'?'selected':''}>None</option><option ${discountType==='Grab Promo'?'selected':''}>Grab Promo</option><option ${discountType==='PWD'?'selected':''}>PWD</option><option ${discountType==='Senior Citizen'?'selected':''}>Senior Citizen</option><option ${discountType==='Other'?'selected':''}>Other</option></select></div>
       <div class="field"><label>Discount Amount</label><input id="discount-amount" type="text" inputmode="decimal" value="${discountAmount||''}" placeholder="0.00"></div>`:''}
+      ${orderChannel==='Walk-in' && lr.item ? `<div class="change-row" style="margin-top:4px;"><span>Loyalty Reward</span><span>−${PESO(lr.discount)}</span></div>${lr.charge>0?`<div class="change-row"><span>20oz Upgrade</span><span>+${PESO(lr.charge)}</span></div>`:''}`:''}
       <div class="big-total"><div class="lbl">${orderChannel==='GrabFood'?'Grab Order Total':'Order Total'}</div><div class="amt">${PESO(total())}</div></div>
       ${orderChannel==='Walk-in'?`<div class="pay-tabs"><button class="pay-tab ${method==='Cash'?'active':''}" id="tab-cash">Cash</button><button class="pay-tab ${method==='GCash'?'active':''}" id="tab-gcash">GCash</button><button class="pay-tab ${method==='Cash + GCash'?'active':''}" id="tab-combo">Cash + GCash</button></div>
       ${method==='Cash'?`<div class="field"><label>Amount Received</label><input type="text" inputmode="decimal" autocomplete="off" id="cash-received" placeholder="0.00" value="${escAttr(received)}"></div><div id="cash-change-area"></div>`:''}
@@ -1288,6 +1308,7 @@ function openCheckoutModal(){
   function render(){
     openModal(body());
     document.getElementById('modal-cancel').onclick=closeModal;
+    const lrSel=document.getElementById('loyalty-reward'); if(lrSel) lrSel.onchange=e=>{selectedLoyaltyKey=e.target.value||null;loyaltyRewardKey=selectedLoyaltyKey;render();};
     if(orderChannel==='Walk-in'){
       document.getElementById('tab-cash').onclick=()=>{method='Cash';render();setTimeout(()=>document.getElementById('cash-received')?.focus(),0)};
       document.getElementById('tab-gcash').onclick=()=>{method='GCash';render()};
@@ -1296,19 +1317,18 @@ function openCheckoutModal(){
       const cp=document.getElementById('cash-part'); if(cp)cp.oninput=e=>{cashPart=e.target.value.replace(/[^0-9.]/g,'');updateUI()};
       const gp=document.getElementById('gcash-part'); if(gp)gp.oninput=e=>{gcashPart=e.target.value.replace(/[^0-9.]/g,'');updateUI()};
       const gr=document.getElementById('gcash-ref'); if(gr)gr.oninput=e=>ref=e.target.value;
-      const gc=document.getElementById('gcash-confirm'); if(gc)gc.onchange=e=>{gcashConfirmed=e.target.checked;updateUI()}; const cgc=document.getElementById('combo-gcash-confirm'); if(cgc)cgc.onchange=e=>{gcashConfirmed=e.target.checked;updateUI()};
+      const gc=document.getElementById('gcash-confirm'); if(gc)gc.onchange=e=>{gcashConfirmed=e.target.checked;updateUI()}; const cgc=document.getElementById('combo-gcash-confirm'); if(cgc)cgc.onchange=e=>{gcashConfirmed=cgc.checked;updateUI()};
     } else {
       const code=document.getElementById('modal-grab-code'); if(code)code.oninput=e=>{grabCode=e.target.value.trim();updateUI()};
       const dt=document.getElementById('discount-type'); if(dt)dt.onchange=e=>{discountType=e.target.value;grabDiscountType=discountType;updateUI();render()};
       const da=document.getElementById('discount-amount'); if(da)da.oninput=e=>{discountAmount=e.target.value.replace(/[^0-9.]/g,'');grabDiscountAmount=Number(discountAmount)||0;updateUI();const totalEl=document.querySelector('.big-total .amt');if(totalEl)totalEl.textContent=PESO(total())};
     }
     updateUI();
-    document.getElementById('modal-confirm').onclick=async()=>{if(!canConfirm())return;if(!canCreateEntryForDate(selectedOrderDate))return;submitting=true;await finalizeOrder({method,subtotal,received:received?parseFloat(received):null,ref,cashPart:cashPart?parseFloat(cashPart):null,gcashPart:gcashPart?parseFloat(gcashPart):null,discountType,discountAmount:discount()});};
+    document.getElementById('modal-confirm').onclick=async()=>{if(!canConfirm())return;if(!canCreateEntryForDate(selectedOrderDate))return;submitting=true;const lr=loyalty();const loyaltyItem=lr.item;const finalDiscount=orderChannel==='Walk-in'?lr.discount:discount();await finalizeOrder({method,subtotal,received:received?parseFloat(received):null,ref,cashPart:cashPart?parseFloat(cashPart):null,gcashPart:gcashPart?parseFloat(gcashPart):null,discountType:orderChannel==='Walk-in'?(loyaltyItem?'Loyalty Reward':'None'):discountType,discountAmount:finalDiscount,loyaltyItemKey:loyaltyItem?.key||null,loyaltyCharge:lr.charge||0});};
   }
   render();
 }
-
-async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,discountType='None',discountAmount=0}){
+async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,discountType='None',discountAmount=0,loyaltyItemKey=null,loyaltyCharge=0}){
   if(!canCreateEntryForDate(selectedOrderDate)) return;
   if(!supabaseOk || !CURRENT_USER?.access_token){
     toast('Database unavailable. The order was NOT saved. Please sign in again and retry.');
@@ -1325,11 +1345,15 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
   const changeGiven=method==='Cash'?(Number(received)||0)-total:method==='Cash + GCash'?((Number(cashPart)||0)+(Number(gcashPart)||0)-total):0;
   try{
     // Atomic database operation: order number, order row, and all items are committed together.
-    const items=CART.map(i=>({
-      productId:i.productId, name:i.name, category:i.category, size:i.size,
-      isDrink:!!i.isDrink, qty:Number(i.qty)||1, unitPrice:Number(i.unitPrice)||0,
-      lineTotal:Number(i.unitPrice)*Number(i.qty), addons:Array.isArray(i.addons)?i.addons:[]
-    }));
+    const items=CART.map(i=>{
+      const reward=(loyaltyItemKey===i.key && i.isDrink)?loyaltyRewardForItem(i):null;
+      const effectiveUnitPrice=reward?.eligible ? (reward.charge + i.addons.reduce((s,a)=>s+Number(a.price||0),0)) : Number(i.unitPrice)||0;
+      return {
+        productId:i.productId, name:i.name, category:i.category, size:i.size,
+        isDrink:!!i.isDrink, qty:Number(i.qty)||1, unitPrice:effectiveUnitPrice,
+        lineTotal:effectiveUnitPrice*Number(i.qty), addons:Array.isArray(i.addons)?i.addons:[], loyaltyReward:!!reward?.eligible
+      };
+    });
     const payload={
       p_source:orderChannel,
       p_grab_code:grabOrderCode,
@@ -1361,9 +1385,9 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
     const order=mapDbOrder({...dbOrder,pos_order_items:dbOrder.items||[]});
     order.orderNumber=orderChannel==='GrabFood'?(grabOrderCode||order.orderNumber):order.orderNumber;
     ORDERS.unshift(order);
-    await writeAudit('create_order','order',order.id,'',{orderNumber:order.orderNumber,businessDate:order.date,actualEntryTimestamp:order.timestamp,lateEntry:!!order.lateEntry,total:order.total,source:order.source,paymentMethod:order.paymentMethod,status:order.status});
+    await writeAudit('create_order','order',order.id,'',{orderNumber:order.orderNumber,businessDate:order.date,actualEntryTimestamp:order.timestamp,lateEntry:!!order.lateEntry,loyaltyReward:!!loyaltyItemKey,loyaltyCharge:Number(loyaltyCharge)||0,total:order.total,source:order.source,paymentMethod:order.paymentMethod,status:order.status});
     showOrderConfirmation(order);
-    CART=[];grabCode='';grabDiscountType='None';grabDiscountAmount=0;renderCart();renderOrderNumPreview();
+    CART=[];grabCode='';grabDiscountType='None';grabDiscountAmount=0;loyaltyRewardKey=null;renderCart();renderOrderNumPreview();
   }catch(e){
     console.error('Order save failed:',e);
     toast('Order was NOT saved. Please retry.');
