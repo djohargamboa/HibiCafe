@@ -362,7 +362,13 @@ nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{bac
 }
 </style>
 </style>
-<style>.filter-btn:disabled{opacity:.45;cursor:not-allowed;}</style>
+<style>
+.filter-btn:disabled{opacity:.45;cursor:not-allowed;}
+.password-field{position:relative;display:flex;align-items:center;}
+.password-field input{width:100%;padding-right:42px;}
+.password-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--text-dim);cursor:pointer;padding:6px;font-size:16px;line-height:1;}
+.password-toggle:hover{color:var(--text);}
+</style>
 </head>
 <body>
 <div id="login-screen" class="login-screen">
@@ -370,7 +376,7 @@ nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{bac
     <div class="login-brand"><div class="login-mark">H</div><div><div class="login-name">Hibi Cafe</div><div class="login-sub">Point of Sale</div></div></div>
     <h1>Sign in</h1><p class="login-help">Use your Hibi Cafe account to continue.</p>
     <div class="field"><label>Username</label><input id="login-username" autocomplete="username" placeholder="Username"></div>
-    <div class="field"><label>Password</label><input id="login-password" type="password" autocomplete="current-password" placeholder="Password"></div>
+    <div class="field"><label>Password</label><div class="password-field"><input id="login-password" type="password" autocomplete="current-password" placeholder="Password"><button class="password-toggle" type="button" data-password-toggle="login-password" aria-label="Show password">◉</button></div></div>
     <button class="btn btn-primary login-btn" id="login-btn">Sign in</button>
     <div id="login-error" class="login-error"></div>
   </div>
@@ -2753,6 +2759,14 @@ async function renderAuditLog(){
 function renderSettings(){
   const el = document.getElementById('settings-content');
   const currentDisplayName = CURRENT_PROFILE?.display_name || CURRENT_PROFILE?.username || 'Staff';
+  const accountPasswordSection = `
+    <div class="card" style="padding:18px 20px;max-width:600px;margin-bottom:16px;">
+      <div class="section-title">My Password</div>
+      <p class="permission-note">Change the password for the account currently signed in.</p>
+      <div class="field"><label>New Password</label><div class="password-field"><input id="my-new-password" type="password" autocomplete="new-password" placeholder="Minimum 6 characters"><button class="password-toggle" type="button" data-password-toggle="my-new-password" aria-label="Show password">◉</button></div></div>
+      <div class="field"><label>Confirm New Password</label><div class="password-field"><input id="my-confirm-password" type="password" autocomplete="new-password" placeholder="Repeat new password"><button class="password-toggle" type="button" data-password-toggle="my-confirm-password" aria-label="Show password">◉</button></div></div>
+      <button class="btn btn-primary" id="my-change-password" type="button">Change Password</button>
+    </div>`;
   const usersSection = isSuperuser() ? `
     <div class="card" style="padding:18px 20px;margin-top:16px;">
       <div class="section-title">User Management</div>
@@ -2762,7 +2776,7 @@ function renderSettings(){
         <div class="field"><label>Username</label><input id="u-username" placeholder="cashier01"></div>
         <div class="field"><label>Display Name</label><input id="u-display" placeholder="Cashier 01"></div>
       </div>
-      <div class="field" id="u-password-wrap"><label>Password (for new user)</label><input id="u-password" type="password" placeholder="Minimum 6 characters"></div>
+      <div class="field" id="u-password-wrap"><label>Password (for new user)</label><div class="password-field"><input id="u-password" type="password" placeholder="Minimum 6 characters" autocomplete="new-password"><button class="password-toggle" type="button" data-password-toggle="u-password" aria-label="Show password">◉</button></div></div>
       <div class="two-col">
         <div class="field"><label>Role</label><select id="u-role"><option value="user">User</option><option value="superuser">Superuser</option></select></div>
         <div class="field"><label>Account Status</label><select id="u-active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
@@ -2791,20 +2805,27 @@ function renderSettings(){
         <button class="btn btn-secondary" id="remove-logo" type="button" ${SETTINGS.logoUrl?'':'disabled'}>Remove Logo</button>
       </div>
     </div>` : '';
-  el.innerHTML = `
-    <div class="page-title"><div><h1>Settings</h1><div class="psub">Account, cashier session &amp; data</div></div></div>
-    ${brandingSection}
-    <div class="card" style="padding:18px 20px;max-width:480px;margin-bottom:16px;">
-      <div class="section-title">Current User</div>
-      <div class="field"><label>Display Name</label><input type="text" id="s-cashier" value="${escAttr(currentDisplayName)}"></div>
-      <button class="btn btn-primary" id="save-cashier">Save</button>
-    </div>
-    <div class="card" style="padding:18px 20px;max-width:600px;">
-      <div class="section-title">Data</div>
-      <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">${ORDERS.length} orders on record. Next order number: ${formatOrderNum(SETTINGS.nextOrderNum)}.</div>
-      <div style="font-size:12px;color:var(--text-dim);">${supabaseOk ? 'Connected to the shared database.' : 'Database unavailable — local fallback is active.'}</div>
-    </div>${usersSection}`;
-  document.getElementById('save-cashier').onclick = async ()=>{
+  if(!isSuperuser()){
+    el.innerHTML = `
+      <div class="page-title"><div><h1>Settings</h1><div class="psub">Account</div></div></div>
+      ${accountPasswordSection}`;
+  } else {
+    el.innerHTML = `
+      <div class="page-title"><div><h1>Settings</h1><div class="psub">Account, cashier session &amp; data</div></div></div>
+      ${brandingSection}
+      <div class="card" style="padding:18px 20px;max-width:480px;margin-bottom:16px;">
+        <div class="section-title">Current User</div>
+        <div class="field"><label>Display Name</label><input type="text" id="s-cashier" value="${escAttr(currentDisplayName)}"></div>
+        <button class="btn btn-primary" id="save-cashier">Save</button>
+      </div>
+      <div class="card" style="padding:18px 20px;max-width:600px;">
+        <div class="section-title">Data</div>
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">${ORDERS.length} orders on record. Next order number: ${formatOrderNum(SETTINGS.nextOrderNum)}.</div>
+        <div style="font-size:12px;color:var(--text-dim);">${supabaseOk ? 'Connected to the shared database.' : 'Database unavailable — local fallback is active.'}</div>
+      </div>${accountPasswordSection}${usersSection}`;
+  }
+  const saveCashierBtn=document.getElementById('save-cashier');
+  if(saveCashierBtn) saveCashierBtn.onclick = async ()=>{
     const name = document.getElementById('s-cashier').value.trim() || CURRENT_PROFILE?.username || 'Staff';
     const r = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?auth_user_id=eq.${encodeURIComponent(CURRENT_USER.id)}`, {
       method:'PATCH',
@@ -2862,6 +2883,26 @@ function renderSettings(){
       renderSettings();
     };
   }
+  const myChangeBtn=document.getElementById('my-change-password');
+  if(myChangeBtn) myChangeBtn.onclick=async()=>{
+    const np=document.getElementById('my-new-password')?.value||'';
+    const cp=document.getElementById('my-confirm-password')?.value||'';
+    if(np.length<6){toast('Password must be at least 6 characters.');return;}
+    if(np!==cp){toast('Passwords do not match.');return;}
+    const reason=requireActionReason('changing own password'); if(!reason)return;
+    try{
+      const {error}=await supabaseClient.auth.updateUser({password:np});
+      if(error) throw error;
+      await writeAudit('change_password','user',CURRENT_USER.id,reason,{self:true});
+      document.getElementById('my-new-password').value=''; document.getElementById('my-confirm-password').value='';
+      toast('Password changed successfully.');
+    }catch(e){toast('Could not change password: '+(e.message||e));}
+  };
+  document.querySelectorAll('[data-password-toggle]').forEach(btn=>btn.onclick=()=>{
+    const input=document.getElementById(btn.dataset.passwordToggle); if(!input)return;
+    input.type=input.type==='password'?'text':'password';
+    btn.setAttribute('aria-label',input.type==='password'?'Show password':'Hide password');
+  });
   if(isSuperuser()) wireUserManagement();
 }
 async function wireUserManagement(){
@@ -2934,6 +2975,11 @@ function escAttr(s){ return esc(s); }
   try{ SETTINGS = await storeGet('hibi-settings', SETTINGS); }catch(e){}
   applyBranding();
   document.getElementById('login-btn').onclick=doLogin;
+  document.querySelectorAll('[data-password-toggle]').forEach(btn=>btn.onclick=()=>{
+    const input=document.getElementById(btn.dataset.passwordToggle); if(!input)return;
+    input.type=input.type==='password'?'text':'password';
+    btn.setAttribute('aria-label',input.type==='password'?'Show password':'Hide password');
+  });
   document.getElementById('login-password').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
   document.getElementById('login-username').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('login-password').focus();});
   document.getElementById('logout-btn').onclick=doLogout;
