@@ -712,6 +712,7 @@ let activeCategory = null;
 let productSearch = '';
 let ordersFilter = {mode:'today', date: todayStr(), start:null, end:null, status:'all', source:'all'};
 let expensesFilter = {mode:'today', date: todayStr(), start: todayStr(), end: todayStr()};
+let OWNER_EXPENSES = [];
 let reportsFilter = {mode:'today', date: todayStr(), start: todayStr(), end: todayStr()};
 
 /* ---------- Storage helpers ---------- */
@@ -970,6 +971,7 @@ async function loadAll(){
   SETTINGS = await storeGet('hibi-settings', SETTINGS);
   applyBranding();
   EXPENSES = await storeGet('hibi-expenses', []);
+  OWNER_EXPENSES = await storeGet('hibi-owner-expenses', []);
   CASH_MOVEMENTS = await storeGet('hibi-cash-movements', []);
   if(supabaseOk && CURRENT_USER?.access_token){
     await loadPosOrders();
@@ -985,6 +987,7 @@ async function persistOrders(){ await loadPosOrders(); }
 async function persistEod(){ await storeSet('hibi-eod', EOD); }
 async function persistSettings(){ await storeSet('hibi-settings', SETTINGS); }
 async function persistExpenses(){ await storeSet('hibi-expenses', EXPENSES); }
+async function persistOwnerExpenses(){ await storeSet('hibi-owner-expenses', OWNER_EXPENSES); }
 async function persistCashMovements(){ await storeSet('hibi-cash-movements', CASH_MOVEMENTS); }
 
 /* ---------- Toast ---------- */
@@ -1579,12 +1582,13 @@ function renderExpensesPage(){
     <div class="filter-bar"><button class="filter-btn ${expensesFilter.mode==='today'?'active':''}" data-em="today">Today</button><button class="filter-btn ${expensesFilter.mode==='all'?'active':''}" data-em="all">All</button><input type="date" id="expense-date-input" value="${expensesFilter.mode==='date'?expensesFilter.date:todayStr()}"><button class="filter-btn" id="expenses-prev">‹ PREV</button><button class="filter-btn" id="expenses-next" ${shiftDateKey(expensesFilter.mode==='date'?expensesFilter.date:todayStr(),1)<=todayStr()?'':'disabled'}>NEXT ›</button></div>
     <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));"><div class="stat-card accent"><div class="slabel">Total Expenses</div><div class="sval">${PESO(total)}</div></div><div class="stat-card"><div class="slabel">Cash In</div><div class="sval" style="font-size:22px;">${PESO(cashIn)}</div></div><div class="stat-card"><div class="slabel">Cash Out</div><div class="sval" style="font-size:22px;color:var(--rust);">${PESO(cashOut)}</div></div><div class="stat-card"><div class="slabel">Expense Entries</div><div class="sval" style="font-size:22px;">${activeRows.length}</div></div></div>
     <div class="card" style="padding:18px 20px;margin-bottom:16px;overflow-x:auto;"><div class="section-title">Cash Drawer Movements</div><table><thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Reason</th><th>Cashier</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>${moves.length?moves.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td><b>${esc(x.type)}</b></td><td>${esc(x.reason)}</td><td>${esc(x.cashier)}</td><td class="num">${PESO(x.amount)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isStaffLockedDate(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<button class="icon-btn danger" data-void-cash="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No cash drawer movements.</div></td></tr>'}</tbody></table></div>
-    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date</th><th>Time</th><th>Note</th><th class="num">Amount</th><th>Cashier</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td>${esc(x.note)}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.cashier)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isStaffLockedDate(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td><td>${x.status==='Voided'?esc(x.voidReason||''):(isStaffLockedDate(x.date)&&!isSuperuser())?'<span style="font-size:11px;color:var(--text-dim);">Locked</span>':'<button class="icon-btn danger" data-del-exp="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No expenses logged for this period.</div></td></tr>'}</tbody></table></div>`;
+    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date</th><th>Time</th><th>Note</th><th class="num">Amount</th><th>Cashier</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td>${esc(x.note)}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.cashier)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isStaffLockedDate(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td><td>${x.status==='Voided'?esc(x.voidReason||''):(isStaffLockedDate(x.date)&&!isSuperuser())?'<span style="font-size:11px;color:var(--text-dim);">Locked</span>':'<button class="icon-btn danger" data-del-exp="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No expenses logged for this period.</div></td></tr>'}</tbody></table></div>${isSuperuser()?`<div class="card" style="overflow-x:auto;margin-top:16px;"><div class="section-title" style="padding:16px 18px 0;">Owner / Operational Expenses</div><div style="padding:0 18px 14px;color:var(--text-dim);font-size:12px;">For rent, supplies, equipment, utilities, repairs, and other owner-entered business costs. These are kept separate from daily store expenses and are not included in daily sales, cash reconciliation, Dashboard, or daily reports.</div><table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th class="num">Amount</th><th>Entered By</th></tr></thead><tbody>${OWNER_EXPENSES.filter(x=>matchesPeriod(x.date,expensesFilter)).sort((a,b)=>(a.date<b.date?1:-1)).map(x=>`<tr><td>${x.date}</td><td>${esc(x.category)}</td><td>${esc(x.description)}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.enteredBy)}</td></tr>`).join('')||'<tr><td colspan="5"><div class="empty-state">No owner / operational expenses recorded for this period.</div></td></tr>'}</tbody></table></div>`:''}`;
   el.querySelectorAll('[data-em]').forEach(b=>b.onclick=()=>{expensesFilter.mode=b.dataset.em;renderExpensesPage();});
   el.querySelector('#expense-date-input').onchange=e=>{expensesFilter.mode='date';expensesFilter.date=e.target.value;renderExpensesPage();};
   el.querySelector('#expenses-prev').onclick=()=>{const current=expensesFilter.mode==='date'?expensesFilter.date:todayStr();expensesFilter.mode='date';expensesFilter.date=shiftDateKey(current,-1);renderExpensesPage();};
   el.querySelector('#expenses-next').onclick=()=>{const current=expensesFilter.mode==='date'?expensesFilter.date:todayStr();const n=shiftDateKey(current,1);if(n<=businessDayKey()){expensesFilter.mode='date';expensesFilter.date=n;renderExpensesPage();}};
   el.querySelector('#add-expense-btn').onclick=()=>{if(canCreateEntryForDate(businessDayKey()))openAddExpenseModal();};
+  if(isSuperuser()){ const b=document.createElement('button'); b.className='btn btn-secondary'; b.textContent='+ Owner / Operational Expense'; b.onclick=openOwnerExpenseModal; el.querySelector('.page-title > div:last-child').appendChild(b); }
   el.querySelector('#add-cash-movement').onclick=openCashMovementModal;
   el.querySelectorAll('[data-del-exp]').forEach(b=>b.onclick=async()=>{const x=EXPENSES.find(e=>e.id===b.dataset.delExp);if(!x)return;if(!isSuperuser() && !canCreateEntryForDate(x.date))return;const reason=prompt('Reason for voiding this expense:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();await persistExpenses();await writeAudit('void_expense','expense',x.id,reason.trim(),{amount:x.amount,note:x.note,date:x.date});renderExpensesPage();toast('Expense voided — original record preserved');});
   el.querySelectorAll('[data-void-cash]').forEach(b=>b.onclick=async()=>{const x=CASH_MOVEMENTS.find(m=>m.id===b.dataset.voidCash);if(!x||x.status==='Voided')return;if(!isSuperuser() && !canCreateEntryForDate(x.date))return;const reason=prompt('Reason for voiding this cash movement:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();await persistCashMovements();await writeAudit('void_cash_movement','cash_movement',x.id,reason.trim(),{amount:x.amount,type:x.type,date:x.date});renderExpensesPage();toast('Cash movement voided — original record preserved');});
@@ -1619,6 +1623,30 @@ function openAddExpenseModal(){
     closeModal();
     renderExpensesPage();
     toast('Expense recorded');
+  };
+}
+
+function openOwnerExpenseModal(){
+  if(!isSuperuser()){ toast('Superuser access required.'); return; }
+  openModal(`
+    <div class="modal-head"><h3>Owner / Operational Expense</h3><div class="msub">For monthly business reporting only — excluded from daily store computations.</div></div>
+    <div class="modal-body">
+      <div class="field"><label>Category</label><select id="oe-category"><option>Supplies</option><option>Rent</option><option>Utilities</option><option>Equipment</option><option>Repairs & Maintenance</option><option>Marketing</option><option>Permits & Licenses</option><option>Professional Services</option><option>Other</option></select></div>
+      <div class="field"><label>Description</label><input type="text" id="oe-description" placeholder="e.g. Monthly shop rent"></div>
+      <div class="field"><label>Amount</label><input type="number" inputmode="decimal" id="oe-amount" placeholder="0.00"></div>
+      <div class="field"><label>Date</label><input type="date" id="oe-date" value="${expensesFilter.date||todayStr()}"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" id="modal-cancel">Cancel</button><button class="btn btn-primary" id="modal-save">Save Expense</button></div>`);
+  document.getElementById('modal-cancel').onclick=closeModal;
+  document.getElementById('modal-save').onclick=async()=>{
+    const category=document.getElementById('oe-category').value;
+    const description=document.getElementById('oe-description').value.trim();
+    const amount=parseFloat(document.getElementById('oe-amount').value);
+    const date=document.getElementById('oe-date').value||todayStr();
+    if(!description){toast('Description is required.');return;}
+    if(!amount||amount<=0){toast('Enter a valid amount.');return;}
+    const now=new Date(); const entry={id:uid(),category,description,amount,date,time:nowTimeStr().slice(0,5),timestamp:now.toISOString(),enteredBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Superuser')};
+    OWNER_EXPENSES.unshift(entry); await persistOwnerExpenses(); await writeAudit('create_owner_expense','owner_expense',entry.id,description,{category,amount,date}); closeModal(); renderExpensesPage(); toast('Owner / operational expense recorded');
   };
 }
 
