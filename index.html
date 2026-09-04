@@ -1853,12 +1853,11 @@ function renderMonthlyPerformance(){
       </div>
     </div>
 
-    <div style="font-size:13px;font-weight:800;letter-spacing:.08em;color:var(--text-dim);margin:2px 0 10px;">MONTH TOTAL</div>
-    <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));">
+    <div class="stat-grid" style="margin-top:16px;">
       <div class="stat-card accent"><div class="slabel">Net Sales</div><div class="sval">${moneyFmt(netAfterDailyExpenses)}</div></div>
       <div class="stat-card"><div class="slabel">Total Sales</div><div class="sval">${moneyFmt(m.totalSales)}</div></div>
-      <div class="stat-card"><div class="slabel">Average Cups / Day</div><div class="sval" style="font-size:21px;">${activeDays ? (m.cups/activeDays).toFixed(1) : "—"}</div></div>
-      <div class="stat-card"><div class="slabel">Average Sales / Day</div><div class="sval" style="font-size:21px;">${activeDays ? moneyFmt(m.totalSales/activeDays) : "—"}</div></div>
+      <div class="stat-card"><div class="slabel">Average Cups / Day</div><div class="sval">${activeDays ? (m.cups/activeDays).toFixed(1) : '—'}</div></div>
+      <div class="stat-card"><div class="slabel">Average Sales / Day</div><div class="sval" style="font-size:22px;">${activeDays ? moneyFmt(m.totalSales/activeDays) : '—'}</div></div>
     </div>
 
     <div class="card" style="padding:18px 20px;margin-top:16px;overflow-x:auto;">
@@ -1871,6 +1870,16 @@ function renderMonthlyPerformance(){
           <th class="num">Cash</th><th class="num">GCash</th><th class="num">Grab</th><th class="num">Expenses</th>
         </tr></thead>
         <tbody>
+          <tr style="font-weight:800;border-bottom:2px solid var(--text);">
+            <td>MONTH TOTAL</td>
+            <td class="num">${moneyFmt(netAfterDailyExpenses)}</td>
+            <td class="num">${m.cups}</td>
+            <td class="num">${moneyFmt(m.totalSales)}</td>
+            <td class="num">${moneyFmt(totalCash)}</td>
+            <td class="num">${moneyFmt(totalGcash)}</td>
+            <td class="num">${moneyFmt(totalGrab)}</td>
+            <td class="num">${moneyFmt(expenseTotal)}</td>
+          </tr>
           ${dailyRows.map(r=>{
             const hasActivity=r.dm.totalTx||r.exp||r.opening||r.cashIn||r.cashOut||r.actual!=null;
             return `<tr style="${hasActivity?'':'opacity:.52;'}">
@@ -1884,16 +1893,6 @@ function renderMonthlyPerformance(){
               <td class="num">${moneyFmt(r.exp)}</td>
             </tr>`;
           }).join('')}
-          <tr style="font-weight:800;border-top:2px solid var(--text);">
-            <td>MONTH TOTAL</td>
-            <td class="num">${moneyFmt(netAfterDailyExpenses)}</td>
-            <td class="num">${m.cups}</td>
-            <td class="num">${moneyFmt(m.totalSales)}</td>
-            <td class="num">${moneyFmt(totalCash)}</td>
-            <td class="num">${moneyFmt(totalGcash)}</td>
-            <td class="num">${moneyFmt(totalGrab)}</td>
-            <td class="num">${moneyFmt(expenseTotal)}</td>
-          </tr>
         </tbody>
       </table>
     </div>
