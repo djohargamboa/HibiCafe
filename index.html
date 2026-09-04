@@ -230,7 +230,7 @@ nav.tabs button{width:76px;min-height:61px;padding:8px 4px;border-radius:12px;ba
 nav.tabs button::before{font-size:18px;line-height:1;opacity:.9;}
 nav.tabs button[data-page="pos"]::before{content:"⌂";} nav.tabs button[data-page="grab"]::before{content:"◈";} nav.tabs button[data-page="orders"]::before{content:"▤";}
 nav.tabs button[data-page="expenses"]::before{content:"↘";} nav.tabs button[data-page="dashboard"]::before{content:"▥";}
-nav.tabs button[data-page="reports"]::before{content:"▦";} nav.tabs button[data-page="menu"]::before{content:"☷";}
+nav.tabs button[data-page="reports"]::before{content:"▦";} nav.tabs button[data-page="monthly-performance"]::before{content:"◫";} nav.tabs button[data-page="menu"]::before{content:"☷";}
 nav.tabs button[data-page="audit"]::before{content:"◉";} nav.tabs button[data-page="settings"]::before{content:"⚙";}
 nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{background:var(--caramel);color:#fff;box-shadow:0 8px 18px rgba(242,140,40,.18);}
 .topbar-right{margin:0;width:100%;display:flex;flex-direction:column;gap:7px;font-size:10px;color:#A7A7A3;text-align:center;}
@@ -397,6 +397,7 @@ nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{bac
       <button data-page="orders" data-permission="orders">Orders</button>
       <button data-page="expenses" data-permission="expenses">Expenses</button>
       <button data-page="reports" data-permission="reports">Reports</button>
+      <button data-page="monthly-performance" data-permission="reports" data-superuser-only="true">Monthly Performance</button>
       <button data-page="menu" data-permission="menu">Menu Mgmt</button>
       <button data-page="audit" data-permission="audit" title="Audit Log" aria-label="Audit Log">Audit Log</button>
       <button data-page="settings" data-permission="settings">Settings</button>
@@ -476,6 +477,11 @@ nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{bac
   <!-- REPORTS PAGE -->
   <div class="page" id="page-reports">
     <div class="page-scroll" id="reports-content"></div>
+  </div>
+
+  <!-- MONTHLY PERFORMANCE PAGE -->
+  <div class="page" id="page-monthly-performance">
+    <div class="page-scroll" id="monthly-performance-content"></div>
   </div>
 
   <!-- MENU MGMT PAGE -->
@@ -720,6 +726,7 @@ let ordersFilter = {mode:'today', date: todayStr(), start:null, end:null, status
 let expensesFilter = {mode:'today', date: todayStr(), start: todayStr(), end: todayStr()};
 let OWNER_EXPENSES = [];
 let reportsFilter = {mode:'today', date: todayStr(), start: todayStr(), end: todayStr()};
+let monthlyPerformanceMonth = todayStr().slice(0,7);
 
 /* ---------- Storage helpers ---------- */
 // Storage adapter, in priority order:
@@ -736,8 +743,8 @@ const DEFAULT_PERMISSIONS = ['pos','grab','orders','expenses','dashboard','repor
 function isSuperuser(){ return CURRENT_PROFILE?.role==='superuser'; }
 function can(permission){ return isSuperuser() || !!CURRENT_PROFILE?.permissions?.[permission]; }
 function applyPermissions(){
-  document.querySelectorAll('#nav-tabs button[data-permission]').forEach(b=>{ b.style.display=can(b.dataset.permission)?'flex':'none'; });
-  const first=[...document.querySelectorAll('#nav-tabs button[data-permission]')].find(b=>can(b.dataset.permission));
+  document.querySelectorAll('#nav-tabs button[data-permission]').forEach(b=>{ b.style.display=(can(b.dataset.permission) && (!b.dataset.superuserOnly || isSuperuser()))?'flex':'none'; });
+  const first=[...document.querySelectorAll('#nav-tabs button[data-permission]')].find(b=>can(b.dataset.permission) && (!b.dataset.superuserOnly || isSuperuser()));
   if(first && !document.querySelector('.page.active')) goToPage(first.dataset.page);
 }
 async function getLoginProfile(username){
@@ -1022,7 +1029,9 @@ document.getElementById('nav-tabs').addEventListener('click', (e)=>{
   goToPage(btn.dataset.page);
 });
 function goToPage(pageId){
-  if(!can(pageId)) { toast('You do not have access to this section.'); return; }
+  if(pageId==='monthly-performance' && !isSuperuser()) { toast('Monthly Performance is available to superusers only.'); return; }
+  const requiredPermission = pageId==='monthly-performance' ? 'reports' : pageId;
+  if(!can(requiredPermission)) { toast('You do not have access to this section.'); return; }
   document.querySelectorAll('#nav-tabs button').forEach(b=>b.classList.toggle('active', b.dataset.page===pageId));
   const actualPage=pageId==='grab'?'pos':pageId;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -1033,6 +1042,7 @@ function goToPage(pageId){
   if(pageId==='expenses') renderExpensesPage();
   if(pageId==='dashboard') renderDashboard();
   if(pageId==='reports') renderReports();
+  if(pageId==='monthly-performance') renderMonthlyPerformance();
   if(pageId==='menu') renderMenuMgmt();
   if(pageId==='audit') renderAuditLog();
   if(pageId==='settings') renderSettings();
@@ -1736,11 +1746,7 @@ function renderDashboard(){
       <div class="stat-card accent"><div class="slabel">Today's Sales</div><div class="sval">${PESO(m.totalSales)}</div></div>
       <div class="stat-card"><div class="slabel">Transactions</div><div class="sval">${m.totalTx}</div></div>
       <div class="stat-card"><div class="slabel">Cups Sold</div><div class="sval">${m.cups}</div></div>
-      <div class="stat-card"><div class="slabel">Average Order</div><div class="sval">${PESO(m.avgOrder)}</div></div>
-    </div>
-    <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-top:-6px;">
       <div class="stat-card"><div class="slabel">Today's Expenses</div><div class="sval" style="font-size:22px;color:var(--rust);">${PESO(expenseTotal)}</div></div>
-      <div class="stat-card"><div class="slabel">Net Sales (after expenses)</div><div class="sval" style="font-size:22px;">${PESO(netSales)}</div></div>
     </div>
     <div class="two-col" style="grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;">
       <div class="card" style="padding:18px 20px;margin-bottom:0;">
@@ -1793,6 +1799,111 @@ function renderDashboard(){
     </div>
   `;
 }
+
+function monthDateRange(ym){
+  const [y,m]=ym.split('-').map(Number);
+  const last=new Date(Date.UTC(y,m,0)).getUTCDate();
+  return {start:`${ym}-01`,end:`${ym}-${String(last).padStart(2,'0')}`,days:last};
+}
+function formatMonthLabel(ym){
+  const [y,m]=ym.split('-').map(Number);
+  return new Date(Date.UTC(y,m-1,1)).toLocaleDateString('en-PH',{month:'long',year:'numeric'});
+}
+function renderMonthlyPerformance(){
+  const el=document.getElementById('monthly-performance-content');
+  const ym=monthlyPerformanceMonth || todayStr().slice(0,7);
+  const {start,end,days}=monthDateRange(ym);
+  const monthOrders=ORDERS.filter(o=>o.date>=start && o.date<=end);
+  const monthExpenses=EXPENSES.filter(x=>x.date>=start && x.date<=end);
+  const completed=monthOrders.filter(o=>o.status!=='Cancelled');
+  const m=computeMetrics(completed);
+  const expenseTotal=monthExpenses.reduce((sum,x)=>sum+Number(x.amount||0),0);
+  const totalCash=m.pmAgg['Cash']?.sales||0;
+  const totalGcash=m.pmAgg['GCash']?.sales||0;
+  const totalGrab=m.pmAgg['GrabFood']?.sales||0;
+  const netAfterDailyExpenses=totalCash+totalGcash+(totalGrab*0.75)-expenseTotal;
+  const activeDays=new Set(completed.map(o=>o.date)).size;
+  const dailyRows=[];
+  for(let d=1;d<=days;d++){
+    const dateKey=`${ym}-${String(d).padStart(2,'0')}`;
+    const dayOrders=ORDERS.filter(o=>o.date===dateKey);
+    const dayCompleted=dayOrders.filter(o=>o.status!=='Cancelled');
+    const dm=computeMetrics(dayCompleted);
+    const dayExpenses=monthExpenses.filter(x=>x.date===dateKey);
+    const exp=dayExpenses.reduce((sum,x)=>sum+Number(x.amount||0),0);
+    const eod=EOD[dateKey]||{};
+    const cashSales=dm.pmAgg['Cash']?.sales||0;
+    const gcashSales=dm.pmAgg['GCash']?.sales||0;
+    const grabSales=dm.pmAgg['GrabFood']?.sales||0;
+    const opening=eod.opening!=null ? Number(eod.opening) : Number(openingCashForDate(dateKey)||0);
+    const cashIn=Number(eod.cashIn||0);
+    const cashOut=Number(eod.cashOut||0);
+    const expected=eod.expected!=null ? Number(eod.expected) : opening+cashIn+cashSales-cashOut-exp;
+    const actual=eod.actual!=null ? Number(eod.actual) : null;
+    const variance=actual!=null ? actual-expected : null;
+    dailyRows.push({dateKey,dayOrders,dm,exp,cashSales,gcashSales,grabSales,opening,cashIn,cashOut,expected,actual,variance});
+  }
+  const moneyFmt=(n)=>PESO(Number(n)||0);
+  el.innerHTML=`
+    <div class="page-title">
+      <div><h1>Monthly Performance</h1><div class="psub">Daily business summary for ${esc(formatMonthLabel(ym))}</div></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <label style="font-size:12px;color:var(--text-dim);font-weight:700;">Month</label>
+        <input type="month" id="monthly-performance-month" value="${escAttr(ym)}">
+      </div>
+    </div>
+
+    <div style="font-size:13px;font-weight:800;letter-spacing:.08em;color:var(--text-dim);margin:2px 0 10px;">MONTH TOTAL</div>
+    <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));">
+      <div class="stat-card accent"><div class="slabel">Net Sales</div><div class="sval">${moneyFmt(netAfterDailyExpenses)}</div></div>
+      <div class="stat-card"><div class="slabel">Total Sales</div><div class="sval">${moneyFmt(m.totalSales)}</div></div>
+      <div class="stat-card"><div class="slabel">Average Cups / Day</div><div class="sval" style="font-size:21px;">${activeDays ? (m.cups/activeDays).toFixed(1) : "—"}</div></div>
+      <div class="stat-card"><div class="slabel">Average Sales / Day</div><div class="sval" style="font-size:21px;">${activeDays ? moneyFmt(m.totalSales/activeDays) : "—"}</div></div>
+    </div>
+
+    <div class="card" style="padding:18px 20px;margin-top:16px;overflow-x:auto;">
+      <div class="page-title" style="margin-bottom:10px;">
+        <div><div class="section-title" style="margin:0;">Daily Summary</div><div style="font-size:12px;color:var(--text-dim);margin-top:3px;">One row per calendar day. Net Sales = Cash + GCash + (GrabFood × 75%) − Daily Expenses.</div></div>
+      </div>
+      <table style="min-width:850px;">
+        <thead><tr>
+          <th>Date</th><th class="num">Net Sales</th><th class="num">Cups</th><th class="num">Total Sales</th>
+          <th class="num">Cash</th><th class="num">GCash</th><th class="num">Grab</th><th class="num">Expenses</th>
+        </tr></thead>
+        <tbody>
+          ${dailyRows.map(r=>{
+            const hasActivity=r.dm.totalTx||r.exp||r.opening||r.cashIn||r.cashOut||r.actual!=null;
+            return `<tr style="${hasActivity?'':'opacity:.52;'}">
+              <td><strong>${r.dateKey}</strong></td>
+              <td class="num" style="font-weight:700;">${moneyFmt(r.cashSales+r.gcashSales+(r.grabSales*0.75)-r.exp)}</td>
+              <td class="num">${r.dm.cups||0}</td>
+              <td class="num" style="font-weight:700;">${moneyFmt(r.dm.totalSales)}</td>
+              <td class="num">${moneyFmt(r.cashSales)}</td>
+              <td class="num">${moneyFmt(r.gcashSales)}</td>
+              <td class="num">${moneyFmt(r.grabSales)}</td>
+              <td class="num">${moneyFmt(r.exp)}</td>
+            </tr>`;
+          }).join('')}
+          <tr style="font-weight:800;border-top:2px solid var(--text);">
+            <td>MONTH TOTAL</td>
+            <td class="num">${moneyFmt(netAfterDailyExpenses)}</td>
+            <td class="num">${m.cups}</td>
+            <td class="num">${moneyFmt(m.totalSales)}</td>
+            <td class="num">${moneyFmt(totalCash)}</td>
+            <td class="num">${moneyFmt(totalGcash)}</td>
+            <td class="num">${moneyFmt(totalGrab)}</td>
+            <td class="num">${moneyFmt(expenseTotal)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+  el.querySelector('#monthly-performance-month').onchange=e=>{
+    monthlyPerformanceMonth=e.target.value || todayStr().slice(0,7);
+    renderMonthlyPerformance();
+  };
+}
+
 
 /* ============================================================
    REPORTS PAGE
