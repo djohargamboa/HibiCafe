@@ -140,6 +140,19 @@ nav.tabs button.active{background:var(--caramel);color:#fff;}
 .big-total .amt{font-family:'Inter',system-ui,sans-serif;font-size:38px;font-weight:700;}
 .big-total .lbl{font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;}
 .change-row{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--cream-dim);border-radius:10px;margin-top:10px;font-weight:700;}
+.pwd-discount-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--panel);cursor:pointer;transition:.15s;margin-bottom:14px;}
+.pwd-discount-card:hover{border-color:var(--caramel);background:#FFFBF6;}
+.pwd-discount-card.active{border-color:var(--caramel);background:#FFF5E9;box-shadow:0 2px 8px rgba(242,140,40,.10);}
+.pwd-discount-card .pwd-main{display:flex;align-items:center;gap:10px;min-width:0;}
+.pwd-discount-card .pwd-icon{width:34px;height:34px;border-radius:9px;background:var(--cream-dim);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:var(--espresso-soft);flex-shrink:0;}
+.pwd-discount-card.active .pwd-icon{background:var(--caramel);color:#fff;}
+.pwd-discount-card .pwd-title{font-size:13px;font-weight:700;color:var(--espresso);}
+.pwd-discount-card input{position:absolute;opacity:0;pointer-events:none;}
+.pwd-switch{width:42px;height:24px;border-radius:20px;background:#D8D8D2;position:relative;flex-shrink:0;transition:.15s;}
+.pwd-switch:after{content:'';position:absolute;width:20px;height:20px;border-radius:50%;background:#fff;top:2px;left:2px;box-shadow:0 1px 3px rgba(0,0,0,.22);transition:.15s;}
+.pwd-discount-card.active .pwd-switch{background:var(--caramel);}
+.pwd-discount-card.active .pwd-switch:after{left:20px;}
+
 .change-row.negative{background:#FBEAE6;color:var(--rust);}
 .change-row.positive{background:#EEF2E4;color:var(--matcha-dark);}
 .success-check{width:70px;height:70px;border-radius:50%;background:var(--matcha);color:#fff;display:flex;align-items:center;justify-content:center;font-size:34px;margin:8px auto 16px;}
@@ -1344,12 +1357,12 @@ function openCheckoutModal(){
     return `<div class="modal-head"><h3>${orderChannel==='GrabFood'?'Save GrabFood Order':'Checkout'}</h3><div class="msub">${CART.reduce((s,i)=>s+i.qty,0)} item(s) · ${CART.filter(i=>cartItemIsDrink(i)).reduce((s,i)=>s+i.qty,0)} cup(s)</div></div>
     <div class="modal-body">
       ${orderChannel==='Walk-in' && eligible.length ? `<div class="field"><label>Loyalty Card Reward</label><select id="loyalty-reward"><option value="">No loyalty reward</option>${eligible.map(i=>{const r=loyaltyRewardForItem(i);return r.eligible?`<option value="${escAttr(i.key)}" ${selectedLoyaltyKey===i.key?'selected':''}>10th drink free — ${esc(i.name)} ${i.size?`(${esc(i.size)})`:''} · ${esc(r.label)}</option>`:''}).join('')}</select><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">Present/verify the completed loyalty card. One 10th drink reward per order.</div></div>` : ''}
-      ${orderChannel==='Walk-in' ? `<div class="field"><label>PWD Discount</label><label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;"><input type="checkbox" id="pwd-discount" ${pwdSelected?'checked':''}> Apply PWD 20% discount to highest-priced payable item (round down)</label><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">Loyalty rewards are considered first when determining the highest-priced payable item.</div></div>` : ''}
+      ${orderChannel==='Walk-in' ? `<label class="pwd-discount-card ${pwdSelected?'active':''}" for="pwd-discount"><div class="pwd-main"><div class="pwd-icon">20%</div><div class="pwd-title">PWD / Senior Discount</div></div><input type="checkbox" id="pwd-discount" ${pwdSelected?'checked':''}><span class="pwd-switch"></span></label>` : ''}
       ${orderChannel==='GrabFood'?`<div class="field"><label>GrabFood Code</label><input id="modal-grab-code" type="text" value="${escAttr(grabCode)}" placeholder="e.g. GF123456"></div>
-      <div class="field"><label>Grab Promo / Discount</label><select id="discount-type"><option ${discountType==='None'?'selected':''}>None</option><option ${discountType==='Grab Promo'?'selected':''}>Grab Promo</option><option ${discountType==='PWD'?'selected':''}>PWD</option><option ${discountType==='Senior Citizen'?'selected':''}>Senior Citizen</option><option ${discountType==='Other'?'selected':''}>Other</option></select></div>
+      <div class="field"><label>Grab Promo / Discount</label><select id="discount-type"><option ${discountType==='None'?'selected':''}>None</option><option ${discountType==='Grab Promo'?'selected':''}>Grab Promo</option><option ${(['PWD','Senior Citizen','PWD/Senior Discount'].includes(discountType))?'selected':''}>PWD/Senior Discount</option><option ${discountType==='Other'?'selected':''}>Other</option></select></div>
       <div class="field"><label>Discount Amount</label><input id="discount-amount" type="text" inputmode="decimal" value="${discountAmount||''}" placeholder="0.00"></div>`:''}
       ${orderChannel==='Walk-in' && lr.item ? `<div class="change-row" style="margin-top:4px;"><span>Loyalty Reward</span><span>−${PESO(lr.discount)}</span></div>${lr.charge>0?`<div class="change-row"><span>20oz Upgrade</span><span>+${PESO(lr.charge)}</span></div>`:''}`:''}
-      ${orderChannel==='Walk-in' && pwdSelected ? `<div class="change-row"><span>PWD Discount</span><span>−${PESO(pwdDiscount())}</span></div>` : ''}
+      ${orderChannel==='Walk-in' && pwdSelected ? `<div class="change-row"><span>PWD/Senior Discount</span><span>−${PESO(pwdDiscount())}</span></div>` : ''}
       <div class="big-total"><div class="lbl">${orderChannel==='GrabFood'?'Grab Order Total':'Order Total'}</div><div class="amt">${PESO(total())}</div></div>
       ${orderChannel==='Walk-in'?`<div class="pay-tabs"><button class="pay-tab ${method==='Cash'?'active':''}" id="tab-cash">Cash</button><button class="pay-tab ${method==='GCash'?'active':''}" id="tab-gcash">GCash</button><button class="pay-tab ${method==='Cash + GCash'?'active':''}" id="tab-combo">Cash + GCash</button></div>
       ${method==='Cash'?`<div class="field"><label>Amount Received</label><input type="text" inputmode="decimal" autocomplete="off" id="cash-received" placeholder="0.00" value="${escAttr(received)}"></div><div id="cash-change-area"></div>`:''}
@@ -1385,7 +1398,7 @@ function openCheckoutModal(){
       const da=document.getElementById('discount-amount'); if(da)da.oninput=e=>{discountAmount=e.target.value.replace(/[^0-9.]/g,'');grabDiscountAmount=Number(discountAmount)||0;updateUI();const totalEl=document.querySelector('.big-total .amt');if(totalEl)totalEl.textContent=PESO(total())};
     }
     updateUI();
-    document.getElementById('modal-confirm').onclick=async()=>{if(!canConfirm())return;if(!canCreateEntryForDate(selectedOrderDate))return;submitting=true;const lr=loyalty();const loyaltyItem=lr.item;const finalDiscount=discount();const walkinDiscountType=orderChannel==='Walk-in'?(pwdSelected?(loyaltyItem?'PWD + Loyalty Reward':'PWD'):(loyaltyItem?'Loyalty Reward':'None')):discountType;await finalizeOrder({method,subtotal,received:received?parseFloat(received):null,ref,cashPart:cashPart?parseFloat(cashPart):null,gcashPart:gcashPart?parseFloat(gcashPart):null,discountType:walkinDiscountType,discountAmount:finalDiscount,loyaltyItemKey:loyaltyItem?.key||null,loyaltyCharge:lr.charge||0});};
+    document.getElementById('modal-confirm').onclick=async()=>{if(!canConfirm())return;if(!canCreateEntryForDate(selectedOrderDate))return;submitting=true;const lr=loyalty();const loyaltyItem=lr.item;const finalDiscount=discount();const walkinDiscountType=orderChannel==='Walk-in'?(pwdSelected?(loyaltyItem?'PWD/Senior Discount + Loyalty Reward':'PWD/Senior Discount'):(loyaltyItem?'Loyalty Reward':'None')):discountType;await finalizeOrder({method,subtotal,received:received?parseFloat(received):null,ref,cashPart:cashPart?parseFloat(cashPart):null,gcashPart:gcashPart?parseFloat(gcashPart):null,discountType:walkinDiscountType,discountAmount:finalDiscount,loyaltyItemKey:loyaltyItem?.key||null,loyaltyCharge:lr.charge||0});};
   }
   render();
 }
@@ -1765,8 +1778,8 @@ function renderDashboard(){
   const todaysOrders = ORDERS.filter(o=>o.date===businessDayKey());
   const m = computeMetrics(todaysOrders);
   const todaysExpenses = EXPENSES.filter(x=>x.date===businessDayKey());
-  const expenseTotal = todaysExpenses.reduce((s,x)=>s+x.amount,0);
-  const netSales = m.totalSales - expenseTotal;
+  const expenseTotal = todaysExpenses.filter(x=>x.status!=='Voided').reduce((s,x)=>s+Number(x.amount||0),0);
+  const todaysOpex = OWNER_EXPENSES.filter(x=>x.date===businessDayKey() && x.status!=='Voided');
   const el = document.getElementById('dashboard-content');
   el.innerHTML = `
     <div class="page-title"><div><h1>Dashboard</h1><div class="psub">Business Day: ${businessDayKey()} — ${isBusinessDayClosing()?'CLOSING':'OPEN'} · Calendar date: ${todayStr()}</div></div></div>
@@ -1862,6 +1875,8 @@ function renderMonthlyPerformance(){
     const dm=computeMetrics(dayCompleted);
     const dayExpenses=monthExpenses.filter(x=>x.date===dateKey);
     const exp=dayExpenses.reduce((sum,x)=>sum+Number(x.amount||0),0);
+    const dayOpex=monthOwnerExpenses.filter(x=>x.date===dateKey);
+    const opex=dayOpex.reduce((sum,x)=>sum+Number(x.amount||0),0);
     const eod=EOD[dateKey]||{};
     const cashSales=dm.pmAgg['Cash']?.sales||0;
     const gcashSales=dm.pmAgg['GCash']?.sales||0;
@@ -1872,8 +1887,18 @@ function renderMonthlyPerformance(){
     const expected=eod.expected!=null ? Number(eod.expected) : opening+cashIn+cashSales-cashOut-exp;
     const actual=eod.actual!=null ? Number(eod.actual) : null;
     const variance=actual!=null ? actual-expected : null;
-    dailyRows.push({dateKey,dayOrders,dm,exp,cashSales,gcashSales,grabSales,opening,cashIn,cashOut,expected,actual,variance});
+    dailyRows.push({dateKey,dayOrders,dm,exp,opex,cashSales,gcashSales,grabSales,opening,cashIn,cashOut,expected,actual,variance});
   }
+  const performanceCash=dailyRows.reduce((sum,r)=>sum+Number(r.cashSales||0),0);
+  const performanceGcash=dailyRows.reduce((sum,r)=>sum+Number(r.gcashSales||0),0);
+  const performanceGrab=dailyRows.reduce((sum,r)=>sum+Number(r.grabSales||0),0);
+  const performanceExpenses=dailyRows.reduce((sum,r)=>sum+Number(r.exp||0),0);
+  const performanceCashOpex=monthOwnerExpenses.filter(x=>(x.paymentMethod||'Cash')==='Cash').reduce((sum,x)=>sum+Number(x.amount||0),0);
+  const performanceGcashOpex=monthOwnerExpenses.filter(x=>(x.paymentMethod||'Cash')==='GCash').reduce((sum,x)=>sum+Number(x.amount||0),0);
+  const performanceBankOpex=monthOwnerExpenses.filter(x=>(x.paymentMethod||'Cash')==='Bank Transfer').reduce((sum,x)=>sum+Number(x.amount||0),0);
+  const performanceCurrentCash=performanceCash-performanceExpenses-performanceCashOpex;
+  const performanceCurrentGcash=performanceGcash-performanceGcashOpex;
+  const performanceCurrentBank=(performanceGrab*0.75)-performanceBankOpex;
   const moneyFmt=(n)=>PESO(Number(n)||0);
   el.innerHTML=`
     <div class="page-title">
@@ -1892,6 +1917,12 @@ function renderMonthlyPerformance(){
       <div class="stat-card"><div class="slabel">Opex</div><div class="sval" style="font-size:22px;">${moneyFmt(opexTotal)}</div></div>
     </div>
 
+    <div class="stat-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:16px;">
+      <div class="stat-card"><div class="slabel">Current Cash</div><div class="sval" style="font-size:22px;">${moneyFmt(performanceCurrentCash)}</div></div>
+      <div class="stat-card"><div class="slabel">Current GCash</div><div class="sval" style="font-size:22px;">${moneyFmt(performanceCurrentGcash)}</div></div>
+      <div class="stat-card"><div class="slabel">Current Bank</div><div class="sval" style="font-size:22px;">${moneyFmt(performanceCurrentBank)}</div></div>
+    </div>
+
     <div class="card" style="padding:18px 20px;margin-top:16px;overflow-x:auto;">
       <div class="page-title" style="margin-bottom:10px;">
         <div><div class="section-title" style="margin:0;">Daily Summary</div><div style="font-size:12px;color:var(--text-dim);margin-top:3px;">One row per calendar day. Net Sales = Cash + GCash + (GrabFood × 75%) − Daily Expenses.</div></div>
@@ -1899,7 +1930,7 @@ function renderMonthlyPerformance(){
       <table style="min-width:850px;">
         <thead><tr>
           <th>Date</th><th class="num">Net Sales</th><th class="num">Cups</th><th class="num">Total Sales</th>
-          <th class="num">Cash</th><th class="num">GCash</th><th class="num">Grab</th><th class="num">Expenses</th>
+          <th class="num">Cash</th><th class="num">GCash</th><th class="num">Grab</th><th class="num">Expenses</th><th class="num">OPEX</th>
         </tr></thead>
         <tbody>
           <tr style="font-weight:800;border-bottom:2px solid var(--text);">
@@ -1911,18 +1942,20 @@ function renderMonthlyPerformance(){
             <td class="num">${moneyFmt(totalGcash)}</td>
             <td class="num">${moneyFmt(totalGrab)}</td>
             <td class="num">${moneyFmt(expenseTotal)}</td>
+            <td class="num">${moneyFmt(opexTotal)}</td>
           </tr>
           ${dailyRows.map(r=>{
             const hasActivity=r.dm.totalTx||r.exp||r.opening||r.cashIn||r.cashOut||r.actual!=null;
             return `<tr style="${hasActivity?'':'opacity:.52;'}">
               <td><strong>${r.dateKey}</strong></td>
-              <td class="num" style="font-weight:700;">${moneyFmt(r.cashSales+r.gcashSales+(r.grabSales*0.75)-r.exp)}</td>
+              <td class="num" style="font-weight:700;">${moneyFmt(r.cashSales+r.gcashSales+(r.grabSales*0.75)-r.exp-r.opex)}</td>
               <td class="num">${r.dm.cups||0}</td>
               <td class="num" style="font-weight:700;">${moneyFmt(r.dm.totalSales)}</td>
               <td class="num">${moneyFmt(r.cashSales)}</td>
               <td class="num">${moneyFmt(r.gcashSales)}</td>
               <td class="num">${moneyFmt(r.grabSales)}</td>
               <td class="num">${moneyFmt(r.exp)}</td>
+              <td class="num">${moneyFmt(r.opex)}</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -1965,18 +1998,12 @@ function openingCashForDate(dateStr){
 function renderReports(){
   const orders = ordersForReportFilter();
   const m = computeMetrics(orders);
-  const expenses = filteredExpenses(reportsFilter).filter(x=>x.status!=='Voided');
-  const expenseTotal = expenses.reduce((s,x)=>s+Number(x.amount||0),0);
+  const expenses = filteredExpenses(reportsFilter);
+  const expenseTotal = expenses.reduce((s,x)=>s+x.amount,0);
   const netSales = m.totalSales - expenseTotal;
   const el = document.getElementById('reports-content');
   const rangeLabel = reportsFilter.mode==='today' ? 'Today' : reportsFilter.mode==='date' ? reportsFilter.date : reportsFilter.mode==='month' ? 'This Month' : `${reportsFilter.start} → ${reportsFilter.end}`;
   const selectedEodDate = reportsFilter.mode==='date' ? reportsFilter.date : businessDayKey();
-  // Reconciliation is always calculated from the selected business day's live data,
-  // independent of the broader Reports filter. Voided expenses are excluded.
-  const eodOrders = ORDERS.filter(o=>o.date===selectedEodDate);
-  const eodMetrics = computeMetrics(eodOrders);
-  const eodExpenses = EXPENSES.filter(x=>x.date===selectedEodDate && x.status!=='Voided');
-  const eodExpenseTotal = eodExpenses.reduce((s,x)=>s+Number(x.amount||0),0);
   const eod = EOD[selectedEodDate] || {};
   const openingCash = openingCashForDate(selectedEodDate);
   const drawerTotals = cashMovementTotals(selectedEodDate);
@@ -2132,9 +2159,9 @@ function renderReports(){
   function recalcEod(){
     const opening = parseFloat(document.getElementById('eod-opening').value)||0;
     const actual = document.getElementById('eod-actual').value;
-    const cashSales = eodMetrics.pmAgg['Cash']?.sales || 0;
-    const gcashSales = eodMetrics.pmAgg['GCash']?.sales || 0;
-    const expected = opening + drawerTotals.in + cashSales - drawerTotals.out - eodExpenseTotal;
+    const cashSales = m.pmAgg['Cash']?.sales || 0;
+    const gcashSales = m.pmAgg['GCash']?.sales || 0;
+    const expected = opening + drawerTotals.in + cashSales - drawerTotals.out - expenseTotal;
     const calcDiv = document.getElementById('eod-calc');
     if(actual===''){
       calcDiv.innerHTML = `<div class="sumrow" style="margin-top:10px;"><span>Cash Sales</span><span>${PESO(cashSales)}</span></div>
@@ -2163,9 +2190,9 @@ function renderReports(){
       const opening = parseFloat(document.getElementById('eod-opening').value)||0;
       const actualValue = document.getElementById('eod-actual').value;
       const actual = actualValue==='' ? null : parseFloat(actualValue);
-      const cashSales = eodMetrics.pmAgg['Cash']?.sales || 0;
-      const gcashSales = eodMetrics.pmAgg['GCash']?.sales || 0;
-      const expected = opening + drawerTotals.in + cashSales - drawerTotals.out - eodExpenseTotal;
+      const cashSales = m.pmAgg['Cash']?.sales || 0;
+      const gcashSales = m.pmAgg['GCash']?.sales || 0;
+      const expected = opening + drawerTotals.in + cashSales - drawerTotals.out - expenseTotal;
       const variance = actual===null ? null : actual - expected;
       const varianceReason=(document.getElementById('eod-variance-reason')?.value||'').trim();
       const dateKey = selectedEodDate || (reportsFilter.mode==='date' ? reportsFilter.date : todayStr());
@@ -2173,9 +2200,9 @@ function renderReports(){
       if(isDateLocked(dateKey) && !isSuperuser()){ toast(`${dateKey} is already reconciled and locked.`); return; }
       if(actual===null){ toast('Enter Actual Cash Counted before saving reconciliation.'); return; }
       if(variance!==null && Math.abs(variance)>=0.005 && !varianceReason){ toast('Please enter a reason for the cash variance.'); return; }
-      EOD[dateKey] = {...(EOD[dateKey]||{}), opening, actual, expected, variance, totalCashSales:cashSales, cashIn:drawerTotals.in, cashOut:drawerTotals.out, totalGcashSales:gcashSales, totalExpenses:eodExpenseTotal, varianceReason, locked:true, reconciledAt:new Date().toISOString(), reconciledBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')};
+      EOD[dateKey] = {...(EOD[dateKey]||{}), opening, actual, expected, variance, totalCashSales:cashSales, cashIn:drawerTotals.in, cashOut:drawerTotals.out, totalGcashSales:gcashSales, totalExpenses:expenseTotal, varianceReason, locked:true, reconciledAt:new Date().toISOString(), reconciledBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')};
       await storeSet('hibi-eod', EOD);
-      await writeAudit('reconcile_day','eod',dateKey,varianceReason,{opening,actual,expected,variance,cashIn:drawerTotals.in,cashOut:drawerTotals.out,totalCashSales:cashSales,totalGcashSales:gcashSales,totalExpenses:eodExpenseTotal});
+      await writeAudit('reconcile_day','eod',dateKey,varianceReason,{opening,actual,expected,variance,cashIn:drawerTotals.in,cashOut:drawerTotals.out,totalCashSales:cashSales,totalGcashSales:gcashSales,totalExpenses:expenseTotal});
       try{
         const attachment = await exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, EOD[dateKey], {download:false});
         const emailReport = buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expenseTotal, netSales, EOD[dateKey]);
