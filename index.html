@@ -1305,7 +1305,9 @@ function pwdDiscountForCart(loyaltyKey=null){
   CART.forEach(i=>{
     const reward=(loyaltyKey===i.key && cartItemIsDrink(i)) ? loyaltyRewardForItem(i) : null;
     const addonTotal=Array.isArray(i.addons)?i.addons.reduce((sum,a)=>sum+Number(a.price||0),0):0;
-    const base=reward?.eligible ? (Number(reward.charge)||0)+addonTotal : (Number(i.unitPrice)||0)+addonTotal;
+    // unitPrice already includes add-ons. Only reconstruct the loyalty-reward price,
+    // where the reward charge replaces the drink base price and add-ons remain payable.
+    const base=reward?.eligible ? (Number(reward.charge)||0)+addonTotal : (Number(i.unitPrice)||0);
     if(base>best) best=base;
   });
   return Math.floor(best*0.20);
