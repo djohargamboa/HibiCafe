@@ -1702,8 +1702,8 @@ function openOwnerExpenseModal(){
     const date=document.getElementById('oe-date').value||todayStr();
     if(!description){toast('Description is required.');return;}
     if(!amount||amount<=0){toast('Enter a valid amount.');return;}
-    const now=new Date(); const entry={id:uid(),category,description,amount,date,time:nowTimeStr().slice(0,5),timestamp:now.toISOString(),enteredBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Superuser')};
-    OWNER_EXPENSES.unshift(entry); await persistOwnerExpenses(); await writeAudit('create_owner_expense','owner_expense',entry.id,description,{category,amount,date}); closeModal(); renderExpensesPage(); toast('Owner / operational expense recorded');
+    const now=new Date(); const entry={id:uid(),category,description,amount,date,paymentMethod,time:nowTimeStr().slice(0,5),timestamp:now.toISOString(),enteredBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Superuser')};
+    OWNER_EXPENSES.unshift(entry); await persistOwnerExpenses(); await writeAudit('create_owner_expense','owner_expense',entry.id,description,{category,amount,date,paymentMethod}); closeModal(); renderExpensesPage(); toast('Owner / operational expense recorded');
   };
 }
 
