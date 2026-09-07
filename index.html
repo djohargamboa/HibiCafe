@@ -1402,6 +1402,36 @@ function openCheckoutModal(){
   }
   render();
 }
+async function createOrderDirectForSuperuser(payload, items){
+  if(!isSuperuser() || selectedOrderDate===businessDayKey()) throw new Error('Direct previous-date order entry is restricted to superuser.');
+  const maxRes=await posApi('/rest/v1/pos_orders?select=order_number&order=order_number.desc&limit=1');
+  const maxRows=await maxRes.json();
+  const maxExisting=Number(maxRows?.[0]?.order_number)||0;
+  const orderNumber=Math.max(Number(SETTINGS.nextOrderNum)||1,maxExisting+1);
+  const orderId=(crypto?.randomUUID ? crypto.randomUUID() : uid()+'-'+Date.now());
+  const orderRow={
+    id:orderId, order_number:orderNumber, order_code:formatOrderNum(orderNumber),
+    source:payload.p_source, grab_code:payload.p_grab_code, order_date:payload.p_order_date,
+    order_time:payload.p_order_time, created_at:payload.p_created_at, subtotal:payload.p_subtotal,
+    discount_type:payload.p_discount_type, discount_amount:payload.p_discount_amount, total:payload.p_total,
+    payment_method:payload.p_payment_method, amount_received:payload.p_amount_received,
+    cash_amount:payload.p_cash_amount, gcash_amount:payload.p_gcash_amount, change_given:payload.p_change_given,
+    gcash_ref:payload.p_gcash_ref, status:payload.p_status, cashier:payload.p_cashier
+  };
+  const inserted=await posApi('/rest/v1/pos_orders',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify(orderRow)});
+  const rows=await inserted.json();
+  const saved=rows?.[0];
+  if(!saved?.id) throw new Error('The database did not confirm the previous-date order.');
+  try{
+    const itemRows=items.map(i=>({order_id:saved.id,product_id:i.productId,name:i.name,category:i.category,size:i.size,is_drink:i.isDrink,qty:i.qty,unit_price:i.unitPrice,line_total:i.lineTotal,addons:i.addons,loyalty_reward:i.loyaltyReward}));
+    if(itemRows.length) await posApi('/rest/v1/pos_order_items',{method:'POST',body:JSON.stringify(itemRows)});
+  }catch(e){
+    try{ await posApi(`/rest/v1/pos_orders?id=eq.${encodeURIComponent(saved.id)}`,{method:'DELETE'}); }catch(_){ }
+    throw e;
+  }
+  return {...saved,items};
+}
+
 async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,discountType='None',discountAmount=0,loyaltyItemKey=null,loyaltyCharge=0}){
   if(!canCreateEntryForDate(selectedOrderDate)) return;
   if(!supabaseOk || !CURRENT_USER?.access_token){
@@ -1448,9 +1478,17 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
       p_cashier:cashier,
       p_items:items
     };
-    const res=await posApi('/rest/v1/rpc/create_hibi_pos_order',{method:'POST',body:JSON.stringify(payload)});
-    const dbOrder=await res.json();
-    if(!dbOrder?.id || !dbOrder?.order_number) throw new Error('The database did not confirm the order.');
+    let dbOrder;
+    try{
+      const res=await posApi('/rest/v1/rpc/create_hibi_pos_order',{method:'POST',body:JSON.stringify(payload)});
+      dbOrder=await res.json();
+      if(!dbOrder?.id || !dbOrder?.order_number) throw new Error('The database did not confirm the order.');
+    }catch(rpcErr){
+      // The normal RPC protects the current business day. Superusers also need to
+      // be able to enter a GrabFood order against a selected previous business date.
+      if(isSuperuser() && selectedOrderDate!==businessDayKey()) dbOrder=await createOrderDirectForSuperuser(payload,items);
+      else throw rpcErr;
+    }
 
     const dbOrderNumber=Number(dbOrder.order_number);
     SETTINGS.nextOrderNum=Math.max(Number(SETTINGS.nextOrderNum)||1,dbOrderNumber+1);
@@ -1464,7 +1502,7 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
     CART=[];grabCode='';grabDiscountType='None';grabDiscountAmount=0;loyaltyRewardKey=null;renderCart();renderOrderNumPreview();
   }catch(e){
     console.error('Order save failed:',e);
-    toast('Order was NOT saved. Please retry.');
+    toast('Order was NOT saved: '+(e?.message||'database error'));
   }finally{
     submitting=false;
   }
