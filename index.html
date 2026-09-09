@@ -376,6 +376,26 @@ nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{bac
 </style>
 </style>
 <style>
+/* ---------- Orders preparation workflow ---------- */
+#orders-table .order-summary-row{cursor:pointer;}
+#orders-table .order-summary-row:hover td{background:#FAFAF7;}
+#orders-table .order-summary-row.order-preparing td{background:#FFF9F0;}
+#orders-table .order-detail-row td{padding:0;border-bottom:1px solid var(--line);}
+.order-expand-panel{padding:15px 18px 17px;background:#FAFAF8;}
+.order-expand-panel.preparing{background:#FFF8EE;border-left:4px solid var(--caramel);}
+.order-expand-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:12px;}
+.order-expand-title{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);}
+.order-items-prep{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:9px;}
+.order-prep-item{background:#fff;border:1px solid #E7E7E2;border-radius:10px;padding:10px 12px;}
+.order-prep-item .prep-name{font-size:14px;font-weight:800;color:#222;}
+.order-prep-item .prep-meta{font-size:11.5px;color:var(--text-dim);margin-top:3px;line-height:1.4;}
+.order-complete-btn{white-space:nowrap;background:var(--matcha);color:#fff;}
+.order-complete-btn:hover{background:var(--matcha-dark);}
+.order-complete-btn:disabled{background:#C9C0AE;color:#fff;cursor:not-allowed;}
+.order-toggle-btn{min-width:74px;}
+@media(max-width:720px){.order-expand-head{flex-direction:column;}.order-complete-btn{width:100%;}.order-items-prep{grid-template-columns:1fr;}}
+</style>
+<style>
 .filter-btn:disabled{opacity:.45;cursor:not-allowed;}
 .password-field{position:relative;display:flex;align-items:center;}
 .password-field input{width:100%;padding-right:42px;}
@@ -1474,7 +1494,7 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
       p_gcash_amount:gcashAmount,
       p_change_given:changeGiven,
       p_gcash_ref:(method==='GCash'||method==='Cash + GCash')?ref:null,
-      p_status:'Completed',
+      p_status:'Preparing',
       p_cashier:cashier,
       p_items:items
     };
@@ -1498,8 +1518,18 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
     order.orderNumber=orderChannel==='GrabFood'?(grabOrderCode||order.orderNumber):order.orderNumber;
     ORDERS.unshift(order);
     await writeAudit('create_order','order',order.id,'',{orderNumber:order.orderNumber,businessDate:order.date,actualEntryTimestamp:order.timestamp,lateEntry:!!order.lateEntry,loyaltyReward:!!loyaltyItemKey,loyaltyCharge:Number(loyaltyCharge)||0,total:order.total,source:order.source,paymentMethod:order.paymentMethod,status:order.status});
-    showOrderConfirmation(order);
     CART=[];grabCode='';grabDiscountType='None';grabDiscountAmount=0;loyaltyRewardKey=null;renderCart();renderOrderNumPreview();
+
+    // Refresh the order list from Supabase after the save, then take staff directly
+    // to Orders so the new Preparing ticket is immediately visible.
+    try{ await loadPosOrders(); }catch(refreshErr){ console.warn('Order list refresh failed after save:',refreshErr); }
+    closeModal();
+    ordersFilter.mode = order.date===businessDayKey() ? 'today' : 'date';
+    ordersFilter.date = order.date;
+    ordersFilter.status = 'all';
+    ordersFilter.source = 'all';
+    goToPage('orders');
+    toast('Order ' + order.orderNumber + ' is now Preparing');
   }catch(e){
     console.error('Order save failed:',e);
     toast('Order was NOT saved: '+(e?.message||'database error'));
@@ -1509,8 +1539,8 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
 }
 
 function showOrderConfirmation(order){
-  openModal(`<div class="modal-body" style="text-align:center;padding-top:26px;"><div class="success-check">✓</div><div class="confirm-order-num">${esc(order.orderNumber)}</div><div style="color:var(--text-dim);font-size:13.5px;margin-bottom:16px;">${order.source==='GrabFood'?'GrabFood order saved':'Payment confirmed — order complete'}${order.lateEntry?`<br><strong>Business Date: ${order.date} · Late Entry: Yes</strong><br><span style="font-size:12px;">Entered ${new Date(order.timestamp).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}</span>`:''}</div><div style="text-align:left;background:var(--cream-dim);border-radius:10px;padding:14px 16px;"><div class="sumrow"><span>Source</span><span>${esc(order.source||'Walk-in')}</span></div><div class="sumrow"><span>Order Total</span><span>${PESO(order.total)}</span></div>${order.discountAmount?`<div class="sumrow"><span>Discount</span><span>−${PESO(order.discountAmount)}</span></div>`:''}<div class="sumrow"><span>Payment</span><span>${esc(order.paymentMethod)}</span></div>${order.paymentMethod==='Cash'||order.paymentMethod==='Cash + GCash'?`<div class="sumrow"><span>Change</span><span>${PESO(order.changeGiven)}</span></div>`:''}</div></div><div class="modal-foot"><button class="btn btn-primary" id="modal-done" style="flex:1;">New Order</button></div>`);
-  document.getElementById('modal-done').onclick=()=>{closeModal();renderPOS()};
+  openModal(`<div class="modal-body" style="text-align:center;padding-top:26px;"><div class="success-check">✓</div><div class="confirm-order-num">${esc(order.orderNumber)}</div><div style="color:var(--text-dim);font-size:13.5px;margin-bottom:16px;">${order.source==='GrabFood'?'GrabFood order saved — preparing':'Payment confirmed — order preparing'}${order.lateEntry?`<br><strong>Business Date: ${order.date} · Late Entry: Yes</strong><br><span style="font-size:12px;">Entered ${new Date(order.timestamp).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}</span>`:''}</div><div style="text-align:left;background:var(--cream-dim);border-radius:10px;padding:14px 16px;"><div class="sumrow"><span>Source</span><span>${esc(order.source||'Walk-in')}</span></div><div class="sumrow"><span>Order Total</span><span>${PESO(order.total)}</span></div>${order.discountAmount?`<div class="sumrow"><span>Discount</span><span>−${PESO(order.discountAmount)}</span></div>`:''}<div class="sumrow"><span>Payment</span><span>${esc(order.paymentMethod)}</span></div>${order.paymentMethod==='Cash'||order.paymentMethod==='Cash + GCash'?`<div class="sumrow"><span>Change</span><span>${PESO(order.changeGiven)}</span></div>`:''}</div></div><div class="modal-foot"><button class="btn btn-primary" id="modal-done" style="flex:1;">View Orders</button></div>`);
+  document.getElementById('modal-done').onclick=()=>{closeModal();goToPage('orders')};
 }
 
 /* ============================================================
@@ -1561,23 +1591,80 @@ function renderOrdersPage(){
   const rows = filteredOrders(ordersFilter);
   const table = document.getElementById('orders-table');
   table.innerHTML = `
-    <thead><tr><th>Order #</th><th>Source</th><th>Date</th><th>Time</th><th>Items</th><th>Payment</th><th class="num">Total</th><th>Status</th><th>Cashier</th><th></th></tr></thead>
+    <thead><tr><th>Order #</th><th>Date</th><th>Time</th><th>Items</th><th>Payment</th><th class="num">Total</th><th>Status</th><th>Cashier</th><th></th></tr></thead>
     <tbody>
-      ${rows.length ? rows.map(o=>`
-        <tr>
-          <td class="mono" style="font-weight:700;">${o.orderNumber}</td>
-          <td><span class="pm-badge">${esc(o.source||'Walk-in')}</span></td>
-          <td>${o.date}</td>
-          <td>${o.time}</td>
-          <td>${o.items.reduce((s,i)=>s+i.qty,0)}</td>
-          <td><span class="pm-badge pm-${o.paymentMethod}">${o.paymentMethod}</span></td>
-          <td class="num">${PESO(o.total)}</td>
-          <td><span class="status-badge status-${o.status}">${o.status}</span></td>
-          <td>${esc(o.cashier)}</td>
-          <td><button class="icon-btn" data-view="${o.id}">View</button></td>
-        </tr>`).join('') : `<tr><td colspan="10"><div class="empty-state">No orders match this filter.</div></td></tr>`}
+      ${rows.length ? rows.map(o=>orderTableRows(o)).join('') : `<tr><td colspan="9"><div class="empty-state">No orders match this filter.</div></td></tr>`}
     </tbody>`;
-  table.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>openOrderDetail(b.dataset.view));
+
+  table.querySelectorAll('[data-toggle-order]').forEach(btn=>btn.onclick=(e)=>{
+    e.stopPropagation();
+    const id=btn.dataset.toggleOrder;
+    const detail=[...table.querySelectorAll('[data-order-detail]')].find(x=>x.dataset.orderDetail===id);
+    if(!detail) return;
+    const opening=detail.hidden;
+    detail.hidden=!opening;
+    btn.textContent=opening?'Collapse':'Expand';
+  });
+  table.querySelectorAll('[data-order-summary]').forEach(row=>row.onclick=(e)=>{
+    if(e.target.closest('button')) return;
+    const btn=row.querySelector('[data-toggle-order]');
+    btn?.click();
+  });
+  table.querySelectorAll('[data-view]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();openOrderDetail(b.dataset.view);});
+  table.querySelectorAll('[data-complete-order]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();completeOrderFromList(b.dataset.completeOrder);});
+}
+
+function orderTableRows(o){
+  const expanded=o.status==='Preparing';
+  const itemCount=(o.items||[]).reduce((s,i)=>s+(Number(i.qty)||0),0);
+  const lockedForStaff=(isDateLocked(o.date)&&!isSuperuser())||(!isSuperuser() && o.date!==businessDayKey());
+  const itemCards=(o.items||[]).map(i=>{
+    const addons=Array.isArray(i.addons)&&i.addons.length ? ` · + ${i.addons.map(a=>esc(a.name)).join(', ')}` : '';
+    return `<div class="order-prep-item"><div class="prep-name">${Number(i.qty)||0} × ${esc(i.name)}</div><div class="prep-meta">${i.size?esc(i.size):'Regular'}${addons}</div></div>`;
+  }).join('') || '<div class="order-prep-item"><div class="prep-name">No item details</div></div>';
+  return `
+    <tr class="order-summary-row ${o.status==='Preparing'?'order-preparing':''}" data-order-summary="${escAttr(o.id)}">
+      <td class="mono" style="font-weight:700;">${esc(o.orderNumber)}</td>
+      <td>${esc(o.date)}</td>
+      <td>${esc(o.time)}</td>
+      <td>${itemCount}</td>
+      <td><span class="pm-badge pm-${escAttr(o.paymentMethod)}">${esc(o.paymentMethod)}</span></td>
+      <td class="num">${PESO(o.total)}</td>
+      <td><span class="status-badge status-${escAttr(o.status)}">${esc(o.status)}</span></td>
+      <td>${esc(o.cashier)}</td>
+      <td style="white-space:nowrap;"><button class="icon-btn order-toggle-btn" data-toggle-order="${escAttr(o.id)}">${expanded?'Collapse':'Expand'}</button> <button class="icon-btn" data-view="${escAttr(o.id)}">View</button></td>
+    </tr>
+    <tr class="order-detail-row" data-order-detail="${escAttr(o.id)}" ${expanded?'':'hidden'}>
+      <td colspan="9">
+        <div class="order-expand-panel ${o.status==='Preparing'?'preparing':''}">
+          <div class="order-expand-head">
+            <div><div class="order-expand-title">${o.status==='Preparing'?'Prepare this order':'Order items'}</div>${o.source==='GrabFood'?`<div style="font-size:12px;color:var(--text-dim);margin-top:3px;">GrabFood · ${esc(o.grabCode||o.orderNumber)}</div>`:''}</div>
+            ${o.status==='Preparing'?`<button class="btn order-complete-btn" data-complete-order="${escAttr(o.id)}" ${lockedForStaff?'disabled':''}>Complete</button>`:''}
+          </div>
+          <div class="order-items-prep">${itemCards}</div>
+        </div>
+      </td>
+    </tr>`;
+}
+
+async function completeOrderFromList(id){
+  const o=ORDERS.find(x=>x.id===id);
+  if(!o || o.status!=='Preparing') return;
+  if(isDateLocked(o.date) && !isSuperuser()){ toast('This order date is reconciled and locked.'); return; }
+  if(!isSuperuser() && o.date!==businessDayKey()){ toast('Staff cannot edit the status of previous-date orders.'); return; }
+  try{
+    const res=await posApi(`/rest/v1/pos_orders?id=eq.${encodeURIComponent(o.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({status:'Completed'})});
+    const updated=await res.json();
+    if(!updated?.length) throw new Error('Order status was not updated.');
+    const oldStatus=o.status;
+    o.status='Completed';
+    await writeAudit('update_order_status','order',o.id,'Order preparation completed',{orderNumber:o.orderNumber,date:o.date,oldStatus,newStatus:'Completed'});
+    renderOrdersPage();
+    toast('Order ' + o.orderNumber + ' completed');
+  }catch(e){
+    console.error(e);
+    toast('Could not complete order: '+(e?.message||'unknown error'));
+  }
 }
 
 function openOrderDetail(id){
