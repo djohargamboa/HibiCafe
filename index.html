@@ -464,7 +464,7 @@ nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{bac
             <div id="pos-date-wrap" style="margin-top:9px;"></div>
             <div id="pos-ops-wrap" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;"></div>
             <div id="grab-code-wrap" style="display:none;margin-top:9px;max-width:320px;">
-              <input id="grab-code-input" type="text" placeholder="Enter GrabFood order code" style="width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;">
+              <input id="grab-code-input" type="text" placeholder="Enter GrabFood order code (GF- added automatically)" style="width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;">
             </div>
           </div>
           <div class="pos-search">
@@ -1048,14 +1048,14 @@ function openAvailabilityModal(){
 }
 
 function mapShiftRow(row){
-  return {id:String(row.id),businessDate:row.business_date,shiftNumber:Number(row.shift_number)||1,shiftName:row.shift_name||`Shift ${row.shift_number||1}`,status:row.status||'Open',openedAt:row.opened_at,openedBy:row.opened_by||'',openingCash:Number(row.opening_cash)||0,closedAt:row.closed_at||null,closedBy:row.closed_by||'',expectedCash:row.expected_cash==null?null:Number(row.expected_cash),actualCashCounted:row.actual_cash_counted==null?null:Number(row.actual_cash_counted),variance:row.variance==null?null:Number(row.variance),varianceReason:row.variance_reason||'',cashSales:Number(row.cash_sales)||0,gcashSales:Number(row.gcash_sales)||0,grabSales:Number(row.grab_sales)||0,cashIn:Number(row.cash_in)||0,cashOut:Number(row.cash_out)||0,expenses:Number(row.expenses)||0,transactionCount:Number(row.transaction_count)||0,updatedAt:row.updated_at||null};
+  return {id:String(row.id),businessDate:row.business_date,shiftNumber:Number(row.shift_number)||1,shiftName:row.shift_name||`Shift ${row.shift_number||1}`,status:row.status||'Open',openedAt:row.opened_at,openedBy:row.opened_by||'',openingCash:Number(row.opening_cash)||0,closedAt:row.closed_at||null,closedBy:row.closed_by||'',expectedCash:row.expected_cash==null?null:Number(row.expected_cash),actualCashCounted:row.actual_cash_counted==null?null:Number(row.actual_cash_counted),variance:row.variance==null?null:Number(row.variance),varianceReason:row.variance_reason||'',cashSales:Number(row.cash_sales)||0,gcashSales:Number(row.gcash_sales)||0,grabSales:Number(row.grab_sales)||0,cashIn:Number(row.cash_in)||0,cashOut:Number(row.cash_out)||0,expenses:Number(row.expenses)||0,transactionCount:Number(row.transaction_count)||0,cupsSold:Number(row.cups_sold)||0,updatedAt:row.updated_at||null};
 }
 async function loadShifts(){
   const res=await posApi('/rest/v1/cash_shifts?select=*&order=business_date.desc,shift_number.desc');
   SHIFTS=(await res.json()).map(mapShiftRow);
 }
 async function saveShiftRecord(x){
-  const payload={id:x.id,business_date:x.businessDate,shift_number:x.shiftNumber,shift_name:x.shiftName,status:x.status,opened_at:x.openedAt,opened_by:x.openedBy,opening_cash:Number(x.openingCash)||0,closed_at:x.closedAt||null,closed_by:x.closedBy||null,expected_cash:x.expectedCash==null?null:Number(x.expectedCash),actual_cash_counted:x.actualCashCounted==null?null:Number(x.actualCashCounted),variance:x.variance==null?null:Number(x.variance),variance_reason:x.varianceReason||null,cash_sales:Number(x.cashSales)||0,gcash_sales:Number(x.gcashSales)||0,grab_sales:Number(x.grabSales)||0,cash_in:Number(x.cashIn)||0,cash_out:Number(x.cashOut)||0,expenses:Number(x.expenses)||0,transaction_count:Number(x.transactionCount)||0,updated_at:new Date().toISOString()};
+  const payload={id:x.id,business_date:x.businessDate,shift_number:x.shiftNumber,shift_name:x.shiftName,status:x.status,opened_at:x.openedAt,opened_by:x.openedBy,opening_cash:Number(x.openingCash)||0,closed_at:x.closedAt||null,closed_by:x.closedBy||null,expected_cash:x.expectedCash==null?null:Number(x.expectedCash),actual_cash_counted:x.actualCashCounted==null?null:Number(x.actualCashCounted),variance:x.variance==null?null:Number(x.variance),variance_reason:x.varianceReason||null,cash_sales:Number(x.cashSales)||0,gcash_sales:Number(x.gcashSales)||0,grab_sales:Number(x.grabSales)||0,cash_in:Number(x.cashIn)||0,cash_out:Number(x.cashOut)||0,expenses:Number(x.expenses)||0,transaction_count:Number(x.transactionCount)||0,cups_sold:Number(x.cupsSold)||0,updated_at:new Date().toISOString()};
   const exists=SHIFTS.some(s=>s.id===x.id);
   if(exists) await posApi(`/rest/v1/cash_shifts?id=eq.${encodeURIComponent(x.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify(payload)});
   else await posApi('/rest/v1/cash_shifts',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify(payload)});
@@ -1091,8 +1091,9 @@ function shiftFinancialSummary(shift,endIso=null){
   const movements=CASH_MOVEMENTS.filter(x=>x.date===shift.businessDate&&x.status!=='Voided'&&isWithinShift(x.timestamp,shift,end));
   const cashIn=movements.filter(x=>x.type==='In').reduce((sum,x)=>sum+Number(x.amount||0),0);
   const cashOut=movements.filter(x=>x.type==='Out').reduce((sum,x)=>sum+Number(x.amount||0),0);
+  const cupsSold=orders.reduce((sum,o)=>sum+(o.items||[]).filter(i=>i.isDrink).reduce((n,i)=>n+(Number(i.qty)||0),0),0);
   const expected=(Number(shift.openingCash)||0)+cashSales+cashIn-cashOut-expenses;
-  return {orders,cashSales,gcashSales,grabSales,expenses,cashIn,cashOut,expected,transactionCount:orders.length};
+  return {orders,cashSales,gcashSales,grabSales,expenses,cashIn,cashOut,expected,transactionCount:orders.length,cupsSold};
 }
 function fmtShiftTime(iso){ return iso?new Date(iso).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'—'; }
 function requireOpenShift(dateKey=businessDayKey()){
@@ -1117,7 +1118,7 @@ function openShiftModal(){
     const name=document.getElementById('shift-name').value.trim()||`Shift ${n}`;
     const opening=Number(document.getElementById('shift-opening').value);
     if(!Number.isFinite(opening)||opening<0){toast('Enter a valid opening cash amount.');return;}
-    const shift={id:(crypto?.randomUUID?crypto.randomUUID():uid()+'-'+Date.now()),businessDate:dateKey,shiftNumber:n,shiftName:name,status:'Open',openedAt:new Date().toISOString(),openedBy:currentActor(),openingCash:opening,closedAt:null,closedBy:'',expectedCash:null,actualCashCounted:null,variance:null,varianceReason:'',cashSales:0,gcashSales:0,grabSales:0,cashIn:0,cashOut:0,expenses:0,transactionCount:0};
+    const shift={id:(crypto?.randomUUID?crypto.randomUUID():uid()+'-'+Date.now()),businessDate:dateKey,shiftNumber:n,shiftName:name,status:'Open',openedAt:new Date().toISOString(),openedBy:currentActor(),openingCash:opening,closedAt:null,closedBy:'',expectedCash:null,actualCashCounted:null,variance:null,varianceReason:'',cashSales:0,gcashSales:0,grabSales:0,cashIn:0,cashOut:0,expenses:0,transactionCount:0,cupsSold:0};
     try{await saveShiftRecord(shift);SHIFTS.push(shift);await writeAudit('open_shift','cash_shift',shift.id,'',{businessDate:dateKey,shiftNumber:n,shiftName:name,openingCash:opening,openingSource:source.label});closeModal();renderShiftsPage();renderDashboard();renderPOS();toast(`${name} opened.`);}catch(e){toast('Shift was NOT opened: '+(e?.message||e));}
   };
 }
@@ -1137,7 +1138,7 @@ function openCloseShiftModal(shift){
     <div class="field"><label>Actual Cash Counted</label><input type="number" step="0.01" min="0" id="shift-actual" placeholder="0.00"></div>
     <div id="shift-variance-preview" style="font-size:13px;margin:-3px 0 12px;color:var(--text-dim);"></div>
     <div class="field"><label>Variance Reason <span style="font-weight:400;color:var(--text-dim);">(required only if variance)</span></label><input id="shift-variance-reason" placeholder="Reason for over / short"></div>
-    <div style="font-size:11px;color:var(--text-dim);">GCash ${PESO(summary.gcashSales)} · GrabFood ${PESO(summary.grabSales)} · ${summary.transactionCount} order(s). These do not change the cash drawer.</div>
+    <div style="font-size:11px;color:var(--text-dim);">GCash ${PESO(summary.gcashSales)} · GrabFood ${PESO(summary.grabSales)} · ${summary.transactionCount} order(s) · ${summary.cupsSold} cup(s). GCash and GrabFood do not change the cash drawer.</div>
   </div><div class="modal-foot"><button class="btn btn-secondary" id="shift-close-cancel">Cancel</button><button class="btn btn-primary" id="shift-close-save">Close Shift</button></div>`);
   const actualInput=document.getElementById('shift-actual'), preview=document.getElementById('shift-variance-preview');
   const refresh=()=>{const a=Number(actualInput.value);preview.textContent=actualInput.value===''?'':`Variance: ${PESO(a-summary.expected)} ${Math.abs(a-summary.expected)<.005?'✓':'(over / short)'}`;};
@@ -1153,8 +1154,8 @@ function openCloseShiftModal(shift){
     const finalSummary=shiftFinancialSummary(shift,finalClosedAt);
     const finalVariance=actual-finalSummary.expected;
     if(Math.abs(finalVariance)>=.005&&!reason){toast('Enter a reason for the cash variance.');return;}
-    const closed={...shift,status:'Closed',closedAt:finalClosedAt,closedBy:currentActor(),expectedCash:finalSummary.expected,actualCashCounted:actual,variance:finalVariance,varianceReason:reason,cashSales:finalSummary.cashSales,gcashSales:finalSummary.gcashSales,grabSales:finalSummary.grabSales,cashIn:finalSummary.cashIn,cashOut:finalSummary.cashOut,expenses:finalSummary.expenses,transactionCount:finalSummary.transactionCount};
-    try{await saveShiftRecord(closed);const i=SHIFTS.findIndex(x=>x.id===shift.id);if(i>=0)SHIFTS[i]=closed;await writeAudit('close_shift','cash_shift',shift.id,reason,{businessDate:shift.businessDate,shiftNumber:shift.shiftNumber,expectedCash:finalSummary.expected,actualCashCounted:actual,variance:finalVariance,cashSales:finalSummary.cashSales,cashIn:finalSummary.cashIn,cashOut:finalSummary.cashOut,expenses:finalSummary.expenses});closeModal();renderShiftsPage();renderDashboard();renderPOS();toast(`${shift.shiftName} closed.`);}catch(e){toast('Shift was NOT closed: '+(e?.message||e));}
+    const closed={...shift,status:'Closed',closedAt:finalClosedAt,closedBy:currentActor(),expectedCash:finalSummary.expected,actualCashCounted:actual,variance:finalVariance,varianceReason:reason,cashSales:finalSummary.cashSales,gcashSales:finalSummary.gcashSales,grabSales:finalSummary.grabSales,cashIn:finalSummary.cashIn,cashOut:finalSummary.cashOut,expenses:finalSummary.expenses,transactionCount:finalSummary.transactionCount,cupsSold:finalSummary.cupsSold};
+    try{await saveShiftRecord(closed);const i=SHIFTS.findIndex(x=>x.id===shift.id);if(i>=0)SHIFTS[i]=closed;await writeAudit('close_shift','cash_shift',shift.id,reason,{businessDate:shift.businessDate,shiftNumber:shift.shiftNumber,expectedCash:finalSummary.expected,actualCashCounted:actual,variance:finalVariance,cashSales:finalSummary.cashSales,cashIn:finalSummary.cashIn,cashOut:finalSummary.cashOut,expenses:finalSummary.expenses,transactionCount:finalSummary.transactionCount,cupsSold:finalSummary.cupsSold});closeModal();renderShiftsPage();renderDashboard();renderPOS();toast(`${shift.shiftName} closed.`);}catch(e){toast('Shift was NOT closed: '+(e?.message||e));}
   };
 }
 function lastShiftActualForDate(dateKey){ const s=lastClosedShiftForDate(dateKey); return s?.actualCashCounted==null?null:Number(s.actualCashCounted); }
@@ -1165,8 +1166,8 @@ function renderShiftsPage(){
   const live=open?shiftFinancialSummary(open):null;
   el.innerHTML=`<div class="page-title"><div><h1>Shift / Drawer</h1><div class="psub">Open, hand off and reconcile the cash drawer by shift.</div></div>${dateKey===businessDayKey()?`<button class="btn ${open?'btn-secondary':'btn-primary'}" id="shift-main-action">${open?'Close '+esc(open.shiftName):'+ Open Shift'}</button>`:''}</div>
     <div class="filter-bar"><button class="filter-btn" id="shift-prev">←</button><input type="date" id="shift-date" value="${dateKey}"><button class="filter-btn" id="shift-next">→</button><button class="filter-btn ${dateKey===businessDayKey()?'active':''}" id="shift-today">Today</button></div>
-    ${open?`<div class="card shift-live" style="padding:18px 20px;margin-bottom:16px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;"><div><div class="section-title" style="margin-bottom:3px;">${esc(open.shiftName)} <span class="shift-status-pill">OPEN</span></div><div style="font-size:12px;color:var(--text-dim);">Opened ${fmtShiftTime(open.openedAt)} · ${esc(open.openedBy)}</div></div><div style="font-weight:800;font-size:22px;">${PESO(live.expected)}</div></div><div class="stat-grid" style="margin-top:14px;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));"><div><div class="slabel">Opening</div><div style="font-weight:700;">${PESO(open.openingCash)}</div></div><div><div class="slabel">Cash Sales</div><div style="font-weight:700;">${PESO(live.cashSales)}</div></div><div><div class="slabel">Cash In / Out</div><div style="font-weight:700;">+${PESO(live.cashIn)} / −${PESO(live.cashOut)}</div></div><div><div class="slabel">Cash Expenses</div><div style="font-weight:700;">${PESO(live.expenses)}</div></div><div><div class="slabel">Expected Drawer</div><div style="font-weight:800;">${PESO(live.expected)}</div></div></div></div>`:`<div class="card" style="padding:18px 20px;margin-bottom:16px;"><span class="shift-status-pill none">NO OPEN SHIFT</span><div style="margin-top:8px;font-size:13px;color:var(--text-dim);">${dateKey===businessDayKey()?'Open a shift before taking orders or recording drawer activity.':'No open shift for this business day.'}</div></div>`}
-    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Shift</th><th>Status</th><th>Opened</th><th>Closed</th><th class="num">Opening</th><th class="num">Expected</th><th class="num">Actual</th><th class="num">Variance</th></tr></thead><tbody>${rows.length?rows.map(s=>`<tr><td><b>${esc(s.shiftName)}</b><div style="font-size:11px;color:var(--text-dim);">#${s.shiftNumber}</div></td><td><span class="shift-status-pill ${s.status==='Closed'?'closed':''}">${s.status.toUpperCase()}</span></td><td>${fmtShiftTime(s.openedAt)}</td><td>${fmtShiftTime(s.closedAt)}</td><td class="num">${PESO(s.openingCash)}</td><td class="num">${s.expectedCash==null?'—':PESO(s.expectedCash)}</td><td class="num">${s.actualCashCounted==null?'—':PESO(s.actualCashCounted)}</td><td class="num" style="${s.variance!=null&&Math.abs(s.variance)>=.005?'color:var(--rust);font-weight:700;':''}">${s.variance==null?'—':PESO(s.variance)}</td></tr>`).join(''):`<tr><td colspan="8"><div class="empty-state">No shifts recorded for this day.</div></td></tr>`}</tbody></table></div>`;
+    ${open?`<div class="card shift-live" style="padding:18px 20px;margin-bottom:16px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;"><div><div class="section-title" style="margin-bottom:3px;">${esc(open.shiftName)} <span class="shift-status-pill">OPEN</span></div><div style="font-size:12px;color:var(--text-dim);">Opened ${fmtShiftTime(open.openedAt)} · Opened by <strong>${esc(open.openedBy)}</strong></div></div><div style="font-weight:800;font-size:22px;">${PESO(live.expected)}</div></div><div class="stat-grid" style="margin-top:14px;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));"><div><div class="slabel">Opening</div><div style="font-weight:700;">${PESO(open.openingCash)}</div></div><div><div class="slabel">Cash Sales</div><div style="font-weight:700;">${PESO(live.cashSales)}</div></div><div><div class="slabel">Orders</div><div style="font-weight:700;">${live.transactionCount}</div></div><div><div class="slabel">Cups Sold</div><div style="font-weight:700;">${live.cupsSold}</div></div><div><div class="slabel">Cash In / Out</div><div style="font-weight:700;">+${PESO(live.cashIn)} / −${PESO(live.cashOut)}</div></div><div><div class="slabel">Cash Expenses</div><div style="font-weight:700;">${PESO(live.expenses)}</div></div><div><div class="slabel">Expected Drawer</div><div style="font-weight:800;">${PESO(live.expected)}</div></div></div></div>`:`<div class="card" style="padding:18px 20px;margin-bottom:16px;"><span class="shift-status-pill none">NO OPEN SHIFT</span><div style="margin-top:8px;font-size:13px;color:var(--text-dim);">${dateKey===businessDayKey()?'Open a shift before taking orders or recording drawer activity.':'No open shift for this business day.'}</div></div>`}
+    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Shift</th><th>Status</th><th>Opened By</th><th>Opened</th><th>Closed</th><th class="num">Orders</th><th class="num">Cups</th><th class="num">Opening</th><th class="num">Expected</th><th class="num">Actual</th><th class="num">Variance</th></tr></thead><tbody>${rows.length?rows.map(s=>{const ss=s.status==='Open'&&s.businessDate===businessDayKey()?shiftFinancialSummary(s):null;const orderCount=ss?ss.transactionCount:s.transactionCount;const cups=ss?ss.cupsSold:s.cupsSold;return `<tr><td><b>${esc(s.shiftName)}</b><div style="font-size:11px;color:var(--text-dim);">#${s.shiftNumber}</div></td><td><span class="shift-status-pill ${s.status==='Closed'?'closed':''}">${s.status.toUpperCase()}</span></td><td>${esc(s.openedBy||'—')}</td><td>${fmtShiftTime(s.openedAt)}</td><td>${fmtShiftTime(s.closedAt)}</td><td class="num">${orderCount||0}</td><td class="num">${cups||0}</td><td class="num">${PESO(s.openingCash)}</td><td class="num">${s.status==='Open'&&ss?PESO(ss.expected):(s.expectedCash==null?'—':PESO(s.expectedCash))}</td><td class="num">${s.actualCashCounted==null?'—':PESO(s.actualCashCounted)}</td><td class="num" style="${s.variance!=null&&Math.abs(s.variance)>=.005?'color:var(--rust);font-weight:700;':''}">${s.variance==null?'—':PESO(s.variance)}</td></tr>`}).join(''):`<tr><td colspan="11"><div class="empty-state">No shifts recorded for this day.</div></td></tr>`}</tbody></table></div>`;
   const action=document.getElementById('shift-main-action'); if(action) action.onclick=()=>open?openCloseShiftModal(open):openShiftModal();
   document.getElementById('shift-prev').onclick=()=>{shiftsFilterDate=shiftCalendarDate(dateKey,-1);renderShiftsPage();};
   document.getElementById('shift-next').onclick=()=>{const n=shiftCalendarDate(dateKey,1);if(n<=businessDayKey()){shiftsFilterDate=n;renderShiftsPage();}};
@@ -1215,17 +1216,24 @@ async function saveEodRecord(dateKey,x){
   return upsertFinancialRow('eod_reconciliations',{business_date:dateKey,opening:Number(x.opening)||0,actual:x.actual==null?null:Number(x.actual),expected:x.expected==null?null:Number(x.expected),variance:x.variance==null?null:Number(x.variance),total_cash_sales:Number(x.totalCashSales)||0,cash_in:Number(x.cashIn)||0,cash_out:Number(x.cashOut)||0,total_gcash_sales:Number(x.totalGcashSales)||0,total_expenses:Number(x.totalExpenses)||0,variance_reason:x.varianceReason||null,locked:!!x.locked,reconciled_at:x.reconciledAt||null,reconciled_by:x.reconciledBy||null,unlocked_at:x.unlockedAt||null,unlocked_by:x.unlockedBy||null,updated_at:new Date().toISOString()},'business_date');
 }
 
+function formatGrabCode(value){
+  const raw=String(value??'').trim();
+  if(!raw) return '';
+  const core=raw.replace(/^(?:GF[\s-]*)+/i,'').trim();
+  return core ? `GF-${core}` : '';
+}
 function mapDbOrder(row){
+  const normalizedGrabCode=row.source==='GrabFood'?formatGrabCode(row.grab_code):'';
   return {
     id:row.id,
-    orderNumber:row.source==='GrabFood' ? (row.grab_code || row.order_code) : row.order_code,
+    orderNumber:row.source==='GrabFood' ? (normalizedGrabCode || row.order_code) : row.order_code,
     dbOrderNumber:row.order_number,
     date:row.order_date,
     time:(row.order_time||'').slice(0,5),
     timestamp:row.created_at,
     lateEntry: row.created_at ? isLateEntryForBusinessDate(row.order_date,new Date(row.created_at)) : false,
     source:row.source||'Walk-in',
-    grabCode:row.grab_code||null,
+    grabCode:normalizedGrabCode||null,
     items:(row.pos_order_items||[]).map(i=>({
       productId:i.product_id, name:i.name, category:i.category, size:i.size,
       isDrink:!!i.is_drink, qty:Number(i.qty)||0, unitPrice:Number(i.unit_price)||0,
@@ -1704,7 +1712,7 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
   const now=new Date();
   const total=Math.max(0,subtotal-(Number(discountAmount)||0));
   const cashier=(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff');
-  const grabOrderCode=orderChannel==='GrabFood' ? (grabCode.trim()||null) : null;
+  const grabOrderCode=orderChannel==='GrabFood' ? (formatGrabCode(grabCode)||null) : null;
   const splitGcash=method==='Cash + GCash'?(Number(gcashPart)||0):0;
   const splitCashDue=method==='Cash + GCash'?Math.max(0,total-splitGcash):0;
   const splitCashTendered=method==='Cash + GCash'?(Number(cashPart)||0):0;
