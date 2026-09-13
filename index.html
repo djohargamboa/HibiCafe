@@ -541,8 +541,8 @@ nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{bac
 <script>
 /* ============================================================
    HIBI CAFE POS — single-file app
-   Data persists via window.storage (shared across the cafe's
-   devices, since this is one shop's operational data).
+   Shared operational data persists in Supabase. Financial records
+   are row-based and database writes fail closed (no local fallback).
    ============================================================ */
 
 const PESO = n => '₱' + (Math.round(n*100)/100).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -588,7 +588,7 @@ function openCashMovementModal(){
     const amount=Number(document.getElementById('cm-amount')?.value);
     const type=document.getElementById('cm-type')?.value;
     const reason=(document.getElementById('cm-reason')?.value||'').trim();
-    const date=isSuperuser()?(document.getElementById('cm-date')?.value||todayStr()):todayStr();
+    const date=isSuperuser()?(document.getElementById('cm-date')?.value||businessDayKey()):businessDayKey();
     if(!Number.isFinite(amount) || amount<=0){toast('Enter a valid amount.');return;}
     if(type!=='In' && type!=='Out'){toast('Select Cash In or Cash Out.');return;}
     if(!reason){toast('A reason is required.');return;}
@@ -597,17 +597,13 @@ function openCashMovementModal(){
     saveBtn.textContent='Saving…';
     const item={id:uid(),date,time:nowTimeStr().slice(0,5),timestamp:new Date().toISOString(),type,amount,reason,cashier:currentActor(),status:'Active'};
     try{
+      await saveCashMovementRecord(item);
       CASH_MOVEMENTS.unshift(item);
-      await persistCashMovements();
       await writeAudit(type==='In'?'cash_in':'cash_out','cash_movement',item.id,reason,{amount,date,type,cashier:item.cashier});
-      closeModal();
-      renderExpensesPage();
-      toast(type==='In'?'Cash In recorded':'Cash Out recorded');
+      closeModal(); renderExpensesPage(); toast(type==='In'?'Cash In recorded':'Cash Out recorded');
     }catch(err){
-      CASH_MOVEMENTS=CASH_MOVEMENTS.filter(x=>x.id!==item.id);
       console.error('Cash movement save failed:',err);
-      saveBtn.disabled=false;
-      saveBtn.textContent='Save Movement';
+      saveBtn.disabled=false; saveBtn.textContent='Save Movement';
       toast('Cash movement was NOT saved: '+(err?.message||'database error'));
     }
   };
@@ -762,10 +758,7 @@ let reportsFilter = {mode:'today', date: todayStr(), start: todayStr(), end: tod
 let monthlyPerformanceMonth = todayStr().slice(0,7);
 
 /* ---------- Storage helpers ---------- */
-// Storage adapter, in priority order:
-// 1. Supabase (real shared Postgres database — works from any device/browser)
-// 2. Claude's built-in shared storage (only exists inside a Claude artifact)
-// 3. Browser localStorage (last resort — this device/browser only)
+// Shared storage uses Supabase only. Writes fail closed: no browser/local fallback for shared data.
 const SUPABASE_URL = 'https://ysdnxwvkqyqojrelhcbu.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzZG54d3ZrcXlxb2pyZWxoY2J1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NzMwODksImV4cCI6MjEwMzM0OTA4OX0.XyYlPVroIXudGM2M6hSWb8ccMwjH21kLHgk5ESGA8T0';
 const HAS_SUPABASE = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
@@ -815,57 +808,59 @@ async function doLogin(){
 }
 async function doLogout(){ if(CURRENT_USER) await writeAudit('logout','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); if(supabaseClient) await supabaseClient.auth.signOut(); CURRENT_USER=null; CURRENT_PROFILE=null; document.getElementById('app').style.display='none'; document.getElementById('login-screen').style.display='flex'; document.getElementById('login-password').value=''; showLoginError(''); }
 
-const HAS_CLAUDE_STORAGE = (typeof window !== 'undefined' && !!window.storage);
-let supabaseOk = HAS_SUPABASE; // flips false if a request ever fails, so we fall back gracefully
+let supabaseOk = HAS_SUPABASE; // connection health only; never used as permission or as a reason to save locally
 
+function requireDatabaseSession(){
+  const token=CURRENT_USER?.access_token;
+  if(!HAS_SUPABASE || !token) throw new Error('Database session is not available. Please sign in again.');
+  return token;
+}
+function databaseFailure(message, err){
+  supabaseOk=false;
+  console.error(message, err||'');
+  toast(message);
+}
 async function supabaseGet(key){
+  const token=requireDatabaseSession();
   const res = await fetch(`${SUPABASE_URL}/rest/v1/app_data?key=eq.${encodeURIComponent(key)}&select=value`, {
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
   });
-  if(!res.ok) throw new Error('Supabase GET failed: ' + res.status);
+  if(!res.ok) throw new Error('Supabase GET failed: ' + res.status + ' ' + await res.text());
+  supabaseOk=true;
   const rows = await res.json();
   return rows.length ? rows[0].value : undefined;
 }
 async function supabaseSet(key, value){
+  const token=requireDatabaseSession();
   const res = await fetch(`${SUPABASE_URL}/rest/v1/app_data?on_conflict=key`, {
     method: 'POST',
     headers: {
       apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
       Prefer: 'resolution=merge-duplicates,return=minimal'
     },
     body: JSON.stringify({ key, value, updated_at: new Date().toISOString() })
   });
   if(!res.ok) throw new Error('Supabase SET failed: ' + res.status + ' ' + await res.text());
+  supabaseOk=true;
 }
 async function storeGet(key, fallback){
-  if(supabaseOk){
-    try{ const v = await supabaseGet(key); return v===undefined ? fallback : v; }
-    catch(e){ console.error(e); supabaseOk = false; toast('Could not reach the database — using local backup storage.'); }
-  }
   try{
-    if(HAS_CLAUDE_STORAGE){
-      const r = await window.storage.get(key, true);
-      return r ? JSON.parse(r.value) : fallback;
-    } else {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : fallback;
-    }
-  }catch(e){ return fallback; }
+    const v = await supabaseGet(key);
+    return v===undefined ? fallback : v;
+  }catch(e){
+    databaseFailure('Database unavailable — shared data could not be loaded. Nothing will be saved locally.', e);
+    throw e;
+  }
 }
 async function storeSet(key, value){
-  if(supabaseOk){
-    try{ await supabaseSet(key, value); return; }
-    catch(e){ console.error(e); supabaseOk = false; toast('Could not reach the database — saving locally instead.'); }
-  }
   try{
-    if(HAS_CLAUDE_STORAGE){
-      await window.storage.set(key, JSON.stringify(value), true);
-    } else {
-      localStorage.setItem(key, JSON.stringify(value));
-    }
-  }catch(e){ console.error('storage set failed', key, e); }
+    await supabaseSet(key, value);
+  }catch(e){
+    databaseFailure('Database unavailable — change was NOT saved. Please retry after reconnecting.', e);
+    throw e;
+  }
 }
 // Product photos live in Supabase Storage instead of inside the menu JSON.
 // This prevents browser/database size limits from causing photos to disappear.
@@ -876,7 +871,8 @@ function publicProductImageUrl(path){
 }
 
 async function uploadProductImage(file, productId){
-  if(!HAS_SUPABASE || !supabaseOk) throw new Error('Supabase Storage is not available.');
+  if(!HAS_SUPABASE) throw new Error('Supabase Storage is not available.');
+  const token=requireDatabaseSession();
   const optimized = await optimizeProductImageBlob(file);
   const ext = optimized.type === 'image/webp' ? 'webp' : 'jpg';
   const path = `${productId}/${Date.now()}.${ext}`;
@@ -884,7 +880,7 @@ async function uploadProductImage(file, productId){
     method:'POST',
     headers:{
       apikey:SUPABASE_ANON_KEY,
-      Authorization:`Bearer ${SUPABASE_ANON_KEY}`,
+      Authorization:`Bearer ${token}`,
       'Content-Type':optimized.type,
       'x-upsert':'true',
       'cache-control':'31536000'
@@ -896,12 +892,13 @@ async function uploadProductImage(file, productId){
 }
 
 async function deleteProductImage(path){
-  if(!path || !HAS_SUPABASE || !supabaseOk) return;
+  if(!path || !HAS_SUPABASE) return;
+  const token=requireDatabaseSession();
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${PRODUCT_IMAGE_BUCKET}`, {
     method:'DELETE',
     headers:{
       apikey:SUPABASE_ANON_KEY,
-      Authorization:`Bearer ${SUPABASE_ANON_KEY}`,
+      Authorization:`Bearer ${token}`,
       'Content-Type':'application/json'
     },
     body:JSON.stringify({prefixes:[path]})
@@ -941,7 +938,7 @@ async function optimizeProductImageBlob(file){
 }
 
 async function migrateLegacyProductImages(){
-  if(!HAS_SUPABASE || !supabaseOk || !Array.isArray(MENU?.products)) return;
+  if(!HAS_SUPABASE || !supabaseOk || !can('menu') || !Array.isArray(MENU?.products)) return;
   const legacy = MENU.products.filter(p=>typeof p.image==='string' && p.image.startsWith('data:image/'));
   if(!legacy.length) return;
   let changed=false;
@@ -959,16 +956,68 @@ async function migrateLegacyProductImages(){
 }
 
 async function posApi(path, options={}){
-  if(!supabaseOk || !CURRENT_USER?.access_token) throw new Error('Database session is not available. Please sign in again.');
+  const token=requireDatabaseSession();
   const headers={
     apikey:SUPABASE_ANON_KEY,
-    Authorization:`Bearer ${CURRENT_USER.access_token}`,
+    Authorization:`Bearer ${token}`,
     'Content-Type':'application/json',
     ...(options.headers||{})
   };
-  const res=await fetch(`${SUPABASE_URL}${path}`, {...options, headers});
-  if(!res.ok) throw new Error(`Database request failed (${res.status}): ${await res.text()}`);
+  let res;
+  try{ res=await fetch(`${SUPABASE_URL}${path}`, {...options, headers}); }
+  catch(e){ supabaseOk=false; throw new Error('Could not reach the database. The change was NOT saved.'); }
+  if(!res.ok){
+    supabaseOk=false;
+    const body=await res.text();
+    if(res.status===404 && /daily_expenses|owner_expenses|cash_movements|eod_reconciliations/i.test(path)){
+      throw new Error('P0 database migration is required. Run hibi_p0_migration.sql in Supabase before using this POS version.');
+    }
+    throw new Error(`Database request failed (${res.status}): ${body}`);
+  }
+  supabaseOk=true;
   return res;
+}
+
+
+function mapExpenseRow(row){
+  return {id:String(row.id),amount:Number(row.amount)||0,note:row.note||'',date:row.business_date,time:(row.entry_time||'').slice(0,5),timestamp:row.created_at,cashier:row.cashier||'Staff',status:row.status||'Active',voidedAt:row.voided_at||null,voidedBy:row.voided_by||'',voidReason:row.void_reason||''};
+}
+function mapOwnerExpenseRow(row){
+  return {id:String(row.id),category:row.category||'Other',description:row.description||'',amount:Number(row.amount)||0,date:row.business_date,paymentMethod:row.payment_method||'Cash',time:(row.entry_time||'').slice(0,5),timestamp:row.created_at,enteredBy:row.entered_by||'Superuser',status:row.status||'Active',voidedAt:row.voided_at||null,voidedBy:row.voided_by||'',voidReason:row.void_reason||''};
+}
+function mapCashMovementRow(row){
+  return {id:String(row.id),date:row.business_date,time:(row.entry_time||'').slice(0,5),timestamp:row.created_at,type:row.movement_type,amount:Number(row.amount)||0,reason:row.reason||'',cashier:row.cashier||'Staff',status:row.status||'Active',voidedAt:row.voided_at||null,voidedBy:row.voided_by||'',voidReason:row.void_reason||''};
+}
+function mapEodRow(row){
+  return {opening:Number(row.opening)||0,actual:row.actual==null?null:Number(row.actual),expected:row.expected==null?null:Number(row.expected),variance:row.variance==null?null:Number(row.variance),totalCashSales:Number(row.total_cash_sales)||0,cashIn:Number(row.cash_in)||0,cashOut:Number(row.cash_out)||0,totalGcashSales:Number(row.total_gcash_sales)||0,totalExpenses:Number(row.total_expenses)||0,varianceReason:row.variance_reason||'',locked:!!row.locked,reconciledAt:row.reconciled_at||null,reconciledBy:row.reconciled_by||'',unlockedAt:row.unlocked_at||null,unlockedBy:row.unlocked_by||''};
+}
+async function loadFinancialRows(){
+  const [er,or,cr,rr]=await Promise.all([
+    posApi('/rest/v1/daily_expenses?select=*&order=created_at.desc'),
+    posApi('/rest/v1/owner_expenses?select=*&order=created_at.desc'),
+    posApi('/rest/v1/cash_movements?select=*&order=created_at.desc'),
+    posApi('/rest/v1/eod_reconciliations?select=*&order=business_date.desc')
+  ]);
+  const [expenses,ownerExpenses,cashMovements,eodRows]=await Promise.all([er.json(),or.json(),cr.json(),rr.json()]);
+  EXPENSES=expenses.map(mapExpenseRow);
+  OWNER_EXPENSES=ownerExpenses.map(mapOwnerExpenseRow);
+  CASH_MOVEMENTS=cashMovements.map(mapCashMovementRow);
+  EOD={}; eodRows.forEach(r=>{ EOD[r.business_date]=mapEodRow(r); });
+}
+async function upsertFinancialRow(table,payload,conflict='id'){
+  await posApi(`/rest/v1/${table}?on_conflict=${encodeURIComponent(conflict)}`,{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(payload)});
+}
+async function saveExpenseRecord(x){
+  return upsertFinancialRow('daily_expenses',{id:x.id,business_date:x.date,entry_time:x.time||nowTimeStr().slice(0,5),created_at:x.timestamp||new Date().toISOString(),amount:Number(x.amount)||0,note:x.note||'',cashier:x.cashier||currentActor(),status:x.status||'Active',voided_at:x.voidedAt||null,voided_by:x.voidedBy||null,void_reason:x.voidReason||null});
+}
+async function saveOwnerExpenseRecord(x){
+  return upsertFinancialRow('owner_expenses',{id:x.id,business_date:x.date,entry_time:x.time||nowTimeStr().slice(0,5),created_at:x.timestamp||new Date().toISOString(),category:x.category||'Other',description:x.description||'',amount:Number(x.amount)||0,payment_method:x.paymentMethod||'Cash',entered_by:x.enteredBy||currentActor(),status:x.status||'Active',voided_at:x.voidedAt||null,voided_by:x.voidedBy||null,void_reason:x.voidReason||null});
+}
+async function saveCashMovementRecord(x){
+  return upsertFinancialRow('cash_movements',{id:x.id,business_date:x.date,entry_time:x.time||nowTimeStr().slice(0,5),created_at:x.timestamp||new Date().toISOString(),movement_type:x.type,amount:Number(x.amount)||0,reason:x.reason||'',cashier:x.cashier||currentActor(),status:x.status||'Active',voided_at:x.voidedAt||null,voided_by:x.voidedBy||null,void_reason:x.voidReason||null});
+}
+async function saveEodRecord(dateKey,x){
+  return upsertFinancialRow('eod_reconciliations',{business_date:dateKey,opening:Number(x.opening)||0,actual:x.actual==null?null:Number(x.actual),expected:x.expected==null?null:Number(x.expected),variance:x.variance==null?null:Number(x.variance),total_cash_sales:Number(x.totalCashSales)||0,cash_in:Number(x.cashIn)||0,cash_out:Number(x.cashOut)||0,total_gcash_sales:Number(x.totalGcashSales)||0,total_expenses:Number(x.totalExpenses)||0,variance_reason:x.varianceReason||null,locked:!!x.locked,reconciled_at:x.reconciledAt||null,reconciled_by:x.reconciledBy||null,unlocked_at:x.unlockedAt||null,unlocked_by:x.unlockedBy||null,updated_at:new Date().toISOString()},'business_date');
 }
 
 function mapDbOrder(row){
@@ -1013,28 +1062,20 @@ async function loadPosOrders(){
 async function loadAll(){
   MENU = await storeGet('hibi-menu', MENU);
   ADDONS = await storeGet('hibi-addons', ADDONS);
-  EOD = await storeGet('hibi-eod', {});
   SETTINGS = await storeGet('hibi-settings', SETTINGS);
   applyBranding();
-  EXPENSES = await storeGet('hibi-expenses', []);
-  OWNER_EXPENSES = await storeGet('hibi-owner-expenses', []);
-  CASH_MOVEMENTS = await storeGet('hibi-cash-movements', []);
-  if(supabaseOk && CURRENT_USER?.access_token){
-    await loadPosOrders();
-  }else{
-    ORDERS=[];
-  }
+  await Promise.all([loadPosOrders(),loadFinancialRows()]);
   await migrateLegacyProductImages();
 }
 async function persistMenu(){ await storeSet('hibi-menu', MENU); }
 async function persistAddons(){ await storeSet('hibi-addons', ADDONS); }
-// Orders are now stored one transaction per row in Supabase. Never overwrite the legacy JSON array.
+// Orders and financial records are row-based in Supabase; never overwrite them as JSON arrays.
 async function persistOrders(){ await loadPosOrders(); }
-async function persistEod(){ await storeSet('hibi-eod', EOD); }
+async function persistEod(dateKey){ if(dateKey && EOD[dateKey]) await saveEodRecord(dateKey,EOD[dateKey]); }
 async function persistSettings(){ await storeSet('hibi-settings', SETTINGS); }
-async function persistExpenses(){ await storeSet('hibi-expenses', EXPENSES); }
-async function persistOwnerExpenses(){ await storeSet('hibi-owner-expenses', OWNER_EXPENSES); }
-async function persistCashMovements(){ await storeSet('hibi-cash-movements', CASH_MOVEMENTS); }
+async function persistExpenses(){ throw new Error('Bulk expense persistence is disabled. Save the changed expense row instead.'); }
+async function persistOwnerExpenses(){ throw new Error('Bulk owner-expense persistence is disabled. Save the changed row instead.'); }
+async function persistCashMovements(){ throw new Error('Bulk cash-movement persistence is disabled. Save the changed row instead.'); }
 
 /* ---------- Toast ---------- */
 function toast(msg){
@@ -1369,7 +1410,7 @@ function openCheckoutModal(){
     if(orderChannel==='GrabFood') return !!grabCode.trim();
     if(method==='Cash') return received!=='' && Number(received)>=total();
     if(method==='GCash') return gcashConfirmed;
-    return Number(cashPart)>0 && Number(gcashPart)>0 && Number(cashPart)+Number(gcashPart)>=total() && gcashConfirmed;
+    const g=Number(gcashPart)||0,c=Number(cashPart)||0,t=total(); return g>0 && g<t && c>=(t-g) && gcashConfirmed;
   }
   function body(){
     const eligible=CART.filter(i=>cartItemIsDrink(i));
@@ -1387,7 +1428,7 @@ function openCheckoutModal(){
       ${orderChannel==='Walk-in'?`<div class="pay-tabs"><button class="pay-tab ${method==='Cash'?'active':''}" id="tab-cash">Cash</button><button class="pay-tab ${method==='GCash'?'active':''}" id="tab-gcash">GCash</button><button class="pay-tab ${method==='Cash + GCash'?'active':''}" id="tab-combo">Cash + GCash</button></div>
       ${method==='Cash'?`<div class="field"><label>Amount Received</label><input type="text" inputmode="decimal" autocomplete="off" id="cash-received" placeholder="0.00" value="${escAttr(received)}"></div><div id="cash-change-area"></div>`:''}
       ${method==='GCash'?`<div class="field"><label>GCash Reference Number (optional)</label><input type="text" id="gcash-ref" placeholder="e.g. 1234567890" value="${escAttr(ref)}"></div><div class="addon-row" style="border:1.5px solid var(--line);border-radius:10px;padding:12px;"><input type="checkbox" id="gcash-confirm" ${gcashConfirmed?'checked':''}><label for="gcash-confirm">Payment received via GCash</label></div>`:''}
-      ${method==='Cash + GCash'?`<div class="field"><label>Cash Amount</label><input type="text" inputmode="decimal" id="cash-part" value="${escAttr(cashPart)}" placeholder="0.00"></div><div class="field"><label>GCash Amount</label><input type="text" inputmode="decimal" id="gcash-part" value="${escAttr(gcashPart)}" placeholder="0.00"></div><div class="field"><label>GCash Reference (optional)</label><input type="text" id="gcash-ref" value="${escAttr(ref)}"></div><div class="addon-row" style="border:1.5px solid var(--line);border-radius:10px;padding:12px;"><input type="checkbox" id="combo-gcash-confirm" ${gcashConfirmed?'checked':''}><label for="combo-gcash-confirm">Payment received via GCash</label></div><div id="combo-change-area"></div>`:''}`:`<div class="addon-row" style="border:1.5px solid var(--line);border-radius:10px;padding:12px;"><b>Payment:</b>&nbsp; GrabFood</div>`}
+      ${method==='Cash + GCash'?`<div class="field"><label>Cash Tendered</label><input type="text" inputmode="decimal" id="cash-part" value="${escAttr(cashPart)}" placeholder="0.00"></div><div class="field"><label>GCash Amount</label><input type="text" inputmode="decimal" id="gcash-part" value="${escAttr(gcashPart)}" placeholder="0.00"></div><div class="field"><label>GCash Reference (optional)</label><input type="text" id="gcash-ref" value="${escAttr(ref)}"></div><div class="addon-row" style="border:1.5px solid var(--line);border-radius:10px;padding:12px;"><input type="checkbox" id="combo-gcash-confirm" ${gcashConfirmed?'checked':''}><label for="combo-gcash-confirm">Payment received via GCash</label></div><div id="combo-change-area"></div>`:''}`:`<div class="addon-row" style="border:1.5px solid var(--line);border-radius:10px;padding:12px;"><b>Payment:</b>&nbsp; GrabFood</div>`}
       ${orderChannel==='GrabFood'?`<div class="change-row" style="margin-top:12px;"><span>Discount</span><span>−${PESO(discount())}</span></div>`:''}
     </div>
     <div class="modal-foot"><button class="btn btn-secondary" id="modal-cancel">Cancel</button><button class="btn btn-primary" id="modal-confirm" ${!canConfirm()?'disabled':''}>${orderChannel==='GrabFood'?'Save Grab Order':'Confirm Payment'}</button></div>`;
@@ -1395,7 +1436,7 @@ function openCheckoutModal(){
   function updateUI(){
     const totalDue=total(), btn=document.getElementById('modal-confirm'); if(!btn)return;
     if(method==='Cash'){ const n=Number(received); const area=document.getElementById('cash-change-area'); if(area) area.innerHTML=received!==''&&Number.isFinite(n)?`<div class="change-row ${n<totalDue?'negative':'positive'}"><span>${n<totalDue?'Insufficient — short by':'Change'}</span><span>${PESO(Math.abs(n-totalDue))}</span></div>`:''; }
-    if(method==='Cash + GCash'){ const c=Number(cashPart)||0,g=Number(gcashPart)||0; const area=document.getElementById('combo-change-area'); if(area) area.innerHTML=`<div class="change-row ${c+g<totalDue?'negative':'positive'}"><span>${c+g<totalDue?'Short by':'Total Tendered / Change'}</span><span>${c+g<totalDue?PESO(totalDue-c-g):PESO(c+g-totalDue)}</span></div>`; }
+    if(method==='Cash + GCash'){ const c=Number(cashPart)||0,g=Number(gcashPart)||0,cashDue=Math.max(0,totalDue-g); const area=document.getElementById('combo-change-area'); if(area) area.innerHTML=g>=totalDue?`<div class="change-row negative"><span>GCash must be less than total for split payment</span><span>${PESO(g)}</span></div>`:`<div class="change-row ${c<cashDue?'negative':'positive'}"><span>${c<cashDue?'Cash still due':'Cash Change'}</span><span>${PESO(c<cashDue?cashDue-c:c-cashDue)}</span></div><div style="font-size:11px;color:var(--text-dim);margin-top:6px;">Cash share: ${PESO(cashDue)} · GCash share: ${PESO(g)}</div>`; }
     btn.disabled=!canConfirm();
   }
   function render(){
@@ -1454,7 +1495,7 @@ async function createOrderDirectForSuperuser(payload, items){
 
 async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,discountType='None',discountAmount=0,loyaltyItemKey=null,loyaltyCharge=0}){
   if(!canCreateEntryForDate(selectedOrderDate)) return;
-  if(!supabaseOk || !CURRENT_USER?.access_token){
+  if(!CURRENT_USER?.access_token){
     toast('Database unavailable. The order was NOT saved. Please sign in again and retry.');
     submitting=false;
     return;
@@ -1463,10 +1504,14 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
   const total=Math.max(0,subtotal-(Number(discountAmount)||0));
   const cashier=(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff');
   const grabOrderCode=orderChannel==='GrabFood' ? (grabCode.trim()||null) : null;
-  const amountReceived=method==='Cash'?received:method==='Cash + GCash'?(Number(cashPart)||0)+(Number(gcashPart)||0):total;
-  const cashAmount=method==='Cash + GCash'?Number(cashPart)||0:null;
-  const gcashAmount=method==='Cash + GCash'?Number(gcashPart)||0:null;
-  const changeGiven=method==='Cash'?(Number(received)||0)-total:method==='Cash + GCash'?((Number(cashPart)||0)+(Number(gcashPart)||0)-total):0;
+  const splitGcash=method==='Cash + GCash'?(Number(gcashPart)||0):0;
+  const splitCashDue=method==='Cash + GCash'?Math.max(0,total-splitGcash):0;
+  const splitCashTendered=method==='Cash + GCash'?(Number(cashPart)||0):0;
+  const amountReceived=method==='Cash'?received:method==='Cash + GCash'?splitCashTendered+splitGcash:total;
+  // cash_amount/gcash_amount are SALE ALLOCATIONS. Cash tendered is represented by amount_received and change_given.
+  const cashAmount=method==='Cash + GCash'?splitCashDue:null;
+  const gcashAmount=method==='Cash + GCash'?splitGcash:null;
+  const changeGiven=method==='Cash'?(Number(received)||0)-total:method==='Cash + GCash'?splitCashTendered-splitCashDue:0;
   try{
     // Atomic database operation: order number, order row, and all items are committed together.
     const items=CART.map(i=>{
@@ -1511,8 +1556,8 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
     }
 
     const dbOrderNumber=Number(dbOrder.order_number);
+    // Order numbering is database-owned. Keep the preview in memory; do not write shared settings on every sale.
     SETTINGS.nextOrderNum=Math.max(Number(SETTINGS.nextOrderNum)||1,dbOrderNumber+1);
-    await persistSettings();
 
     const order=mapDbOrder({...dbOrder,pos_order_items:dbOrder.items||[]});
     order.orderNumber=orderChannel==='GrabFood'?(grabOrderCode||order.orderNumber):order.orderNumber;
@@ -1762,16 +1807,18 @@ function renderExpensesPage(){
   el.querySelector('#add-expense-btn').onclick=()=>{if(canCreateEntryForDate(businessDayKey()))openAddExpenseModal();};
   if(isSuperuser()){ const b=document.createElement('button'); b.className='btn btn-secondary'; b.textContent='+ Owner / Operational Expense'; b.onclick=openOwnerExpenseModal; el.querySelector('.page-title > div:last-child').appendChild(b); }
   el.querySelector('#add-cash-movement').onclick=openCashMovementModal;
-  el.querySelectorAll('[data-del-exp]').forEach(b=>b.onclick=async()=>{const x=EXPENSES.find(e=>e.id===b.dataset.delExp);if(!x)return;if(!isSuperuser() && !canCreateEntryForDate(x.date))return;const reason=prompt('Reason for voiding this expense:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();await persistExpenses();await writeAudit('void_expense','expense',x.id,reason.trim(),{amount:x.amount,note:x.note,date:x.date});renderExpensesPage();toast('Expense voided — original record preserved');});
+  el.querySelectorAll('[data-del-exp]').forEach(b=>b.onclick=async()=>{const x=EXPENSES.find(e=>e.id===b.dataset.delExp);if(!x)return;if(!isSuperuser() && !canCreateEntryForDate(x.date))return;const reason=prompt('Reason for voiding this expense:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}const prev={status:x.status,voidedAt:x.voidedAt,voidedBy:x.voidedBy,voidReason:x.voidReason};x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();try{await saveExpenseRecord(x);await writeAudit('void_expense','expense',x.id,reason.trim(),{amount:x.amount,note:x.note,date:x.date});renderExpensesPage();toast('Expense voided — original record preserved');}catch(e){Object.assign(x,prev);toast('Expense was NOT voided: '+(e?.message||'database error'));}});
   el.querySelectorAll('[data-void-owner-exp]').forEach(b=>b.onclick=async()=>{
     if(!isSuperuser()) return;
     const x=OWNER_EXPENSES.find(e=>e.id===b.dataset.voidOwnerExp); if(!x||x.status==='Voided') return;
     const reason=prompt('Reason for voiding this owner / operational expense:');
     if(!reason||!reason.trim()){toast('Void reason is required.');return;}
+    const prev={status:x.status,voidedAt:x.voidedAt,voidedBy:x.voidedBy,voidReason:x.voidReason};
     x.status='Voided'; x.voidedAt=new Date().toISOString(); x.voidedBy=currentActor(); x.voidReason=reason.trim();
-    await persistOwnerExpenses(); await writeAudit('void_owner_expense','owner_expense',x.id,reason.trim(),{amount:x.amount,category:x.category,paymentMethod:x.paymentMethod,date:x.date}); renderExpensesPage(); toast('Owner / operational expense voided — original record preserved');
+    try{ await saveOwnerExpenseRecord(x); await writeAudit('void_owner_expense','owner_expense',x.id,reason.trim(),{amount:x.amount,category:x.category,paymentMethod:x.paymentMethod,date:x.date}); renderExpensesPage(); toast('Owner / operational expense voided — original record preserved'); }
+    catch(e){ Object.assign(x,prev); toast('Owner expense was NOT voided: '+(e?.message||'database error')); }
   });
-  el.querySelectorAll('[data-void-cash]').forEach(b=>b.onclick=async()=>{const x=CASH_MOVEMENTS.find(m=>m.id===b.dataset.voidCash);if(!x||x.status==='Voided')return;if(!isSuperuser() && !canCreateEntryForDate(x.date))return;const reason=prompt('Reason for voiding this cash movement:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();await persistCashMovements();await writeAudit('void_cash_movement','cash_movement',x.id,reason.trim(),{amount:x.amount,type:x.type,date:x.date});renderExpensesPage();toast('Cash movement voided — original record preserved');});
+  el.querySelectorAll('[data-void-cash]').forEach(b=>b.onclick=async()=>{const x=CASH_MOVEMENTS.find(m=>m.id===b.dataset.voidCash);if(!x||x.status==='Voided')return;if(!isSuperuser() && !canCreateEntryForDate(x.date))return;const reason=prompt('Reason for voiding this cash movement:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}const prev={status:x.status,voidedAt:x.voidedAt,voidedBy:x.voidedBy,voidReason:x.voidReason};x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();try{await saveCashMovementRecord(x);await writeAudit('void_cash_movement','cash_movement',x.id,reason.trim(),{amount:x.amount,type:x.type,date:x.date});renderExpensesPage();toast('Cash movement voided — original record preserved');}catch(e){Object.assign(x,prev);toast('Cash movement was NOT voided: '+(e?.message||'database error'));}});
 }
 function openAddExpenseModal(){
   openModal(`
@@ -1779,7 +1826,7 @@ function openAddExpenseModal(){
     <div class="modal-body">
       <div class="field"><label>Amount</label><input type="number" inputmode="decimal" id="exp-amount" placeholder="0.00"></div>
       <div class="field"><label>Note (required)</label><input type="text" id="exp-note" placeholder="e.g. Bought extra oat milk from grocery"></div>
-      <div class="field"><label>Date</label><input type="date" id="exp-date" value="${isSuperuser()?(expensesFilter.date||todayStr()):todayStr()}" ${isSuperuser()?'':'min="'+todayStr()+'" disabled'}></div>
+      <div class="field"><label>Date</label><input type="date" id="exp-date" value="${isSuperuser()?(expensesFilter.date||businessDayKey()):businessDayKey()}" ${isSuperuser()?'':'disabled'}></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
@@ -1789,20 +1836,18 @@ function openAddExpenseModal(){
   document.getElementById('modal-save').onclick = async ()=>{
     const amount = parseFloat(document.getElementById('exp-amount').value);
     const note = document.getElementById('exp-note').value.trim();
-    const date = document.getElementById('exp-date').value || todayStr();
+    const date = document.getElementById('exp-date').value || businessDayKey();
     if(!amount || amount<=0){ toast('Enter a valid amount.'); return; }
     if(!note){ toast('A note is required for every expense.'); return; }
     if(!canCreateEntryForDate(date)) return;
     const now = new Date();
-    EXPENSES.unshift({
-      id: uid(), amount, note, date, time: nowTimeStr().slice(0,5),
-      timestamp: now.toISOString(), cashier: (CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')
-    });
-    await persistExpenses();
-    await writeAudit('create_expense','expense',EXPENSES[0].id,note,{amount,note,date,cashier:EXPENSES[0].cashier});
-    closeModal();
-    renderExpensesPage();
-    toast('Expense recorded');
+    const entry={id:uid(),amount,note,date,time:nowTimeStr().slice(0,5),timestamp:now.toISOString(),cashier:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff'),status:'Active'};
+    try{
+      await saveExpenseRecord(entry);
+      EXPENSES.unshift(entry);
+      await writeAudit('create_expense','expense',entry.id,note,{amount,note,date,cashier:entry.cashier});
+      closeModal(); renderExpensesPage(); toast('Expense recorded');
+    }catch(e){ toast('Expense was NOT saved: '+(e?.message||'database error')); }
   };
 }
 
@@ -1827,8 +1872,8 @@ function openOwnerExpenseModal(){
     const date=document.getElementById('oe-date').value||todayStr();
     if(!description){toast('Description is required.');return;}
     if(!amount||amount<=0){toast('Enter a valid amount.');return;}
-    const now=new Date(); const entry={id:uid(),category,description,amount,date,paymentMethod,time:nowTimeStr().slice(0,5),timestamp:now.toISOString(),enteredBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Superuser')};
-    OWNER_EXPENSES.unshift(entry); await persistOwnerExpenses(); await writeAudit('create_owner_expense','owner_expense',entry.id,description,{category,amount,date,paymentMethod}); closeModal(); renderExpensesPage(); toast('Owner / operational expense recorded');
+    const now=new Date(); const entry={id:uid(),category,description,amount,date,paymentMethod,time:nowTimeStr().slice(0,5),timestamp:now.toISOString(),enteredBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Superuser'),status:'Active'};
+    try{ await saveOwnerExpenseRecord(entry); OWNER_EXPENSES.unshift(entry); await writeAudit('create_owner_expense','owner_expense',entry.id,description,{category,amount,date,paymentMethod}); closeModal(); renderExpensesPage(); toast('Owner / operational expense recorded'); }catch(e){ toast('Owner expense was NOT saved: '+(e?.message||'database error')); }
   };
 }
 
@@ -2123,8 +2168,8 @@ function openingCashForDate(dateStr){
 function renderReports(){
   const orders = ordersForReportFilter();
   const m = computeMetrics(orders);
-  const expenses = filteredExpenses(reportsFilter);
-  const expenseTotal = expenses.reduce((s,x)=>s+x.amount,0);
+  const expenses = filteredExpenses(reportsFilter).filter(x=>x.status!=='Voided');
+  const expenseTotal = expenses.reduce((s,x)=>s+Number(x.amount||0),0);
   const netSales = m.totalSales - expenseTotal;
   const el = document.getElementById('reports-content');
   const rangeLabel = reportsFilter.mode==='today' ? 'Today' : reportsFilter.mode==='date' ? reportsFilter.date : reportsFilter.mode==='month' ? 'This Month' : `${reportsFilter.start} → ${reportsFilter.end}`;
@@ -2274,8 +2319,9 @@ function renderReports(){
     if(!confirm(`Unlock reconciled day ${selectedEodDate}?`)) return;
     const reason=requireActionReason(`unlocking reconciled day ${selectedEodDate}`);
     if(!reason) return;
-    EOD[selectedEodDate]={...(EOD[selectedEodDate]||{}),locked:false,unlockedAt:new Date().toISOString(),unlockedBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Superuser')};
-    await persistEod();
+    const unlocked={...(EOD[selectedEodDate]||{}),locked:false,unlockedAt:new Date().toISOString(),unlockedBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Superuser')};
+    try{ await saveEodRecord(selectedEodDate,unlocked); EOD[selectedEodDate]=unlocked; }
+    catch(e){ toast('Day was NOT unlocked: '+(e?.message||'database error')); return; }
     await writeAudit('UNLOCK_RECONCILED_DAY','eod',selectedEodDate,reason,{date:selectedEodDate});
     toast(`${selectedEodDate} unlocked.`);
     renderReports();
@@ -2325,12 +2371,13 @@ function renderReports(){
       if(isDateLocked(dateKey) && !isSuperuser()){ toast(`${dateKey} is already reconciled and locked.`); return; }
       if(actual===null){ toast('Enter Actual Cash Counted before saving reconciliation.'); return; }
       if(variance!==null && Math.abs(variance)>=0.005 && !varianceReason){ toast('Please enter a reason for the cash variance.'); return; }
-      EOD[dateKey] = {...(EOD[dateKey]||{}), opening, actual, expected, variance, totalCashSales:cashSales, cashIn:drawerTotals.in, cashOut:drawerTotals.out, totalGcashSales:gcashSales, totalExpenses:expenseTotal, varianceReason, locked:true, reconciledAt:new Date().toISOString(), reconciledBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')};
-      await storeSet('hibi-eod', EOD);
+      const reconciliation={...(EOD[dateKey]||{}),opening,actual,expected,variance,totalCashSales:cashSales,cashIn:drawerTotals.in,cashOut:drawerTotals.out,totalGcashSales:gcashSales,totalExpenses:expenseTotal,varianceReason,locked:true,reconciledAt:new Date().toISOString(),reconciledBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')};
+      try{ await saveEodRecord(dateKey,reconciliation); EOD[dateKey]=reconciliation; }
+      catch(e){ toast('Reconciliation was NOT saved: '+(e?.message||'database error')); return; }
       await writeAudit('reconcile_day','eod',dateKey,varianceReason,{opening,actual,expected,variance,cashIn:drawerTotals.in,cashOut:drawerTotals.out,totalCashSales:cashSales,totalGcashSales:gcashSales,totalExpenses:expenseTotal});
       try{
-        const attachment = await exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, EOD[dateKey], {download:false});
-        const emailReport = buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expenseTotal, netSales, EOD[dateKey]);
+        const attachment = await exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, reconciliation, {download:false});
+        const emailReport = buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expenseTotal, netSales, reconciliation);
         await sendDailyReportEmail(emailReport, attachment);
         toast('Cash reconciliation saved and daily report emailed.');
       }catch(err){
@@ -3312,7 +3359,6 @@ function escAttr(s){ return esc(s); }
    ============================================================ */
 (async function boot(){
   if(!supabaseClient){ showLoginError('Supabase authentication is unavailable.'); return; }
-  try{ SETTINGS = await storeGet('hibi-settings', SETTINGS); }catch(e){}
   applyBranding();
   document.getElementById('login-btn').onclick=doLogin;
   document.querySelectorAll('[data-password-toggle]').forEach(btn=>btn.onclick=()=>{
