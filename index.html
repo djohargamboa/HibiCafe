@@ -943,6 +943,17 @@ function publicProductImageUrl(path){
   return `${SUPABASE_URL}/storage/v1/object/public/${PRODUCT_IMAGE_BUCKET}/${path.split('/').map(encodeURIComponent).join('/')}`;
 }
 
+function productImageUploadErrorMessage(err){
+  const raw=String(err?.message||err||'Unknown Storage error');
+  const text=raw.replace(/\s+/g,' ').trim();
+  if(/403|row.level.security|policy/i.test(text)) return 'Photo upload blocked by Supabase Storage policy (403). Run the Hibi Storage setup SQL, then retry.';
+  if(/404|bucket.*not found|not found.*bucket/i.test(text)) return 'The hibi-product-images Storage bucket was not found. Run the Hibi Storage setup SQL.';
+  if(/401|jwt|unauthori[sz]ed/i.test(text)) return 'Your Supabase login session is not authorized for photo uploads. Sign out/in, then retry.';
+  if(/413|too large|file.?size|payload/i.test(text)) return 'The photo exceeds the Storage upload limit. Check Supabase Storage file-size settings.';
+  if(/mime|content.?type|invalid.*image/i.test(text)) return 'This image type was rejected by Supabase Storage. Try JPG, PNG, or WebP.';
+  return 'Photo upload failed: '+(text.length>180?text.slice(0,177)+'…':text);
+}
+
 async function uploadProductImage(file, productId){
   if(!HAS_SUPABASE) throw new Error('Supabase Storage is not available.');
   const token=requireDatabaseSession();
@@ -960,7 +971,10 @@ async function uploadProductImage(file, productId){
     },
     body:optimized.blob
   });
-  if(!res.ok) throw new Error('Image upload failed: '+res.status+' '+await res.text());
+  if(!res.ok){
+    const detail=await res.text();
+    throw new Error(`Image upload failed: ${res.status} ${detail}`);
+  }
   return { url:publicProductImageUrl(path), path };
 }
 
@@ -3138,7 +3152,7 @@ function renderMenuMgmt(){
       await writeAudit('update_product_photo','product',pr.id,reason,{name:pr.name});
       renderMenuMgmt();
       toast('Product photo updated');
-    }catch(err){ console.error(err); toast('Could not save this photo. Check Supabase Storage setup.'); }
+    }catch(err){ console.error(err); toast(productImageUploadErrorMessage(err)); }
   });
   catsWrap.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEditProductModal(MENU.products.find(p=>p.id===b.dataset.edit)));
   catsWrap.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
@@ -3337,7 +3351,7 @@ function openEditProductModal(pr){
           pr.name=name.trim(); pr.category=category; pr.sizes=sizeMap; pr.grabPrices=grabMap; pr.isDrink=isDrink; pr.addonEligible=addonEligible; pr.image=image;
           if(removeExistingImage) pr.imagePath='';
         }
-      }catch(err){ console.error(err); toast('Could not upload the product photo. Product was not saved.'); return; }
+      }catch(err){ console.error(err); toast(productImageUploadErrorMessage(err)+' Product was not saved.'); return; }
       await persistMenu();
       await writeAudit(isNew?'create_product':'edit_product','product',isNew?productId:pr.id,reason,{name:name.trim(),category});
       closeModal();
