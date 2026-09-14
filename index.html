@@ -215,6 +215,12 @@ td.num, th.num{text-align:right;font-family:'JetBrains Mono',monospace;}
 .toggle .knob{width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:.15s;box-shadow:0 1px 3px rgba(0,0,0,0.3);}
 .toggle.on .knob{left:18px;}
 .badge-inactive{font-size:10px;background:var(--line);color:var(--text-dim);padding:2px 7px;border-radius:6px;font-weight:700;margin-left:6px;}
+.db-status-chip{width:76px;border:1px solid #3A3A3A;background:#292929;color:#CFCFCB;border-radius:9px;padding:6px 5px;display:flex;align-items:center;justify-content:center;gap:5px;font-size:9px;font-weight:700;cursor:pointer;transition:.15s;}
+.db-status-chip:hover{background:#333;color:#fff;}.db-status-dot{width:7px;height:7px;border-radius:50%;background:#A0A09A;box-shadow:0 0 0 2px rgba(255,255,255,.04);flex:0 0 auto;}
+.db-status-chip.online .db-status-dot{background:#55C985;box-shadow:0 0 0 2px rgba(85,201,133,.12);}.db-status-chip.offline{border-color:#5C3330;color:#F3B0A9;}.db-status-chip.offline .db-status-dot{background:#E16A5C;}.db-status-chip.checking .db-status-dot{background:#E7A64A;animation:dbPulse 1s infinite alternate;}
+@keyframes dbPulse{from{opacity:.45}to{opacity:1}}
+.availability-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:12px;}.availability-stat{border:1px solid var(--line);border-radius:11px;padding:10px 12px;background:#FAFAF8;}.availability-stat .num{font-size:20px;font-weight:800;line-height:1.05;}.availability-stat .label{font-size:10px;color:var(--text-dim);margin-top:3px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;}.availability-stat.sold .num{color:var(--rust);}.availability-controls{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(150px,.7fr);gap:8px;margin-bottom:9px;}.availability-controls input,.availability-controls select{width:100%;height:40px;border:1.5px solid var(--line);border-radius:9px;background:#fff;padding:0 11px;font-size:12px;outline:none;}.availability-controls input:focus,.availability-controls select:focus{border-color:var(--caramel);}.availability-filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}.availability-filter{border:1px solid var(--line);background:#fff;color:#6F6F69;border-radius:999px;padding:6px 10px;font-size:10px;font-weight:750;cursor:pointer;}.availability-filter.active{background:#252525;border-color:#252525;color:#fff;}.availability-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;}.availability-card{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;background:#fff;padding:10px;transition:.15s;}.availability-card.soldout{background:#FFF8F7;border-color:#F0CDC8;}.availability-thumb{width:46px;height:46px;border-radius:9px;overflow:hidden;background:#F0F0EC;display:flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto;}.availability-thumb img{width:100%;height:100%;object-fit:cover;display:block;}.availability-info{min-width:0;flex:1;}.availability-name{font-size:12px;font-weight:750;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.availability-category{font-size:10px;color:var(--text-dim);margin-top:3px;}.availability-state{border:0;background:transparent;display:flex;flex-direction:column;align-items:flex-end;gap:4px;padding:2px;cursor:pointer;min-width:76px;}.availability-state .state-label{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.35px;color:var(--matcha-dark);}.availability-state.soldout .state-label{color:var(--rust);}.availability-switch{width:38px;height:22px;border-radius:20px;background:#D8D8D2;position:relative;display:block;transition:.15s;}.availability-switch i{width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:.15s;box-shadow:0 1px 4px rgba(0,0,0,.24);}.availability-state.available .availability-switch{background:var(--matcha);}.availability-state.available .availability-switch i{left:18px;}.availability-empty{grid-column:1/-1;text-align:center;padding:28px 12px;color:var(--text-dim);font-size:12px;border:1px dashed var(--line);border-radius:12px;background:#FAFAF8;}.availability-reset-note{font-size:10px;color:var(--text-dim);margin-top:4px;}
+@media(max-width:650px){.availability-grid{grid-template-columns:1fr;}.availability-controls{grid-template-columns:1fr;}.availability-summary{grid-template-columns:1fr 1fr;}}
 @media (max-width:880px){
   #pos-page{flex-direction:column;}
   .pos-right{max-width:none;border-top:1px solid var(--line);max-height:46vh;}
@@ -444,6 +450,7 @@ nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{bac
       <button data-page="settings" data-permission="settings">Settings</button>
     </nav>
     <div class="topbar-right">
+      <button class="db-status-chip checking" id="db-status-chip" type="button" title="Checking database connection"><span class="db-status-dot"></span><span id="db-status-label">DB…</span></button>
       <span class="cashier-pill" id="cashier-pill">Cashier: —</span><button class="user-menu-btn" id="logout-btn">Log out</button>
       <span class="clock" id="clock"></span>
     </div>
@@ -814,19 +821,67 @@ function requireActionReason(label='this change'){
   if(!reason || !reason.trim()){ toast('A reason / note is required.'); return null; }
   return reason.trim();
 }
-function showApp(){ document.getElementById('login-screen').style.display='none'; document.getElementById('app').style.display=''; document.getElementById('cashier-pill').textContent='User: '+(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff'); applyPermissions(); }
+function showApp(){ document.getElementById('login-screen').style.display='none'; document.getElementById('app').style.display=''; document.getElementById('cashier-pill').textContent='User: '+(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff'); applyPermissions(); updateDatabaseStatusUI(); }
 function showLoginError(msg){ const e=document.getElementById('login-error'); e.textContent=msg||''; }
 async function doLogin(){
   showLoginError(''); const username=document.getElementById('login-username').value.trim().toLowerCase(); const password=document.getElementById('login-password').value;
   if(!username||!password){showLoginError('Enter your username and password.');return;}
   const btn=document.getElementById('login-btn'); btn.disabled=true; btn.textContent='Signing in…';
-  try{ const email=await getLoginProfile(username); if(!email) throw new Error('Invalid username or password.'); const {data,error}=await supabaseClient.auth.signInWithPassword({email,password}); if(error) throw error; CURRENT_USER=data.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); await writeAudit('login','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||username,role:CURRENT_PROFILE?.role||''}); showApp(); await loadAll(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }
+  try{ const email=await getLoginProfile(username); if(!email) throw new Error('Invalid username or password.'); const {data,error}=await supabaseClient.auth.signInWithPassword({email,password}); if(error) throw error; CURRENT_USER=data.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); await writeAudit('login','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||username,role:CURRENT_PROFILE?.role||''}); showApp(); await loadAll(); startDatabaseHealthMonitor(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }
   catch(e){ console.error(e); showLoginError(e.message==='Invalid login credentials'?'Invalid username or password.':e.message||'Unable to sign in.'); if(supabaseClient) await supabaseClient.auth.signOut(); }
   finally{btn.disabled=false;btn.textContent='Sign in';}
 }
-async function doLogout(){ if(CURRENT_USER) await writeAudit('logout','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); if(supabaseClient) await supabaseClient.auth.signOut(); CURRENT_USER=null; CURRENT_PROFILE=null; document.getElementById('app').style.display='none'; document.getElementById('login-screen').style.display='flex'; document.getElementById('login-password').value=''; showLoginError(''); }
+async function doLogout(){ stopDatabaseHealthMonitor(); if(CURRENT_USER) await writeAudit('logout','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); if(supabaseClient) await supabaseClient.auth.signOut(); CURRENT_USER=null; CURRENT_PROFILE=null; document.getElementById('app').style.display='none'; document.getElementById('login-screen').style.display='flex'; document.getElementById('login-password').value=''; showLoginError(''); }
 
 let supabaseOk = HAS_SUPABASE; // connection health only; never used as permission or as a reason to save locally
+let LAST_DB_SYNC_AT = null;
+let DB_HEALTH_TIMER = null;
+let DB_CHECKING = false;
+
+function formatSyncAge(ts){
+  if(!ts) return 'No successful sync yet';
+  const sec=Math.max(0,Math.floor((Date.now()-ts)/1000));
+  if(sec<10) return 'Synced just now';
+  if(sec<60) return `Synced ${sec}s ago`;
+  const min=Math.floor(sec/60);
+  if(min<60) return `Synced ${min}m ago`;
+  const hr=Math.floor(min/60);
+  return `Synced ${hr}h ago`;
+}
+function updateDatabaseStatusUI(){
+  const chip=document.getElementById('db-status-chip'), label=document.getElementById('db-status-label');
+  if(!chip||!label) return;
+  chip.classList.remove('online','offline','checking');
+  if(DB_CHECKING){ chip.classList.add('checking'); label.textContent='DB…'; chip.title='Checking Supabase connection…'; return; }
+  chip.classList.add(supabaseOk?'online':'offline');
+  label.textContent=supabaseOk?'DB Online':'DB Offline';
+  chip.title=supabaseOk?`Supabase connected · ${formatSyncAge(LAST_DB_SYNC_AT)} · Click to check now`:'Supabase unavailable · financial writes are blocked · Click to retry';
+}
+function markDatabaseHealthy(){ supabaseOk=true; LAST_DB_SYNC_AT=Date.now(); DB_CHECKING=false; updateDatabaseStatusUI(); }
+function markDatabaseOffline(){ supabaseOk=false; DB_CHECKING=false; updateDatabaseStatusUI(); }
+async function checkDatabaseHealth({silent=true}={}){
+  if(!CURRENT_USER?.access_token){ markDatabaseOffline(); return false; }
+  DB_CHECKING=true; updateDatabaseStatusUI();
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),5000);
+  try{
+    const res=await fetch(`${SUPABASE_URL}/rest/v1/pos_orders?select=id&limit=1`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${CURRENT_USER.access_token}`},signal:controller.signal});
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    markDatabaseHealthy();
+    if(!silent) toast('Database connection is healthy.');
+    return true;
+  }catch(e){
+    markDatabaseOffline();
+    if(!silent) toast('Database is unavailable. Orders and financial changes will not be saved until it reconnects.');
+    return false;
+  }finally{ clearTimeout(timeout); }
+}
+function startDatabaseHealthMonitor(){
+  if(DB_HEALTH_TIMER) clearInterval(DB_HEALTH_TIMER);
+  checkDatabaseHealth({silent:true});
+  DB_HEALTH_TIMER=setInterval(()=>checkDatabaseHealth({silent:true}),120000);
+}
+function stopDatabaseHealthMonitor(){ if(DB_HEALTH_TIMER){clearInterval(DB_HEALTH_TIMER);DB_HEALTH_TIMER=null;} }
 
 function requireDatabaseSession(){
   const token=CURRENT_USER?.access_token;
@@ -834,7 +889,7 @@ function requireDatabaseSession(){
   return token;
 }
 function databaseFailure(message, err){
-  supabaseOk=false;
+  markDatabaseOffline();
   console.error(message, err||'');
   toast(message);
 }
@@ -844,7 +899,7 @@ async function supabaseGet(key){
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
   });
   if(!res.ok) throw new Error('Supabase GET failed: ' + res.status + ' ' + await res.text());
-  supabaseOk=true;
+  markDatabaseHealthy();
   const rows = await res.json();
   return rows.length ? rows[0].value : undefined;
 }
@@ -861,7 +916,7 @@ async function supabaseSet(key, value){
     body: JSON.stringify({ key, value, updated_at: new Date().toISOString() })
   });
   if(!res.ok) throw new Error('Supabase SET failed: ' + res.status + ' ' + await res.text());
-  supabaseOk=true;
+  markDatabaseHealthy();
 }
 async function storeGet(key, fallback){
   try{
@@ -983,9 +1038,9 @@ async function posApi(path, options={}){
   };
   let res;
   try{ res=await fetch(`${SUPABASE_URL}${path}`, {...options, headers}); }
-  catch(e){ supabaseOk=false; throw new Error('Could not reach the database. The change was NOT saved.'); }
+  catch(e){ markDatabaseOffline(); throw new Error('Could not reach the database. The change was NOT saved.'); }
   if(!res.ok){
-    supabaseOk=false;
+    markDatabaseOffline();
     const body=await res.text();
     if(res.status===404 && /daily_expenses|owner_expenses|cash_movements|eod_reconciliations/i.test(path)){
       throw new Error('P0 database migration is required. Run hibi_p0_migration.sql in Supabase before using this POS version.');
@@ -995,7 +1050,7 @@ async function posApi(path, options={}){
     }
     throw new Error(`Database request failed (${res.status}): ${body}`);
   }
-  supabaseOk=true;
+  markDatabaseHealthy();
   return res;
 }
 
@@ -1027,24 +1082,78 @@ function soldOutCount(dateKey=businessDayKey()){
 }
 function openAvailabilityModal(){
   const dateKey=businessDayKey();
-  const categories=MENU.categories.map(cat=>({cat,items:MENU.products.filter(p=>p.category===cat && p.active)})).filter(x=>x.items.length);
-  openModal(`<div class="modal-head"><h3>Quick Availability</h3><div class="msub">Business Day ${dateKey} · Sold Out resets automatically on the next business day.</div></div>
-    <div class="modal-body" style="max-height:62vh;overflow:auto;">
-      ${categories.map(g=>`<div style="margin-bottom:16px;"><div class="section-title" style="margin-bottom:7px;">${esc(g.cat)}</div>${g.items.map(pr=>{const so=isProductSoldOut(pr,dateKey);return `<div class="addon-row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:10px 0;"><div><strong>${esc(pr.name)}</strong><div style="font-size:11px;color:var(--text-dim);">${so?'Unavailable for today':'Available'}</div></div><button class="btn ${so?'btn-secondary':'btn-primary'}" data-availability-id="${escAttr(pr.id)}" style="padding:7px 10px;">${so?'Mark Available':'Sold Out'}</button></div>`}).join('')}</div>`).join('')}
+  const products=MENU.products.filter(p=>p.active);
+  const categories=MENU.categories.filter(cat=>products.some(p=>p.category===cat));
+  const state={query:'',filter:'all',category:'all'};
+  openModal(`<div class="modal-head"><h3>Item Availability</h3><div class="msub">Quickly hide sold-out items from checkout.</div></div>
+    <div class="modal-body" style="max-height:68vh;overflow:auto;padding-top:14px;">
+      <div class="availability-summary"><div class="availability-stat"><div class="num" id="availability-available-count">0</div><div class="label">Available</div></div><div class="availability-stat sold"><div class="num" id="availability-sold-count">0</div><div class="label">Sold Out</div></div></div>
+      <div class="availability-controls"><input id="availability-search" type="search" placeholder="Search item…" autocomplete="off"><select id="availability-category"><option value="all">All categories</option>${categories.map(cat=>`<option value="${escAttr(cat)}">${esc(cat)}</option>`).join('')}</select></div>
+      <div class="availability-filters"><button class="availability-filter active" data-afilter="all">All</button><button class="availability-filter" data-afilter="available">Available</button><button class="availability-filter" data-afilter="soldout">Sold Out</button></div>
+      <div class="availability-grid" id="availability-grid"></div>
+      <div class="availability-reset-note">Sold Out applies only to business day <strong>${dateKey}</strong> and automatically resets on the next business day.</div>
     </div>
-    <div class="modal-foot"><button class="btn btn-secondary" id="availability-all">Mark All Available</button><button class="btn btn-primary" id="availability-done">Done</button></div>`);
+    <div class="modal-foot"><button class="btn btn-secondary" id="availability-all">Make All Available</button><button class="btn btn-primary" id="availability-done">Done</button></div>`);
+
+  const grid=document.getElementById('availability-grid');
+  const search=document.getElementById('availability-search');
+  const category=document.getElementById('availability-category');
+  const reset=document.getElementById('availability-all');
+
+  function renderAvailabilityList(){
+    const soldCount=products.filter(p=>isProductSoldOut(p,dateKey)).length;
+    document.getElementById('availability-sold-count').textContent=soldCount;
+    document.getElementById('availability-available-count').textContent=Math.max(0,products.length-soldCount);
+    reset.disabled=soldCount===0;
+    document.querySelectorAll('[data-afilter]').forEach(b=>b.classList.toggle('active',b.dataset.afilter===state.filter));
+    const q=state.query.trim().toLowerCase();
+    const visible=products.filter(pr=>{
+      const sold=isProductSoldOut(pr,dateKey);
+      if(state.filter==='available'&&sold) return false;
+      if(state.filter==='soldout'&&!sold) return false;
+      if(state.category!=='all'&&pr.category!==state.category) return false;
+      if(q && !`${pr.name} ${pr.category}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    grid.innerHTML=visible.length?visible.map(pr=>{
+      const sold=isProductSoldOut(pr,dateKey);
+      return `<div class="availability-card ${sold?'soldout':''}">
+        <div class="availability-thumb">${pr.image?`<img src="${escAttr(pr.image)}" alt="">`:`<span>${productIcon(pr)}</span>`}</div>
+        <div class="availability-info"><div class="availability-name">${esc(pr.name)}</div><div class="availability-category">${esc(pr.category)}</div></div>
+        <button type="button" class="availability-state ${sold?'soldout':'available'}" data-availability-id="${escAttr(pr.id)}" aria-label="${sold?'Mark available':'Mark sold out'}: ${escAttr(pr.name)}"><span class="state-label">${sold?'Sold Out':'Available'}</span><span class="availability-switch"><i></i></span></button>
+      </div>`;
+    }).join(''):`<div class="availability-empty">No items match this filter.</div>`;
+    grid.querySelectorAll('[data-availability-id]').forEach(btn=>btn.onclick=async()=>{
+      const pr=MENU.products.find(p=>p.id===btn.dataset.availabilityId); if(!pr)return;
+      const next=!isProductSoldOut(pr,dateKey);
+      btn.disabled=true;
+      try{
+        await setProductAvailability(pr,next);
+        renderPOS();
+        renderAvailabilityList();
+        toast(next?`${pr.name} marked Sold Out`:`${pr.name} available again`);
+      }catch(e){
+        toast('Availability was NOT saved: '+(e?.message||e));
+        btn.disabled=false;
+      }
+    });
+  }
+
+  search.oninput=e=>{state.query=e.target.value||'';renderAvailabilityList();};
+  category.onchange=e=>{state.category=e.target.value||'all';renderAvailabilityList();};
+  document.querySelectorAll('[data-afilter]').forEach(btn=>btn.onclick=()=>{state.filter=btn.dataset.afilter;renderAvailabilityList();});
   document.getElementById('availability-done').onclick=closeModal;
-  document.getElementById('availability-all').onclick=async()=>{
-    const sold=MENU.products.filter(p=>p.active&&isProductSoldOut(p,dateKey));
+  reset.onclick=async()=>{
+    const sold=products.filter(p=>isProductSoldOut(p,dateKey));
     if(!sold.length){toast('All products are already available.');return;}
-    try{ for(const pr of sold) await setProductAvailability(pr,false); renderPOS(); openAvailabilityModal(); toast('All products marked available.'); }catch(e){toast('Availability was NOT saved: '+(e?.message||e));}
+    reset.disabled=true; reset.textContent='Updating…';
+    try{
+      for(const pr of sold) await setProductAvailability(pr,false);
+      renderPOS(); renderAvailabilityList(); toast('All products marked available.');
+    }catch(e){toast('Availability was NOT saved: '+(e?.message||e));}
+    finally{reset.textContent='Make All Available';reset.disabled=soldOutCount(dateKey)===0;}
   };
-  document.querySelectorAll('[data-availability-id]').forEach(btn=>btn.onclick=async()=>{
-    const pr=MENU.products.find(p=>p.id===btn.dataset.availabilityId); if(!pr)return;
-    const next=!isProductSoldOut(pr,dateKey);
-    btn.disabled=true;
-    try{await setProductAvailability(pr,next);renderPOS();openAvailabilityModal();toast(next?`${pr.name} marked Sold Out`:`${pr.name} available again`);}catch(e){toast('Availability was NOT saved: '+(e?.message||e));btn.disabled=false;}
-  });
+  renderAvailabilityList();
 }
 
 function mapShiftRow(row){
@@ -1329,6 +1438,7 @@ function goToPage(pageId){
 /* ---------- Clock ---------- */
 function tickClock(){
   const d = new Date();
+  updateDatabaseStatusUI();
   document.getElementById('clock').textContent = d.toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
   const bd=businessDayKey();
   if(bd!==LAST_BUSINESS_DAY){ LAST_BUSINESS_DAY=bd; shiftsFilterDate=bd; if(!isSuperuser()) selectedOrderDate=bd; const active=document.querySelector('nav.tabs button.active')?.dataset.page; if(active==='pos') renderPOS(); else if(active==='dashboard') renderDashboard(); else if(active==='orders') renderOrdersPage(); else if(active==='expenses') renderExpensesPage(); else if(active==='shifts') renderShiftsPage(); else if(active==='reports') renderReports(); }
@@ -3396,7 +3506,7 @@ function renderSettings(){
       <div class="card" style="padding:18px 20px;max-width:600px;">
         <div class="section-title">Data</div>
         <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">${ORDERS.length} orders on record. Next order number: ${formatOrderNum(SETTINGS.nextOrderNum)}.</div>
-        <div style="font-size:12px;color:var(--text-dim);">${supabaseOk ? 'Connected to the shared database.' : 'Database unavailable — shared writes are disabled until reconnected.'}</div>
+        <div style="font-size:12px;color:var(--text-dim);">${supabaseOk ? `Connected to Supabase. ${formatSyncAge(LAST_DB_SYNC_AT)}.` : 'Supabase unavailable — orders and financial writes are blocked until reconnected.'}</div>
       </div>${accountPasswordSection}${usersSection}`;
   }
   const saveCashierBtn=document.getElementById('save-cashier');
@@ -3589,8 +3699,10 @@ function escAttr(s){ return esc(s); }
   document.getElementById('login-password').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
   document.getElementById('login-username').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('login-password').focus();});
   document.getElementById('logout-btn').onclick=doLogout;
+  document.getElementById('db-status-chip').onclick=()=>checkDatabaseHealth({silent:false});
+  supabaseClient.auth.onAuthStateChange((_event,session)=>{ if(session?.access_token&&CURRENT_USER){CURRENT_USER.access_token=session.access_token;} });
   const {data}=await supabaseClient.auth.getSession();
-  if(data.session){ try{ CURRENT_USER=data.session.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); await writeAudit('login_session_restore','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); showApp(); await loadAll(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }catch(e){await doLogout();} }
+  if(data.session){ try{ CURRENT_USER=data.session.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); await writeAudit('login_session_restore','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); showApp(); await loadAll(); startDatabaseHealthMonitor(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }catch(e){await doLogout();} }
 })();
 </script>
 </body>
