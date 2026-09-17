@@ -433,6 +433,34 @@ nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{bac
 .promo-addon{color:var(--matcha-dark);font-weight:800;}
 </style>
 
+
+<style>
+.report-view-switcher{display:flex;gap:6px;max-width:650px;padding:6px;margin-bottom:26px;background:#EAECE5;border:1px solid #DDE0D5;border-radius:16px;}
+.report-view-option{flex:1;display:flex;align-items:center;gap:12px;min-width:0;padding:14px 18px;border:1px solid transparent;border-radius:11px;background:transparent;color:#606650;text-align:left;font:inherit;cursor:pointer;transition:background .15s,box-shadow .15s;}
+.report-view-option svg{width:24px;height:24px;flex-shrink:0;}
+.report-view-option strong{display:block;font-size:14px;line-height:1.35;}
+.report-view-option small{display:block;margin-top:4px;font-size:11px;line-height:1.4;}
+.report-view-option:hover{background:#F6F7F2;}
+.report-view-option.is-selected{background:#fff;color:#343D26;border-color:#D8DDCD;box-shadow:0 2px 6px #28321E12;}
+.report-view-option.is-selected strong{color:#343D26;}
+.report-view-option:focus-visible{outline:3px solid #74835B;outline-offset:2px;}
+.month-total-panel{margin-top:16px;border:1px solid #D6DDCA;border-radius:18px;overflow:hidden;background:#fff;box-shadow:0 4px 16px #30382008;}
+.month-total-heading{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:26px 28px;background:#38422C;color:#fff;}
+.month-total-eyebrow{font-size:11px;font-weight:800;letter-spacing:.15em;color:#DDE7CB;}
+.month-total-heading h2{margin:8px 0 6px;font-size:24px;color:#fff;}
+.month-total-heading p{margin:0;font-size:12px;line-height:1.5;color:#E0E5D7;}
+.month-total-net{text-align:right;}
+.month-total-net>span{display:block;font-size:12px;color:#E0E5D7;}
+.month-total-net>strong{display:block;margin:6px 0;font-size:clamp(26px,3vw,36px);font-weight:800;letter-spacing:-.04em;font-variant-numeric:tabular-nums;}
+.month-total-net>small{font-size:11px;color:#E0E5D7;}
+.month-total-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#E5E9DE;}
+.month-total-metrics>div{background:#fff;padding:20px 24px;min-width:0;}
+.month-total-metrics span{display:block;font-size:11px;font-weight:600;color:#666E5B;margin-bottom:9px;}
+.month-total-metrics strong{display:block;font-size:19px;font-weight:750;color:#343D26;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+.month-total-averages{display:flex;flex-wrap:wrap;gap:12px 24px;padding:15px 24px;background:#F4F6EF;border-top:1px solid #E5E9DE;font-size:12px;color:#626B57;}
+.month-total-averages strong{color:#343D26;}
+@media(max-width:700px){.report-view-option{padding:12px 10px;gap:8px;}.report-view-option strong{font-size:12px;}.report-view-option small{font-size:10px;}.report-view-option svg{width:20px;height:20px;}.month-total-heading{align-items:flex-start;flex-direction:column;padding:22px;gap:20px;}.month-total-net{text-align:left;}.month-total-metrics{grid-template-columns:repeat(2,minmax(0,1fr));}.month-total-metrics>div{padding:18px;}.month-total-metrics strong{font-size:18px;}.month-total-averages{padding:16px 18px;}.month-total-averages>span:first-child{flex-basis:100%;}}
+</style>
 </head>
 <body>
 <div id="login-screen" class="login-screen">
@@ -462,7 +490,6 @@ nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{bac
       <button data-page="expenses" data-permission="expenses">Expenses</button>
       <button data-page="shifts" data-permission="expenses">Shifts</button>
       <button data-page="reports" data-permission="reports">Reports</button>
-      <button data-page="monthly-performance" data-permission="reports" data-superuser-only="true">Monthly Performance</button>
       <button data-page="menu" data-permission="menu">Menu Mgmt</button>
       <button data-page="audit" data-permission="audit" title="Audit Log" aria-label="Audit Log">Audit Log</button>
       <button data-page="settings" data-permission="settings">Settings</button>
@@ -548,12 +575,20 @@ nav.tabs button:hover{background:#303030;color:#fff;} nav.tabs button.active{bac
 
   <!-- REPORTS PAGE -->
   <div class="page" id="page-reports">
-    <div class="page-scroll" id="reports-content"></div>
-  </div>
-
-  <!-- MONTHLY PERFORMANCE PAGE -->
-  <div class="page" id="page-monthly-performance">
-    <div class="page-scroll" id="monthly-performance-content"></div>
+    <div class="page-scroll">
+      <div id="report-view-switcher" class="report-view-switcher" role="group" aria-label="Report view">
+        <button type="button" class="report-view-option is-selected" data-report-view="daily" aria-pressed="true" aria-controls="reports-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 11h18M7 15h4M7 18h7"/></svg>
+          <span><strong>Daily Reports</strong><small>Sales &amp; reconciliation</small></span>
+        </button>
+        <button type="button" class="report-view-option" data-report-view="monthly" aria-pressed="false" aria-controls="monthly-performance-content" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7 17v-4M12 17V7M17 17v-7"/></svg>
+          <span><strong>Monthly Performance</strong><small>Trends &amp; month totals</small></span>
+        </button>
+      </div>
+      <div id="reports-content"></div>
+      <div id="monthly-performance-content" style="display:none;"></div>
+    </div>
   </div>
 
   <!-- MENU MGMT PAGE -->
@@ -1312,16 +1347,44 @@ function openCloseShiftModal(shift){
     try{await saveShiftRecord(closed);const i=SHIFTS.findIndex(x=>x.id===shift.id);if(i>=0)SHIFTS[i]=closed;await writeAudit('close_shift','cash_shift',shift.id,reason,{businessDate:shift.businessDate,shiftNumber:shift.shiftNumber,expectedCash:finalSummary.expected,actualCashCounted:actual,variance:finalVariance,cashSales:finalSummary.cashSales,cashIn:finalSummary.cashIn,cashOut:finalSummary.cashOut,expenses:finalSummary.expenses,transactionCount:finalSummary.transactionCount,cupsSold:finalSummary.cupsSold});closeModal();renderShiftsPage();renderDashboard();renderPOS();toast(`${shift.shiftName} closed.`);}catch(e){toast('Shift was NOT closed: '+(e?.message||e));}
   };
 }
+let shiftReopenBusy = false;
+async function reopenShift(id){
+  if(!isSuperuser()){ toast('Only superusers can reopen shifts.'); return; }
+  if(shiftReopenBusy) return;
+  const shift=SHIFTS.find(x=>x.id===id);
+  if(!shift || shift.status!=='Closed') return;
+  if(isDateLocked(shift.businessDate)){ toast('Unlock this reconciled day in Reports first.'); return; }
+  const reason=requireActionReason(`reopening ${shift.shiftName}`);
+  if(!reason) return;
+  shiftReopenBusy=true;
+  document.querySelectorAll('[data-reopen-shift]').forEach(b=>b.disabled=true);
+  try{
+    const res=await posApi('/rest/v1/rpc/reopen_hibi_shift',{method:'POST',body:JSON.stringify({p_shift_id:id,p_reason:reason})});
+    const row=await res.json();
+    if(!row?.id || row.status!=='Open') throw new Error('The database did not confirm the reopened shift.');
+    const index=SHIFTS.findIndex(x=>x.id===id);
+    if(index>=0) SHIFTS[index]=mapShiftRow(row);
+    renderShiftsPage(); renderDashboard(); renderPOS();
+    toast(`${shift.shiftName} reopened. Enter a fresh cash count when closing it again.`);
+  }catch(e){
+    const message=e?.message||'Database error';
+    toast(/404|PGRST202/.test(message)?'Run reopen_shift.sql in Supabase before using Reopen Shift.':message);
+  }finally{
+    shiftReopenBusy=false;
+    document.querySelectorAll('[data-reopen-shift]').forEach(b=>b.disabled=false);
+  }
+}
 function lastShiftActualForDate(dateKey){ const s=lastClosedShiftForDate(dateKey); return s?.actualCashCounted==null?null:Number(s.actualCashCounted); }
 function renderShiftsPage(){
   const el=document.getElementById('shifts-content'); if(!el)return;
   const dateKey=shiftsFilterDate||businessDayKey();
   const open=openShiftForDate(dateKey), rows=shiftsForDate(dateKey);
   const live=open?shiftFinancialSummary(open):null;
-  el.innerHTML=`<div class="page-title"><div><h1>Shift / Drawer</h1><div class="psub">Open, hand off and reconcile the cash drawer by shift.</div></div>${dateKey===businessDayKey()?`<button class="btn ${open?'btn-secondary':'btn-primary'}" id="shift-main-action">${open?'Close '+esc(open.shiftName):'+ Open Shift'}</button>`:''}</div>
+  el.innerHTML=`<div class="page-title"><div><h1>Shift / Drawer</h1><div class="psub">Open, hand off and reconcile the cash drawer by shift.</div></div>${dateKey===businessDayKey()||(isSuperuser()&&open)?`<button class="btn ${open?'btn-secondary':'btn-primary'}" id="shift-main-action">${open?'Close '+esc(open.shiftName):'+ Open Shift'}</button>`:''}</div>
     <div class="filter-bar"><button class="filter-btn" id="shift-prev">←</button><input type="date" id="shift-date" value="${dateKey}"><button class="filter-btn" id="shift-next">→</button><button class="filter-btn ${dateKey===businessDayKey()?'active':''}" id="shift-today">Today</button></div>
     ${open?`<div class="card shift-live" style="padding:18px 20px;margin-bottom:16px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;"><div><div class="section-title" style="margin-bottom:3px;">${esc(open.shiftName)} <span class="shift-status-pill">OPEN</span></div><div style="font-size:12px;color:var(--text-dim);">Opened ${fmtShiftTime(open.openedAt)} · Opened by <strong>${esc(open.openedBy)}</strong></div></div><div style="font-weight:800;font-size:22px;">${PESO(live.expected)}</div></div><div class="stat-grid" style="margin-top:14px;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));"><div><div class="slabel">Opening</div><div style="font-weight:700;">${PESO(open.openingCash)}</div></div><div><div class="slabel">Cash Sales</div><div style="font-weight:700;">${PESO(live.cashSales)}</div></div><div><div class="slabel">Orders</div><div style="font-weight:700;">${live.transactionCount}</div></div><div><div class="slabel">Cups Sold</div><div style="font-weight:700;">${live.cupsSold}</div></div><div><div class="slabel">Cash In / Out</div><div style="font-weight:700;">+${PESO(live.cashIn)} / −${PESO(live.cashOut)}</div></div><div><div class="slabel">Cash Expenses</div><div style="font-weight:700;">${PESO(live.expenses)}</div></div><div><div class="slabel">Expected Drawer</div><div style="font-weight:800;">${PESO(live.expected)}</div></div></div></div>`:`<div class="card" style="padding:18px 20px;margin-bottom:16px;"><span class="shift-status-pill none">NO OPEN SHIFT</span><div style="margin-top:8px;font-size:13px;color:var(--text-dim);">${dateKey===businessDayKey()?'Open a shift before taking orders or recording drawer activity.':'No open shift for this business day.'}</div></div>`}
-    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Shift</th><th>Status</th><th>Opened By</th><th>Opened</th><th>Closed</th><th class="num">Orders</th><th class="num">Cups</th><th class="num">Opening</th><th class="num">Expected</th><th class="num">Actual</th><th class="num">Variance</th></tr></thead><tbody>${rows.length?rows.map(s=>{const ss=s.status==='Open'&&s.businessDate===businessDayKey()?shiftFinancialSummary(s):null;const orderCount=ss?ss.transactionCount:s.transactionCount;const cups=ss?ss.cupsSold:s.cupsSold;return `<tr><td><b>${esc(s.shiftName)}</b><div style="font-size:11px;color:var(--text-dim);">#${s.shiftNumber}</div></td><td><span class="shift-status-pill ${s.status==='Closed'?'closed':''}">${s.status.toUpperCase()}</span></td><td>${esc(s.openedBy||'—')}</td><td>${fmtShiftTime(s.openedAt)}</td><td>${fmtShiftTime(s.closedAt)}</td><td class="num">${orderCount||0}</td><td class="num">${cups||0}</td><td class="num">${PESO(s.openingCash)}</td><td class="num">${s.status==='Open'&&ss?PESO(ss.expected):(s.expectedCash==null?'—':PESO(s.expectedCash))}</td><td class="num">${s.actualCashCounted==null?'—':PESO(s.actualCashCounted)}</td><td class="num" style="${s.variance!=null&&Math.abs(s.variance)>=.005?'color:var(--rust);font-weight:700;':''}">${s.variance==null?'—':PESO(s.variance)}</td></tr>`}).join(''):`<tr><td colspan="11"><div class="empty-state">No shifts recorded for this day.</div></td></tr>`}</tbody></table></div>`;
+    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Shift</th><th>Status</th><th>Opened By</th><th>Opened</th><th>Closed</th><th class="num">Orders</th><th class="num">Cups</th><th class="num">Opening</th><th class="num">Expected</th><th class="num">Actual</th><th class="num">Variance</th>${isSuperuser()?'<th>Action</th>':''}</tr></thead><tbody>${rows.length?rows.map(s=>{const ss=s.status==='Open'?shiftFinancialSummary(s):null;const orderCount=ss?ss.transactionCount:s.transactionCount;const cups=ss?ss.cupsSold:s.cupsSold;return `<tr><td><b>${esc(s.shiftName)}</b><div style="font-size:11px;color:var(--text-dim);">#${s.shiftNumber}</div></td><td><span class="shift-status-pill ${s.status==='Closed'?'closed':''}">${s.status.toUpperCase()}</span></td><td>${esc(s.openedBy||'—')}</td><td>${fmtShiftTime(s.openedAt)}</td><td>${fmtShiftTime(s.closedAt)}</td><td class="num">${orderCount||0}</td><td class="num">${cups||0}</td><td class="num">${PESO(s.openingCash)}</td><td class="num">${s.status==='Open'&&ss?PESO(ss.expected):(s.expectedCash==null?'—':PESO(s.expectedCash))}</td><td class="num">${s.actualCashCounted==null?'—':PESO(s.actualCashCounted)}</td><td class="num" style="${s.variance!=null&&Math.abs(s.variance)>=.005?'color:var(--rust);font-weight:700;':''}">${s.variance==null?'—':PESO(s.variance)}</td>${isSuperuser()?`<td>${s.status==='Closed'?`<button type="button" class="btn btn-secondary" data-reopen-shift="${escAttr(s.id)}">Reopen Shift</button>`:'—'}</td>`:''}</tr>`}).join(''):`<tr><td colspan="${isSuperuser()?12:11}"><div class="empty-state">No shifts recorded for this day.</div></td></tr>`}</tbody></table></div>`;
+  el.querySelectorAll('[data-reopen-shift]').forEach(b=>b.onclick=()=>reopenShift(b.dataset.reopenShift));
   const action=document.getElementById('shift-main-action'); if(action) action.onclick=()=>open?openCloseShiftModal(open):openShiftModal();
   document.getElementById('shift-prev').onclick=()=>{shiftsFilterDate=shiftCalendarDate(dateKey,-1);renderShiftsPage();};
   document.getElementById('shift-next').onclick=()=>{const n=shiftCalendarDate(dateKey,1);if(n<=businessDayKey()){shiftsFilterDate=n;renderShiftsPage();}};
@@ -1461,7 +1524,8 @@ document.getElementById('nav-tabs').addEventListener('click', (e)=>{
 });
 function goToPage(pageId){
   if(pageId==='monthly-performance' && !isSuperuser()) { toast('Monthly Performance is available to superusers only.'); return; }
-  const requiredPermission = pageId==='monthly-performance' ? 'reports' : pageId==='shifts' ? 'expenses' : pageId;
+  if(pageId==='monthly-performance'){ reportsView='monthly'; pageId='reports'; }
+  const requiredPermission = pageId==='shifts' ? 'expenses' : pageId;
   if(!can(requiredPermission)) { toast('You do not have access to this section.'); return; }
   document.querySelectorAll('#nav-tabs button').forEach(b=>b.classList.toggle('active', b.dataset.page===pageId));
   const actualPage=pageId==='grab'?'pos':pageId;
@@ -1474,7 +1538,6 @@ function goToPage(pageId){
   if(pageId==='shifts') renderShiftsPage();
   if(pageId==='dashboard') renderDashboard();
   if(pageId==='reports') renderReports();
-  if(pageId==='monthly-performance') renderMonthlyPerformance();
   if(pageId==='menu') renderMenuMgmt();
   if(pageId==='audit') renderAuditLog();
   if(pageId==='settings') renderSettings();
@@ -2448,6 +2511,7 @@ function formatMonthLabel(ym){
   return new Date(Date.UTC(y,m-1,1)).toLocaleDateString('en-PH',{month:'long',year:'numeric'});
 }
 function renderMonthlyPerformance(){
+  if(!isSuperuser()) return;
   const el=document.getElementById('monthly-performance-content');
   const ym=monthlyPerformanceMonth || todayStr().slice(0,7);
   const {start,end,days}=monthDateRange(ym);
@@ -2506,13 +2570,23 @@ function renderMonthlyPerformance(){
       </div>
     </div>
 
-    <div class="stat-grid" style="margin-top:16px;">
-      <div class="stat-card accent"><div class="slabel">Net Sales</div><div class="sval">${moneyFmt(netAfterAllExpenses)}</div></div>
-      <div class="stat-card"><div class="slabel">Total Sales</div><div class="sval">${moneyFmt(m.totalSales)}</div></div>
-      <div class="stat-card"><div class="slabel">Average Cups / Day</div><div class="sval">${activeDays ? (m.cups/activeDays).toFixed(1) : '—'}</div></div>
-      <div class="stat-card"><div class="slabel">Average Sales / Day</div><div class="sval" style="font-size:22px;">${activeDays ? moneyFmt(m.totalSales/activeDays) : '—'}</div></div>
-      <div class="stat-card"><div class="slabel">Opex</div><div class="sval" style="font-size:22px;">${moneyFmt(opexTotal)}</div></div>
-    </div>
+    <section class="month-total-panel" aria-label="Month total">
+      <div class="month-total-heading">
+        <div><div class="month-total-eyebrow">MONTH TOTAL</div><h2>${esc(formatMonthLabel(ym))}</h2><p>All recorded activity for the selected month</p></div>
+        <div class="month-total-net"><span>Net Sales</span><strong>${moneyFmt(netAfterAllExpenses)}</strong><small>After Grab deductions, daily expenses &amp; OPEX</small></div>
+      </div>
+      <div class="month-total-metrics">
+        <div><span>Total Sales</span><strong>${moneyFmt(m.totalSales)}</strong></div>
+        <div><span>Cups Sold</span><strong>${m.cups}</strong></div>
+        <div><span>Cash Sales</span><strong>${moneyFmt(totalCash)}</strong></div>
+        <div><span>GCash Sales</span><strong>${moneyFmt(totalGcash)}</strong></div>
+        <div><span>GrabFood Sales</span><strong>${moneyFmt(totalGrab)}</strong></div>
+        <div><span>Daily Expenses</span><strong>${moneyFmt(expenseTotal)}</strong></div>
+        <div><span>OPEX</span><strong>${moneyFmt(opexTotal)}</strong></div>
+        <div><span>Days with Sales</span><strong>${activeDays}</strong></div>
+      </div>
+      <div class="month-total-averages"><span>Average per day with sales</span><span><strong>${activeDays ? (m.cups/activeDays).toFixed(1) : '—'}</strong> cups</span><span><strong>${activeDays ? moneyFmt(m.totalSales/activeDays) : '—'}</strong> sales</span></div>
+    </section>
 
     <div class="stat-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:16px;">
       <div class="stat-card"><div class="slabel">Current Cash</div><div class="sval" style="font-size:22px;">${moneyFmt(performanceCurrentCash)}</div></div>
@@ -2522,7 +2596,7 @@ function renderMonthlyPerformance(){
 
     <div class="card" style="padding:18px 20px;margin-top:16px;overflow-x:auto;">
       <div class="page-title" style="margin-bottom:10px;">
-        <div><div class="section-title" style="margin:0;">Daily Summary</div><div style="font-size:12px;color:var(--text-dim);margin-top:3px;">One row per calendar day. Net Sales = Cash + GCash + (GrabFood × 75%) − Daily Expenses.</div></div>
+        <div><div class="section-title" style="margin:0;">Daily Summary</div><div style="font-size:12px;color:var(--text-dim);margin-top:3px;">One row per calendar day. Net Sales = Cash + GCash + (GrabFood × 75%) − Daily Expenses − OPEX.</div></div>
       </div>
       <table style="min-width:850px;">
         <thead><tr>
@@ -2530,17 +2604,6 @@ function renderMonthlyPerformance(){
           <th class="num">Cash</th><th class="num">GCash</th><th class="num">Grab</th><th class="num">Expenses</th><th class="num">OPEX</th>
         </tr></thead>
         <tbody>
-          <tr style="font-weight:800;border-bottom:2px solid var(--text);">
-            <td>MONTH TOTAL</td>
-            <td class="num">${moneyFmt(netAfterAllExpenses)}</td>
-            <td class="num">${m.cups}</td>
-            <td class="num">${moneyFmt(m.totalSales)}</td>
-            <td class="num">${moneyFmt(totalCash)}</td>
-            <td class="num">${moneyFmt(totalGcash)}</td>
-            <td class="num">${moneyFmt(totalGrab)}</td>
-            <td class="num">${moneyFmt(expenseTotal)}</td>
-            <td class="num">${moneyFmt(opexTotal)}</td>
-          </tr>
           ${dailyRows.map(r=>{
             const hasActivity=r.dm.totalTx||r.exp||r.opening||r.cashIn||r.cashOut||r.actual!=null;
             return `<tr style="${hasActivity?'':'opacity:.52;'}">
@@ -2594,7 +2657,26 @@ function openingCashForDate(dateStr){
   return previous.actual ?? 0;
 }
 
+let reportsView = 'daily';
 function renderReports(){
+  if(!can('reports')) return;
+  if(!isSuperuser()) reportsView='daily';
+  const monthly=reportsView==='monthly';
+  document.querySelectorAll('#report-view-switcher [data-report-view]').forEach(button=>{
+    const selected=button.dataset.reportView===reportsView;
+    button.style.display=button.dataset.reportView==='monthly' && !isSuperuser()?'none':'';
+    button.classList.toggle('is-selected',selected);
+    button.setAttribute('aria-pressed',String(selected));
+    button.onclick=()=>{
+      if(button.dataset.reportView==='monthly' && !isSuperuser()) return;
+      reportsView=button.dataset.reportView;
+      renderReports();
+    };
+  });
+  document.getElementById('reports-content').style.display=monthly?'none':'';
+  document.getElementById('monthly-performance-content').style.display=monthly?'':'none';
+  if(!isSuperuser()) document.getElementById('monthly-performance-content').replaceChildren();
+  if(monthly){ renderMonthlyPerformance(); return; }
   const orders = ordersForReportFilter();
   const m = computeMetrics(orders);
   const expenses = filteredExpenses(reportsFilter).filter(x=>x.status!=='Voided');
