@@ -59,7 +59,9 @@ loadAll=async function(){
 loadPosOrders=async function(){const day=selectedOrderDate||businessDayKey();await p1Load(day,day,true);};
 loadFinancialRows=loadShifts=async function(){const day=businessDayKey();await p1Load(day,day,true);};
 function p1Refunds(start,end=start){return REFUNDS.filter(r=>!r.voided_at&&r.business_date>=start&&r.business_date<=end);}
-function p1RefundedOnly(refunds){return refunds.filter(r=>String(r.kind||'').toLowerCase()==='refund'&&!r.voided_at);}
+function p1IsCancelled(o){return !!o&&(o.status==='Cancelled'||o.status==='LegacyCancelled'||(o.paymentStatus||o.payment_status)==='LegacyCancelled');}
+function p1RefundOrder(r,orders=[]){return orders.find(o=>o.id===r.order_id)|| (r.order?mapDbOrder(r.order):ORDERS.find(o=>o.id===r.order_id));}
+function p1RefundedOnly(refunds,orders=[]){return refunds.filter(r=>r.kind==='Refund'&&!r.voided_at&&!p1IsCancelled(p1RefundOrder(r,orders)));}
 const cents=n=>Math.round(Number(n||0)*100), money=n=>n/100;
 function p1Parts(o){return o.paymentMethod==='Cash + GCash'?{Cash:Number(o.cashAmount||0),GCash:Number(o.gcashAmount||0)}:{[o.paymentMethod]:Number(o.total||0)};}
 function p1RemainingParts(o){
@@ -75,8 +77,8 @@ function p1RemainingParts(o){
 computeMetrics=function(orders,refunds=[]){
   // Cancellation refunds belong to cancelled orders and are already excluded
   // from sales. Only ordinary Refund records reduce reported sales totals.
-  refunds=p1RefundedOnly(refunds);
-  const paid=orders.filter(o=>o.paymentStatus!=='LegacyCancelled' && (o.paymentStatus||o.status!=='Cancelled'));
+  refunds=p1RefundedOnly(refunds,orders);
+  const paid=orders.filter(o=>!p1IsCancelled(o));
   const pmAgg={},sourceAgg={'Walk-in':{count:0,sales:0,items:0,cups:0,discounts:0},GrabFood:{count:0,sales:0,items:0,cups:0,discounts:0}},productAgg={};
   const cupBySize={'Hot 12oz':0,'Iced 16oz':0,'Iced 20oz':0};let cups=0,foodItems=0,gross=0,refundCents=0,fees=0;
   function products(items,amount,quantity){
@@ -100,14 +102,14 @@ computeMetrics=function(orders,refunds=[]){
     for(const [method,field] of [['Cash','cash_amount'],['GCash','gcash_amount'],['GrabFood','grab_amount']]){
       const value=Number(r[field]||0);if(value){const pm=pmAgg[method] ||= {count:0,sales:0};pm.sales-=value;}
     }
-    const order=r.order?mapDbOrder(r.order):ORDERS.find(o=>o.id===r.order_id);
-    if(order){sourceAgg[order.source].sales-=Number(r.amount);products(order.items,-cents(r.amount),false);}
+    const order=p1RefundOrder(r,orders);
+    if(order){sourceAgg[order.source||'Walk-in'].sales-=Number(r.amount);products(order.items,-cents(r.amount),false);}
     fees-=Math.round(cents(r.grab_amount)*Number(order?.grabFeeRate??.25));
   }
   for(const p of Object.values(pmAgg))p.sales=money(cents(p.sales));
   const totalSales=money(gross-refundCents),totalTx=paid.length;
   const productsList=Object.entries(productAgg).map(([name,v])=>({name,...v,sales:money(cents(v.sales))})).sort((a,b)=>b.qty-a.qty);
-  const cancelled=orders.filter(o=>o.status==='Cancelled');
+  const cancelled=orders.filter(p1IsCancelled);
   return {refunds,totalSales,grossSales:money(gross),refundTotal:money(refundCents),estimatedFees:money(fees),estimatedProceeds:money(gross-refundCents-fees),totalTx,cups,foodItems,avgOrder:totalTx?totalSales/totalTx:0,cupBySize,products:productsList,pmAgg,sourceAgg,
     bestByQty:productsList[0]||null,bestByRevenue:[...productsList].sort((a,b)=>b.sales-a.sales)[0]||null,bestFood:productsList.filter(p=>!p.isDrink)[0]||null,leastSelling:[...productsList].sort((a,b)=>a.qty-b.qty)[0]||null,popularSize:Object.entries(cupBySize).sort((a,b)=>b[1]-a[1])[0],cancelled,cancelledAmount:cancelled.reduce((n,o)=>n+o.total,0)};
 };
