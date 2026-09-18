@@ -59,6 +59,7 @@ loadAll=async function(){
 loadPosOrders=async function(){const day=selectedOrderDate||businessDayKey();await p1Load(day,day,true);};
 loadFinancialRows=loadShifts=async function(){const day=businessDayKey();await p1Load(day,day,true);};
 function p1Refunds(start,end=start){return REFUNDS.filter(r=>!r.voided_at&&r.business_date>=start&&r.business_date<=end);}
+function p1RefundedOnly(refunds){return refunds.filter(r=>String(r.kind||'').toLowerCase()==='refund'&&!r.voided_at);}
 const cents=n=>Math.round(Number(n||0)*100), money=n=>n/100;
 function p1Parts(o){return o.paymentMethod==='Cash + GCash'?{Cash:Number(o.cashAmount||0),GCash:Number(o.gcashAmount||0)}:{[o.paymentMethod]:Number(o.total||0)};}
 function p1RemainingParts(o){
@@ -72,6 +73,9 @@ function p1RemainingParts(o){
  return remaining;
 }
 computeMetrics=function(orders,refunds=[]){
+  // Cancellation refunds belong to cancelled orders and are already excluded
+  // from sales. Only ordinary Refund records reduce reported sales totals.
+  refunds=p1RefundedOnly(refunds);
   const paid=orders.filter(o=>o.paymentStatus!=='LegacyCancelled' && (o.paymentStatus||o.status!=='Cancelled'));
   const pmAgg={},sourceAgg={'Walk-in':{count:0,sales:0,items:0,cups:0,discounts:0},GrabFood:{count:0,sales:0,items:0,cups:0,discounts:0}},productAgg={};
   const cupBySize={'Hot 12oz':0,'Iced 16oz':0,'Iced 20oz':0};let cups=0,foodItems=0,gross=0,refundCents=0,fees=0;
@@ -141,13 +145,15 @@ p1WrapRender('renderOrdersPage',()=>p1Range(ordersFilter),'orders-table');
 p1WrapRender('renderExpensesPage',()=>p1Range(expensesFilter),'expenses-content');
 p1WrapRender('renderShiftsPage',()=>[shiftsFilterDate||businessDayKey(),shiftsFilterDate||businessDayKey()],'shifts-content');
 function p1Decorate(name,start,end){
- const target={renderDashboard:'dashboard-content',renderReports:'reports-content',renderMonthlyPerformance:'monthly-performance-content'}[name];
+ if(name==='renderDashboard')return;
+ const target={renderReports:'reports-content',renderMonthlyPerformance:'monthly-performance-content'}[name];
  if(!target)return;
  const el=document.getElementById(target);el.querySelector('.p1-refund-summary')?.remove();
- const refunds=p1Refunds(start,end);const m=computeMetrics(ORDERS.filter(o=>o.date>=start&&o.date<=end),refunds);
+ const refunds=p1RefundedOnly(p1Refunds(start,end));const m=computeMetrics(ORDERS.filter(o=>o.date>=start&&o.date<=end),refunds);
  const panel=document.createElement('div');panel.className='card p1-refund-summary';panel.style.cssText='padding:16px 20px;margin:16px 0;';
- panel.innerHTML=`<div class="section-title">Sales &amp; returns</div><div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px;"><span>Sales before refunds <b>${PESO(m.grossSales)}</b></span><span>Refunds <b>${PESO(m.refundTotal)}</b></span><span>Net sales <b>${PESO(m.totalSales)}</b></span><span>Estimated Grab fees <b>${PESO(m.estimatedFees)}</b></span></div><p style="font-size:11px;color:var(--text-dim);">Refunds appear on the day money is returned. Grab proceeds are estimates using each order’s saved fee rate; actual settlements may differ. Ingredient costs are not included.</p>${refunds.length?`<details><summary>View ${refunds.length} refund / cancellation record(s)</summary><div style="overflow:auto"><table><thead><tr><th>Date</th><th>Order</th><th>Type</th><th>Amount</th><th>Reason</th></tr></thead><tbody>${refunds.map(r=>`<tr><td>${esc(r.business_date)}</td><td>${esc(r.order?.order_code||r.order_id)}</td><td>${esc(r.kind)}</td><td>${PESO(r.amount)}</td><td>${esc(r.reason)}</td></tr>`).join('')}</tbody></table></div></details>`:''}`;
- el.querySelector('.page-title')?.after(panel);
+ panel.innerHTML=`<div class="section-title">Sales &amp; returns</div><div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px;"><span>Sales before refunds <b>${PESO(m.grossSales)}</b></span><span>Refunded <b>${PESO(m.refundTotal)}</b></span><span>Net sales <b>${PESO(m.totalSales)}</b></span><span>Estimated Grab fees <b>${PESO(m.estimatedFees)}</b></span></div><p style="font-size:11px;color:var(--text-dim);">Refunded totals include ordinary Refund records only. Cancelled orders and their cancellation returns are excluded. Refunds appear on the day money is returned. Grab proceeds are estimates using each order’s saved fee rate; actual settlements may differ. Ingredient costs are not included.</p>${refunds.length?`<details><summary>View ${refunds.length} refunded record(s)</summary><div style="overflow:auto"><table><thead><tr><th>Date</th><th>Order</th><th>Type</th><th>Amount</th><th>Reason</th></tr></thead><tbody>${refunds.map(r=>`<tr><td>${esc(r.business_date)}</td><td>${esc(r.order?.order_code||r.order_id)}</td><td>${esc(r.kind)}</td><td>${PESO(r.amount)}</td><td>${esc(r.reason)}</td></tr>`).join('')}</tbody></table></div></details>`:''}`;
+ const anchor=name==='renderMonthlyPerformance'?el.querySelector('.month-total-panel'):el.querySelector('.page-title');
+ anchor?.after(panel);
 }
 async function p1Status(id,status,reason=''){
  const res=await posApi('/rest/v1/rpc/hibi_order_status',{method:'POST',body:JSON.stringify({p_id:id,p_status:status,p_reason:reason})});

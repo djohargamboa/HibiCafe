@@ -2588,10 +2588,12 @@ function renderMonthlyPerformance(){
       <div class="stat-card"><div class="slabel">Est. Grab Proceeds after Bank OPEX</div><div class="sval" style="font-size:22px;">${moneyFmt(performanceCurrentBank)}</div></div>
     </div>
 
-    <div class="card" style="padding:18px 20px;margin-top:16px;overflow-x:auto;">
-      <div class="page-title" style="margin-bottom:10px;">
-        <div><div class="section-title" style="margin:0;">Daily Summary</div><div style="font-size:12px;color:var(--text-dim);margin-top:3px;">One row per calendar day. Estimated balance = Net sales − estimated Grab fees − daily expenses − OPEX.</div></div>
-      </div>
+    <details class="card" style="padding:0;margin-top:16px;overflow-x:auto;" open>
+      <summary style="cursor:pointer;padding:18px 20px;list-style-position:inside;">
+        <span class="section-title" style="display:inline;margin:0;">Daily Summary</span>
+        <span style="display:block;font-size:12px;color:var(--text-dim);margin:5px 0 0 22px;">One row per calendar day. Estimated balance = Net sales − estimated Grab fees − daily expenses − OPEX.</span>
+      </summary>
+      <div style="padding:0 20px 18px;">
       <table style="min-width:850px;">
         <thead><tr>
           <th>Date</th><th class="num">Est. Balance</th><th class="num">Cups</th><th class="num">Total Sales</th>
@@ -2614,7 +2616,8 @@ function renderMonthlyPerformance(){
           }).join('')}
         </tbody>
       </table>
-    </div>
+      </div>
+    </details>
   `;
   el.querySelector('#monthly-performance-month').onchange=e=>{
     monthlyPerformanceMonth=e.target.value || todayStr().slice(0,7);
