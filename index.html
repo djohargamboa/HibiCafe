@@ -839,11 +839,11 @@ let grabDiscountType = 'None';
 let grabDiscountAmount = 0;
 let activeCategory = null;
 let productSearch = '';
-let ordersFilter = {mode:'today', date: todayStr(), start:null, end:null, status:'all', source:'all'};
-let expensesFilter = {mode:'today', date: todayStr(), start: todayStr(), end: todayStr()};
+let ordersFilter = {mode:'today', date: businessDayKey(), start:null, end:null, status:'all', source:'all'};
+let expensesFilter = {mode:'today', date: businessDayKey(), start: businessDayKey(), end: businessDayKey()};
 let OWNER_EXPENSES = [];
-let reportsFilter = {mode:'today', date: todayStr(), start: todayStr(), end: todayStr()};
-let monthlyPerformanceMonth = todayStr().slice(0,7);
+let reportsFilter = {mode:'today', date: businessDayKey(), start: businessDayKey(), end: businessDayKey()};
+let monthlyPerformanceMonth = businessDayKey().slice(0,7);
 let PRODUCT_AVAILABILITY = {};
 let SHIFTS = [];
 let shiftsFilterDate = businessDayKey();
@@ -1118,7 +1118,7 @@ async function posApi(path, options={}){
   };
   let res;
   try{ res=await fetch(`${SUPABASE_URL}${path}`, {...options, headers}); }
-  catch(e){ markDatabaseOffline(); throw new Error('Could not reach the database. The change was NOT saved.'); }
+  catch(e){ markDatabaseOffline(); throw new Error('Could not reach the database. Confirmation is unavailable; check the result before retrying.'); }
   if(!res.ok){
     markDatabaseOffline();
     const body=await res.text();
@@ -1135,6 +1135,40 @@ async function posApi(path, options={}){
 }
 
 
+
+// Read every server page before replacing in-memory records. The server may
+// return fewer rows than requested, so only its total or an empty page ends a read.
+async function posGetAll(path, pageSize=500){
+  const rows=[];
+  let expectedTotal=null;
+  for(let offset=0;;){
+    const url=new URL(path,'https://pos.invalid');
+    url.searchParams.set('limit',String(pageSize));
+    url.searchParams.set('offset',String(offset));
+    const res=await posApi(url.pathname+url.search,{headers:{Prefer:'count=exact'}});
+    const page=await res.json();
+    if(!Array.isArray(page)) throw new Error('The database returned an invalid record list.');
+    const range=res.headers.get('Content-Range')||'';
+    const match=range.match(/\/(\d+)$/);
+    const total=match?Number(match[1]):null;
+    if(total!==null){
+      if(expectedTotal!==null && total!==expectedTotal)
+        throw new Error('Records changed while loading. Refresh to load a complete report.');
+      expectedTotal=total;
+    }
+    if(!page.length){
+      if(expectedTotal!==null && rows.length!==expectedTotal)
+        throw new Error('Some records could not be loaded. Refresh before using the report.');
+      return rows;
+    }
+    rows.push(...page);
+    offset+=page.length;
+    if(expectedTotal!==null && rows.length>=expectedTotal){
+      if(rows.length!==expectedTotal) throw new Error('The database returned inconsistent record counts.');
+      return rows;
+    }
+  }
+}
 
 function mapAvailabilityRow(row){
   return {productId:String(row.product_id),status:row.status||'Available',businessDate:row.business_date||null,updatedAt:row.updated_at||null,updatedBy:row.updated_by_name||''};
@@ -1240,8 +1274,8 @@ function mapShiftRow(row){
   return {id:String(row.id),businessDate:row.business_date,shiftNumber:Number(row.shift_number)||1,shiftName:row.shift_name||`Shift ${row.shift_number||1}`,status:row.status||'Open',openedAt:row.opened_at,openedBy:row.opened_by||'',openingCash:Number(row.opening_cash)||0,closedAt:row.closed_at||null,closedBy:row.closed_by||'',expectedCash:row.expected_cash==null?null:Number(row.expected_cash),actualCashCounted:row.actual_cash_counted==null?null:Number(row.actual_cash_counted),variance:row.variance==null?null:Number(row.variance),varianceReason:row.variance_reason||'',cashSales:Number(row.cash_sales)||0,gcashSales:Number(row.gcash_sales)||0,grabSales:Number(row.grab_sales)||0,cashIn:Number(row.cash_in)||0,cashOut:Number(row.cash_out)||0,expenses:Number(row.expenses)||0,transactionCount:Number(row.transaction_count)||0,cupsSold:Number(row.cups_sold)||0,updatedAt:row.updated_at||null};
 }
 async function loadShifts(){
-  const res=await posApi('/rest/v1/cash_shifts?select=*&order=business_date.desc,shift_number.desc');
-  SHIFTS=(await res.json()).map(mapShiftRow);
+  const rows=await posGetAll('/rest/v1/cash_shifts?select=*&order=business_date.desc,shift_number.desc,id.desc');
+  SHIFTS=rows.map(mapShiftRow);
 }
 async function saveShiftRecord(x){
   const payload={id:x.id,business_date:x.businessDate,shift_number:x.shiftNumber,shift_name:x.shiftName,status:x.status,opened_at:x.openedAt,opened_by:x.openedBy,opening_cash:Number(x.openingCash)||0,closed_at:x.closedAt||null,closed_by:x.closedBy||null,expected_cash:x.expectedCash==null?null:Number(x.expectedCash),actual_cash_counted:x.actualCashCounted==null?null:Number(x.actualCashCounted),variance:x.variance==null?null:Number(x.variance),variance_reason:x.varianceReason||null,cash_sales:Number(x.cashSales)||0,gcash_sales:Number(x.gcashSales)||0,grab_sales:Number(x.grabSales)||0,cash_in:Number(x.cashIn)||0,cash_out:Number(x.cashOut)||0,expenses:Number(x.expenses)||0,transaction_count:Number(x.transactionCount)||0,cups_sold:Number(x.cupsSold)||0,updated_at:new Date().toISOString()};
@@ -1405,13 +1439,12 @@ function mapEodRow(row){
   return {opening:Number(row.opening)||0,actual:row.actual==null?null:Number(row.actual),expected:row.expected==null?null:Number(row.expected),variance:row.variance==null?null:Number(row.variance),totalCashSales:Number(row.total_cash_sales)||0,cashIn:Number(row.cash_in)||0,cashOut:Number(row.cash_out)||0,totalGcashSales:Number(row.total_gcash_sales)||0,totalExpenses:Number(row.total_expenses)||0,varianceReason:row.variance_reason||'',locked:!!row.locked,reconciledAt:row.reconciled_at||null,reconciledBy:row.reconciled_by||'',unlockedAt:row.unlocked_at||null,unlockedBy:row.unlocked_by||''};
 }
 async function loadFinancialRows(){
-  const [er,or,cr,rr]=await Promise.all([
-    posApi('/rest/v1/daily_expenses?select=*&order=created_at.desc'),
-    posApi('/rest/v1/owner_expenses?select=*&order=created_at.desc'),
-    posApi('/rest/v1/cash_movements?select=*&order=created_at.desc'),
-    posApi('/rest/v1/eod_reconciliations?select=*&order=business_date.desc')
+  const [expenses,ownerExpenses,cashMovements,eodRows]=await Promise.all([
+    posGetAll('/rest/v1/daily_expenses?select=*&order=created_at.desc,id.desc'),
+    posGetAll('/rest/v1/owner_expenses?select=*&order=created_at.desc,id.desc'),
+    posGetAll('/rest/v1/cash_movements?select=*&order=created_at.desc,id.desc'),
+    posGetAll('/rest/v1/eod_reconciliations?select=*&order=business_date.desc')
   ]);
-  const [expenses,ownerExpenses,cashMovements,eodRows]=await Promise.all([er.json(),or.json(),cr.json(),rr.json()]);
   EXPENSES=expenses.map(mapExpenseRow);
   OWNER_EXPENSES=ownerExpenses.map(mapOwnerExpenseRow);
   CASH_MOVEMENTS=cashMovements.map(mapCashMovementRow);
@@ -1472,8 +1505,7 @@ function mapDbOrder(row){
 }
 
 async function loadPosOrders(){
-  const res=await posApi('/rest/v1/pos_orders?select=*,pos_order_items(*)&order=created_at.desc');
-  const rows=await res.json();
+  const rows=await posGetAll('/rest/v1/pos_orders?select=*,pos_order_items(*)&order=created_at.desc,id.desc');
   ORDERS=rows.map(mapDbOrder);
   const maxNum=rows.reduce((m,r)=>Math.max(m,Number(r.order_number)||0),0);
   SETTINGS.nextOrderNum=Math.max(Number(SETTINGS.nextOrderNum)||1,maxNum+1);
@@ -1943,46 +1975,16 @@ function openCheckoutModal(){
       const da=document.getElementById('discount-amount'); if(da)da.oninput=e=>{discountAmount=e.target.value.replace(/[^0-9.]/g,'');grabDiscountAmount=Number(discountAmount)||0;updateUI();const totalEl=document.querySelector('.big-total .amt');if(totalEl)totalEl.textContent=PESO(total())};
     }
     updateUI();
-    document.getElementById('modal-confirm').onclick=async()=>{if(!canConfirm())return;if(!canCreateEntryForDate(selectedOrderDate))return;submitting=true;const lr=loyalty();const loyaltyItem=lr.item;const finalDiscount=discount();const walkinDiscountType=orderChannel==='Walk-in'?(pwdSelected?(loyaltyItem?'PWD/Senior Discount + Loyalty Reward':'PWD/Senior Discount'):(loyaltyItem?'Loyalty Reward':'None')):discountType;await finalizeOrder({method,subtotal,received:received?parseFloat(received):null,ref,cashPart:cashPart?parseFloat(cashPart):null,gcashPart:gcashPart?parseFloat(gcashPart):null,discountType:walkinDiscountType,discountAmount:finalDiscount,loyaltyItemKey:loyaltyItem?.key||null,loyaltyCharge:lr.charge||0});};
+    document.getElementById('modal-confirm').onclick=async()=>{if(!canConfirm())return;if(!canCreateEntryForDate(selectedOrderDate))return;submitting=true;updateUI();try{const lr=loyalty();const loyaltyItem=lr.item;const finalDiscount=discount();const walkinDiscountType=orderChannel==='Walk-in'?(pwdSelected?(loyaltyItem?'PWD/Senior Discount + Loyalty Reward':'PWD/Senior Discount'):(loyaltyItem?'Loyalty Reward':'None')):discountType;await finalizeOrder({method,subtotal,received:received?parseFloat(received):null,ref,cashPart:cashPart?parseFloat(cashPart):null,gcashPart:gcashPart?parseFloat(gcashPart):null,discountType:walkinDiscountType,discountAmount:finalDiscount,loyaltyItemKey:loyaltyItem?.key||null,loyaltyCharge:lr.charge||0});}finally{submitting=false;if(document.getElementById('modal-confirm'))updateUI();}};
   }
   render();
 }
-async function createOrderDirectForSuperuser(payload, items){
-  if(!isSuperuser() || selectedOrderDate===businessDayKey()) throw new Error('Direct previous-date order entry is restricted to superuser.');
-  const maxRes=await posApi('/rest/v1/pos_orders?select=order_number&order=order_number.desc&limit=1');
-  const maxRows=await maxRes.json();
-  const maxExisting=Number(maxRows?.[0]?.order_number)||0;
-  const orderNumber=Math.max(Number(SETTINGS.nextOrderNum)||1,maxExisting+1);
-  const orderId=(crypto?.randomUUID ? crypto.randomUUID() : uid()+'-'+Date.now());
-  const orderRow={
-    id:orderId, order_number:orderNumber, order_code:formatOrderNum(orderNumber),
-    source:payload.p_source, grab_code:payload.p_grab_code, order_date:payload.p_order_date,
-    order_time:payload.p_order_time, created_at:payload.p_created_at, subtotal:payload.p_subtotal,
-    discount_type:payload.p_discount_type, discount_amount:payload.p_discount_amount, total:payload.p_total,
-    payment_method:payload.p_payment_method, amount_received:payload.p_amount_received,
-    cash_amount:payload.p_cash_amount, gcash_amount:payload.p_gcash_amount, change_given:payload.p_change_given,
-    gcash_ref:payload.p_gcash_ref, status:payload.p_status, cashier:payload.p_cashier
-  };
-  const inserted=await posApi('/rest/v1/pos_orders',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify(orderRow)});
-  const rows=await inserted.json();
-  const saved=rows?.[0];
-  if(!saved?.id) throw new Error('The database did not confirm the previous-date order.');
-  try{
-    const itemRows=items.map(i=>({order_id:saved.id,product_id:i.productId,name:i.name,category:i.category,size:i.size,is_drink:i.isDrink,qty:i.qty,unit_price:i.unitPrice,line_total:i.lineTotal,addons:i.addons,loyalty_reward:i.loyaltyReward}));
-    if(itemRows.length) await posApi('/rest/v1/pos_order_items',{method:'POST',body:JSON.stringify(itemRows)});
-  }catch(e){
-    try{ await posApi(`/rest/v1/pos_orders?id=eq.${encodeURIComponent(saved.id)}`,{method:'DELETE'}); }catch(_){ }
-    throw e;
-  }
-  return {...saved,items};
-}
-
 async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,discountType='None',discountAmount=0,loyaltyItemKey=null,loyaltyCharge=0}){
   if(!canCreateEntryForDate(selectedOrderDate)) return;
   if(selectedOrderDate===businessDayKey()&&!requireOpenShift(selectedOrderDate)) return;
   if(!CURRENT_USER?.access_token){
     toast('Database unavailable. The order was NOT saved. Please sign in again and retry.');
-    submitting=false;
+
     return;
   }
   const now=new Date();
@@ -2028,17 +2030,7 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
       p_cashier:cashier,
       p_items:items
     };
-    let dbOrder;
-    try{
-      const res=await posApi('/rest/v1/rpc/create_hibi_pos_order',{method:'POST',body:JSON.stringify(payload)});
-      dbOrder=await res.json();
-      if(!dbOrder?.id || !dbOrder?.order_number) throw new Error('The database did not confirm the order.');
-    }catch(rpcErr){
-      // The normal RPC protects the current business day. Superusers also need to
-      // be able to enter a GrabFood order against a selected previous business date.
-      if(isSuperuser() && selectedOrderDate!==businessDayKey()) dbOrder=await createOrderDirectForSuperuser(payload,items);
-      else throw rpcErr;
-    }
+    const dbOrder=await p1Submit(payload);
 
     const dbOrderNumber=Number(dbOrder.order_number);
     // Order numbering is database-owned. Keep the preview in memory; do not write shared settings on every sale.
@@ -2062,9 +2054,9 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
     toast('Order ' + order.orderNumber + ' is now Preparing');
   }catch(e){
     console.error('Order save failed:',e);
-    toast('Order was NOT saved: '+(e?.message||'database error'));
+    toast('Order needs checking: '+(e?.message||'database error')); renderPOS();
   }finally{
-    submitting=false;
+
   }
 }
 
@@ -2083,6 +2075,7 @@ function filteredOrders(filter){
     if(filter.mode==='today') return o.date===businessDayKey();
     if(filter.mode==='date') return o.date===filter.date;
     if(filter.mode==='range') return o.date>=filter.start && o.date<=filter.end;
+    if(filter.mode==='all'){const [start,end]=p1Range(filter);return o.date>=start&&o.date<=end;}
     return true;
   });
 }
@@ -2264,7 +2257,8 @@ function matchesPeriod(dateStr, filter){
   if(filter.mode==='today') return dateStr===businessDayKey();
   if(filter.mode==='date') return dateStr===filter.date;
   if(filter.mode==='range') return dateStr>=filter.start && dateStr<=filter.end;
-  if(filter.mode==='month') return dateStr.slice(0,7)===todayStr().slice(0,7);
+  if(filter.mode==='month') return dateStr.slice(0,7)===businessDayKey().slice(0,7);
+  if(filter.mode==='all'){const [start,end]=p1Range(filter);return dateStr>=start&&dateStr<=end;}
   return true;
 }
 function filteredExpenses(filter){
@@ -2284,7 +2278,7 @@ function renderExpensesPage(){
     <div class="filter-bar"><button class="filter-btn ${expensesFilter.mode==='today'?'active':''}" data-em="today">Today</button><button class="filter-btn ${expensesFilter.mode==='all'?'active':''}" data-em="all">All</button><input type="date" id="expense-date-input" value="${expensesFilter.mode==='date'?expensesFilter.date:todayStr()}"><button class="filter-btn" id="expenses-prev">‹ PREV</button><button class="filter-btn" id="expenses-next" ${shiftDateKey(expensesFilter.mode==='date'?expensesFilter.date:todayStr(),1)<=todayStr()?'':'disabled'}>NEXT ›</button></div>
     <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));"><div class="stat-card accent"><div class="slabel">Total Expenses</div><div class="sval">${PESO(total)}</div></div><div class="stat-card"><div class="slabel">Cash In</div><div class="sval" style="font-size:22px;">${PESO(cashIn)}</div></div><div class="stat-card"><div class="slabel">Cash Out</div><div class="sval" style="font-size:22px;color:var(--rust);">${PESO(cashOut)}</div></div><div class="stat-card"><div class="slabel">Expense Entries</div><div class="sval" style="font-size:22px;">${activeRows.length}</div></div></div>
     <div class="card" style="padding:18px 20px;margin-bottom:16px;overflow-x:auto;"><div class="section-title">Cash Drawer Movements</div><table><thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Reason</th><th>Cashier</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>${moves.length?moves.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td><b>${esc(x.type)}</b></td><td>${esc(x.reason)}</td><td>${esc(x.cashier)}</td><td class="num">${PESO(x.amount)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isStaffLockedDate(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<button class="icon-btn danger" data-void-cash="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No cash drawer movements.</div></td></tr>'}</tbody></table></div>
-    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date</th><th>Time</th><th>Note</th><th class="num">Amount</th><th>Cashier</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td>${esc(x.note)}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.cashier)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isStaffLockedDate(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td><td>${x.status==='Voided'?esc(x.voidReason||''):(isStaffLockedDate(x.date)&&!isSuperuser())?'<span style="font-size:11px;color:var(--text-dim);">Locked</span>':'<button class="icon-btn danger" data-del-exp="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No expenses logged for this period.</div></td></tr>'}</tbody></table></div>${isSuperuser()?`<div class="card" style="overflow-x:auto;margin-top:16px;"><div class="section-title" style="padding:16px 18px 0;">Owner / Operational Expenses</div><div style="padding:0 18px 14px;color:var(--text-dim);font-size:12px;">For rent, supplies, equipment, utilities, repairs, and other owner-entered business costs. These are kept separate from daily store expenses and are not included in daily sales, cash reconciliation, Dashboard, or daily reports.</div><table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Payment Method</th><th class="num">Amount</th><th>Entered By</th><th>Status</th><th></th></tr></thead><tbody>${OWNER_EXPENSES.filter(x=>matchesPeriod(x.date,expensesFilter)).sort((a,b)=>(a.date<b.date?1:-1)).map(x=>`<tr><td>${x.date}</td><td>${esc(x.category)}</td><td>${esc(x.description)}</td><td>${esc(x.paymentMethod||'Cash')}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.enteredBy)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td><td>${x.status==='Voided'?esc(x.voidReason||''):'<button class="icon-btn danger" data-void-owner-exp="'+x.id+'">Void</button>'}</td></tr>`).join('')||'<tr><td colspan="8"><div class="empty-state">No owner / operational expenses recorded for this period.</div></td></tr>'}</tbody></table></div>`:''}`;
+    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date</th><th>Time</th><th>Note</th><th class="num">Amount</th><th>Cashier</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td>${esc(x.note)}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.cashier)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isStaffLockedDate(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td><td>${x.status==='Voided'?esc(x.voidReason||''):(isStaffLockedDate(x.date)&&!isSuperuser())?'<span style="font-size:11px;color:var(--text-dim);">Locked</span>':'<button class="icon-btn danger" data-del-exp="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No expenses logged for this period.</div></td></tr>'}</tbody></table></div>${isSuperuser()?`<div class="card" style="overflow-x:auto;margin-top:16px;"><div class="section-title" style="padding:16px 18px 0;">Owner / Operational Expenses</div><div style="padding:0 18px 14px;color:var(--text-dim);font-size:12px;">For rent, supplies, equipment, utilities, repairs, and other owner-entered business costs. These are separate from drawer expenses. They appear in owner financial summaries but do not change sales or cash reconciliation.</div><table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Payment Method</th><th class="num">Amount</th><th>Entered By</th><th>Status</th><th></th></tr></thead><tbody>${OWNER_EXPENSES.filter(x=>matchesPeriod(x.date,expensesFilter)).sort((a,b)=>(a.date<b.date?1:-1)).map(x=>`<tr><td>${x.date}</td><td>${esc(x.category)}</td><td>${esc(x.description)}</td><td>${esc(x.paymentMethod||'Cash')}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.enteredBy)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td><td>${x.status==='Voided'?esc(x.voidReason||''):'<button class="icon-btn danger" data-void-owner-exp="'+x.id+'">Void</button>'}</td></tr>`).join('')||'<tr><td colspan="8"><div class="empty-state">No owner / operational expenses recorded for this period.</div></td></tr>'}</tbody></table></div>`:''}`;
   el.querySelectorAll('[data-em]').forEach(b=>b.onclick=()=>{expensesFilter.mode=b.dataset.em;renderExpensesPage();});
   el.querySelector('#expense-date-input').onchange=e=>{expensesFilter.mode='date';expensesFilter.date=e.target.value;renderExpensesPage();};
   el.querySelector('#expenses-prev').onclick=()=>{const current=expensesFilter.mode==='date'?expensesFilter.date:todayStr();expensesFilter.mode='date';expensesFilter.date=shiftDateKey(current,-1);renderExpensesPage();};
@@ -2340,7 +2334,7 @@ function openAddExpenseModal(){
 function openOwnerExpenseModal(){
   if(!isSuperuser()){ toast('Superuser access required.'); return; }
   openModal(`
-    <div class="modal-head"><h3>Owner / Operational Expense</h3><div class="msub">For monthly business reporting only — excluded from daily store computations.</div></div>
+    <div class="modal-head"><h3>Owner / Operational Expense</h3><div class="msub">Included in owner financial reports. Payments here do not change the cashier drawer.</div></div>
     <div class="modal-body">
       <div class="field"><label>Category</label><select id="oe-category"><option>Supplies</option><option>Rent</option><option>Utilities</option><option>Equipment</option><option>Repairs & Maintenance</option><option>Marketing</option><option>Permits & Licenses</option><option>Professional Services</option><option>Other</option></select></div>
       <div class="field"><label>Description</label><input type="text" id="oe-description" placeholder="e.g. Monthly shop rent"></div>
@@ -2432,7 +2426,7 @@ function computeMetrics(orders){
    ============================================================ */
 function renderDashboard(){
   const todaysOrders = ORDERS.filter(o=>o.date===businessDayKey());
-  const m = computeMetrics(todaysOrders);
+  const m = computeMetrics(todaysOrders,p1Refunds(businessDayKey()));
   const todaysExpenses = EXPENSES.filter(x=>x.date===businessDayKey());
   const expenseTotal = todaysExpenses.filter(x=>x.status!=='Voided').reduce((s,x)=>s+Number(x.amount||0),0);
   const todaysOpex = OWNER_EXPENSES.filter(x=>x.date===businessDayKey() && x.status!=='Voided');
@@ -2457,7 +2451,7 @@ function renderDashboard(){
           <tr><td>Walk-in</td><td class="num">${PESO(m.sourceAgg['Walk-in']?.sales||0)}</td></tr>
           <tr><td>GrabFood</td><td class="num">${PESO(m.sourceAgg['GrabFood']?.sales||0)}</td></tr>
           <tr><td>Expenses</td><td class="num" style="color:var(--rust);">− ${PESO(expenseTotal)}</td></tr>
-          <tr class="total-row"><td>Total</td><td class="num">${PESO(m.totalSales-expenseTotal)}</td></tr>
+          <tr><td>Estimated Grab fees</td><td class="num">− ${PESO(m.estimatedFees)}</td></tr><tr><td>OPEX</td><td class="num">− ${PESO(todaysOpex.reduce((n,x)=>n+x.amount,0))}</td></tr><tr class="total-row"><td>Estimated Balance</td><td class="num">${PESO(m.estimatedProceeds-expenseTotal-todaysOpex.reduce((n,x)=>n+x.amount,0))}</td></tr>
         </tbody></table>
       </div>
       <div class="card" style="padding:18px 20px;margin-bottom:0;">
@@ -2508,7 +2502,7 @@ function monthDateRange(ym){
 }
 function formatMonthLabel(ym){
   const [y,m]=ym.split('-').map(Number);
-  return new Date(Date.UTC(y,m-1,1)).toLocaleDateString('en-PH',{month:'long',year:'numeric'});
+  return new Date(Date.UTC(y,m-1,1)).toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'long',year:'numeric'});
 }
 function renderMonthlyPerformance(){
   if(!isSuperuser()) return;
@@ -2518,22 +2512,22 @@ function renderMonthlyPerformance(){
   const monthOrders=ORDERS.filter(o=>o.date>=start && o.date<=end);
   const monthExpenses=EXPENSES.filter(x=>x.date>=start && x.date<=end && x.status!=='Voided');
   const monthOwnerExpenses=OWNER_EXPENSES.filter(x=>x.date>=start && x.date<=end && x.status!=='Voided');
-  const completed=monthOrders.filter(o=>o.status!=='Cancelled');
-  const m=computeMetrics(completed);
+  const completed=monthOrders;
+  const m=computeMetrics(completed,p1Refunds(start,end));
   const expenseTotal=monthExpenses.reduce((sum,x)=>sum+Number(x.amount||0),0);
   const opexTotal=monthOwnerExpenses.reduce((sum,x)=>sum+Number(x.amount||0),0);
   const totalCash=m.pmAgg['Cash']?.sales||0;
   const totalGcash=m.pmAgg['GCash']?.sales||0;
   const totalGrab=m.pmAgg['GrabFood']?.sales||0;
-  const netAfterDailyExpenses=totalCash+totalGcash+(totalGrab*0.75)-expenseTotal;
+  const netAfterDailyExpenses=m.estimatedProceeds-expenseTotal;
   const netAfterAllExpenses=netAfterDailyExpenses-opexTotal;
-  const activeDays=new Set(completed.map(o=>o.date)).size;
+  const activeDays=new Set(completed.filter(o=>o.paymentStatus!=='LegacyCancelled').map(o=>o.date)).size;
   const dailyRows=[];
   for(let d=1;d<=days;d++){
     const dateKey=`${ym}-${String(d).padStart(2,'0')}`;
     const dayOrders=ORDERS.filter(o=>o.date===dateKey);
-    const dayCompleted=dayOrders.filter(o=>o.status!=='Cancelled');
-    const dm=computeMetrics(dayCompleted);
+    const dayCompleted=dayOrders;
+    const dm=computeMetrics(dayCompleted,p1Refunds(dateKey));
     const dayExpenses=monthExpenses.filter(x=>x.date===dateKey);
     const exp=dayExpenses.reduce((sum,x)=>sum+Number(x.amount||0),0);
     const dayOpex=monthOwnerExpenses.filter(x=>x.date===dateKey);
@@ -2559,7 +2553,7 @@ function renderMonthlyPerformance(){
   const performanceBankOpex=monthOwnerExpenses.filter(x=>(x.paymentMethod||'Cash')==='Bank Transfer').reduce((sum,x)=>sum+Number(x.amount||0),0);
   const performanceCurrentCash=performanceCash-performanceExpenses-performanceCashOpex;
   const performanceCurrentGcash=performanceGcash-performanceGcashOpex;
-  const performanceCurrentBank=(performanceGrab*0.75)-performanceBankOpex;
+  const performanceCurrentBank=performanceGrab-m.estimatedFees-performanceBankOpex;
   const moneyFmt=(n)=>PESO(Number(n)||0);
   el.innerHTML=`
     <div class="page-title">
@@ -2573,7 +2567,7 @@ function renderMonthlyPerformance(){
     <section class="month-total-panel" aria-label="Month total">
       <div class="month-total-heading">
         <div><div class="month-total-eyebrow">MONTH TOTAL</div><h2>${esc(formatMonthLabel(ym))}</h2><p>All recorded activity for the selected month</p></div>
-        <div class="month-total-net"><span>Net Sales</span><strong>${moneyFmt(netAfterAllExpenses)}</strong><small>After Grab deductions, daily expenses &amp; OPEX</small></div>
+        <div class="month-total-net"><span>Estimated Balance</span><strong>${moneyFmt(netAfterAllExpenses)}</strong><small>After Grab deductions, daily expenses &amp; OPEX</small></div>
       </div>
       <div class="month-total-metrics">
         <div><span>Total Sales</span><strong>${moneyFmt(m.totalSales)}</strong></div>
@@ -2589,26 +2583,26 @@ function renderMonthlyPerformance(){
     </section>
 
     <div class="stat-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:16px;">
-      <div class="stat-card"><div class="slabel">Current Cash</div><div class="sval" style="font-size:22px;">${moneyFmt(performanceCurrentCash)}</div></div>
-      <div class="stat-card"><div class="slabel">Current GCash</div><div class="sval" style="font-size:22px;">${moneyFmt(performanceCurrentGcash)}</div></div>
-      <div class="stat-card"><div class="slabel">Current Bank</div><div class="sval" style="font-size:22px;">${moneyFmt(performanceCurrentBank)}</div></div>
+      <div class="stat-card"><div class="slabel">Cash Sales less Expenses</div><div class="sval" style="font-size:22px;">${moneyFmt(performanceCurrentCash)}</div></div>
+      <div class="stat-card"><div class="slabel">GCash Sales less Expenses</div><div class="sval" style="font-size:22px;">${moneyFmt(performanceCurrentGcash)}</div></div>
+      <div class="stat-card"><div class="slabel">Est. Grab Proceeds after Bank OPEX</div><div class="sval" style="font-size:22px;">${moneyFmt(performanceCurrentBank)}</div></div>
     </div>
 
     <div class="card" style="padding:18px 20px;margin-top:16px;overflow-x:auto;">
       <div class="page-title" style="margin-bottom:10px;">
-        <div><div class="section-title" style="margin:0;">Daily Summary</div><div style="font-size:12px;color:var(--text-dim);margin-top:3px;">One row per calendar day. Net Sales = Cash + GCash + (GrabFood × 75%) − Daily Expenses − OPEX.</div></div>
+        <div><div class="section-title" style="margin:0;">Daily Summary</div><div style="font-size:12px;color:var(--text-dim);margin-top:3px;">One row per calendar day. Estimated balance = Net sales − estimated Grab fees − daily expenses − OPEX.</div></div>
       </div>
       <table style="min-width:850px;">
         <thead><tr>
-          <th>Date</th><th class="num">Net Sales</th><th class="num">Cups</th><th class="num">Total Sales</th>
+          <th>Date</th><th class="num">Est. Balance</th><th class="num">Cups</th><th class="num">Total Sales</th>
           <th class="num">Cash</th><th class="num">GCash</th><th class="num">Grab</th><th class="num">Expenses</th><th class="num">OPEX</th>
         </tr></thead>
         <tbody>
           ${dailyRows.map(r=>{
-            const hasActivity=r.dm.totalTx||r.exp||r.opening||r.cashIn||r.cashOut||r.actual!=null;
+            const hasActivity=r.dm.totalTx||r.dm.refundTotal||r.opex||r.exp||r.opening||r.cashIn||r.cashOut||r.actual!=null;
             return `<tr style="${hasActivity?'':'opacity:.52;'}">
               <td><strong>${r.dateKey}</strong></td>
-              <td class="num" style="font-weight:700;">${moneyFmt(r.cashSales+r.gcashSales+(r.grabSales*0.75)-r.exp-r.opex)}</td>
+              <td class="num" style="font-weight:700;">${moneyFmt(r.dm.estimatedProceeds-r.exp-r.opex)}</td>
               <td class="num">${r.dm.cups||0}</td>
               <td class="num" style="font-weight:700;">${moneyFmt(r.dm.totalSales)}</td>
               <td class="num">${moneyFmt(r.cashSales)}</td>
@@ -2644,11 +2638,7 @@ function ordersForReportFilter(){
     return true;
   });
 }
-function getPreviousDate(dateStr){
-  const d = new Date(dateStr + 'T12:00:00');
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0,10);
-}
+function getPreviousDate(dateStr){ return shiftCalendarDate(dateStr,-1); }
 
 function openingCashForDate(dateStr){
   const firstShift=shiftsForDate(dateStr).sort((a,b)=>a.shiftNumber-b.shiftNumber)[0];
@@ -2678,14 +2668,17 @@ function renderReports(){
   if(!isSuperuser()) document.getElementById('monthly-performance-content').replaceChildren();
   if(monthly){ renderMonthlyPerformance(); return; }
   const orders = ordersForReportFilter();
-  const m = computeMetrics(orders);
+  const m = computeMetrics(orders,p1Refunds(...p1Range(reportsFilter)));
+  [m.reportStart,m.reportEnd]=p1Range(reportsFilter);
   const expenses = filteredExpenses(reportsFilter).filter(x=>x.status!=='Voided');
   const expenseTotal = expenses.reduce((s,x)=>s+Number(x.amount||0),0);
-  const netSales = m.totalSales - expenseTotal;
+  const reportOpex=OWNER_EXPENSES.filter(x=>matchesPeriod(x.date,reportsFilter)&&x.status!=='Voided').reduce((n,x)=>n+x.amount,0);
+  m.opex=reportOpex;
+  const netSales = m.estimatedProceeds - expenseTotal - reportOpex;
   const el = document.getElementById('reports-content');
   const rangeLabel = reportsFilter.mode==='today' ? 'Today' : reportsFilter.mode==='date' ? reportsFilter.date : reportsFilter.mode==='month' ? 'This Month' : `${reportsFilter.start} → ${reportsFilter.end}`;
   const selectedEodDate = reportsFilter.mode==='date' ? reportsFilter.date : businessDayKey();
-  const eod = EOD[selectedEodDate] || {};
+  const eod = (reportsFilter.mode==='today'||reportsFilter.mode==='date') ? (EOD[selectedEodDate] || {}) : {};
   const eodOpenShift = openShiftForDate(selectedEodDate);
   const openingCash = openingCashForDate(selectedEodDate);
   const drawerTotals = cashMovementTotals(selectedEodDate);
@@ -2718,7 +2711,7 @@ function renderReports(){
     <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-top:-6px;">
       <div class="stat-card"><div class="slabel">Average Order Value</div><div class="sval" style="font-size:22px;">${PESO(m.avgOrder)}</div></div>
       <div class="stat-card"><div class="slabel">Total Expenses</div><div class="sval" style="font-size:22px;color:var(--rust);">${PESO(expenseTotal)}</div></div>
-      <div class="stat-card"><div class="slabel">Net Sales (after expenses)</div><div class="sval" style="font-size:22px;">${PESO(netSales)}</div></div>
+      <div class="stat-card"><div class="slabel">Estimated Balance (after fees & expenses)</div><div class="sval" style="font-size:22px;">${PESO(netSales)}</div></div>
     </div>
 
     <div class="two-col">
@@ -2901,173 +2894,6 @@ function renderReports(){
     };
   }
   recalcEod();
-async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, eod, options={} ){
-  if(typeof ExcelJS==='undefined'){ toast('Excel export library is not loaded.'); return null; }
-  const download = options.download !== false;
-  try{
-    const wb = new ExcelJS.Workbook();
-    wb.creator = 'Hibi Cafe POS';
-    wb.created = new Date();
-    const ws = wb.addWorksheet('Daily Report');
-    ws.views = [{showGridLines:false}];
-
-    const brown = '6F4E37';
-    const headerFill = 'EDEDED';
-    const lightFill = 'FAFAFA';
-    const summaryFill = 'F4F4F4';
-    const white = 'FFFFFF';
-    const thin = {style:'thin', color:{argb:'FFD9D9D9'}};
-    const moneyFmt = '₱#,##0.00';
-
-    ws.mergeCells('A1:G1');
-    ws.getCell('A1').value = 'Hibi Cafe - Daily Report';
-    ws.getCell('A1').font = {size:15, bold:true, color:{argb:white}};
-    ws.getCell('A1').fill = {type:'pattern', pattern:'solid', fgColor:{argb:brown}};
-    ws.getCell('A1').alignment = {vertical:'middle'};
-    ws.getRow(1).height = 24;
-    ws.getCell('A2').value = 'Date';
-    ws.getCell('A2').font = {bold:true};
-    ws.getCell('B2').value = (reportsFilter.mode==='date' ? reportsFilter.date : todayStr());
-    ws.getCell('D2').value = 'Period';
-    ws.getCell('D2').font = {bold:true};
-    ws.getCell('E2').value = rangeLabel;
-
-    ws.getCell('A4').value = 'SUMMARY';
-    ws.getCell('A4').font = {bold:true};
-    const summary = [
-      ['Total Sales', m.totalSales],
-      ['Cash Sales', m.pmAgg['Cash']?.sales || 0],
-      ['GCash Sales', m.pmAgg['GCash']?.sales || 0],
-      ['GrabFood Sales', m.pmAgg['GrabFood']?.sales || 0],
-      ['Number of Cups', m.cups],
-      ['Starting Cash', eod?.opening ?? ''],
-      ['Cash In', eod?.cashIn ?? 0],
-      ['Cash Out', eod?.cashOut ?? 0],
-      ['Expenses', expenseTotal],
-      ['Actual Cash Counted', eod?.actual ?? ''],
-      ['Expected Cash', eod?.expected ?? ((eod?.opening!=null) ? (eod.opening + (m.pmAgg['Cash']?.sales||0) - expenseTotal) : '')],
-      ['Cash Variance', eod?.variance ?? ((eod?.actual!=null && eod?.opening!=null) ? (eod.actual - (eod.opening + (m.pmAgg['Cash']?.sales||0) - expenseTotal)) : '')]
-    ];
-    summary.forEach((item,i)=>{
-      const row=5+i;
-      ws.getCell(row,1).value=item[0];
-      ws.getCell(row,2).value=item[1];
-      ws.getCell(row,2).numFmt = item[0]==='Number of Cups' ? '0' : moneyFmt;
-      if(item[0]==='Total Sales' || item[0]==='Cash Variance'){
-        ws.getCell(row,1).font={bold:true}; ws.getCell(row,2).font={bold:true};
-        ws.getCell(row,1).fill={type:'pattern',pattern:'solid',fgColor:{argb:summaryFill}};
-        ws.getCell(row,2).fill={type:'pattern',pattern:'solid',fgColor:{argb:summaryFill}};
-      }
-    });
-
-    const orderStart = 17;
-    ws.mergeCells(startRow=orderStart, startColumn=1, endRow=orderStart, endColumn=7);
-    ws.getCell(orderStart,1).value='ORDERS';
-    ws.getCell(orderStart,1).font={bold:true};
-    const orderHeaders=['Order #','Time','Channel','Payment','Cashier','Items','Total'];
-    orderHeaders.forEach((h,c)=>{
-      const cell=ws.getCell(orderStart+1,c+1); cell.value=h; cell.font={bold:true}; cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:headerFill}}; cell.border={bottom:thin};
-    });
-    let r=orderStart+2;
-    orders.forEach((o,idx)=>{
-      const itemsText=(o.items||[]).map(i=>{
-        let text=i.name || i.product || 'Item';
-        if(i.size) text += ` (${i.size})`;
-        text += ` x${i.qty}`;
-        return text;
-      }).join('\n');
-      const vals=[o.orderNumber,o.time,o.channel,o.paymentMethod,o.cashier,itemsText,o.total||0];
-      vals.forEach((v,c)=>{
-        const cell=ws.getCell(r,c+1); cell.value=v; cell.border={bottom:thin}; cell.alignment={vertical:'top',wrapText:c===5};
-        if(idx%2===1) cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:lightFill}};
-      });
-      ws.getCell(r,7).numFmt=moneyFmt;
-      ws.getRow(r).height=Math.max(24,18*(o.items||[]).length);
-      r++;
-    });
-    ws.getCell(r+1,6).value='TOTAL SALES'; ws.getCell(r+1,6).font={bold:true};
-    ws.getCell(r+1,7).value=m.totalSales; ws.getCell(r+1,7).font={bold:true}; ws.getCell(r+1,7).numFmt=moneyFmt;
-
-    const expStart=r+4;
-    ws.mergeCells(startRow=expStart,startColumn=1,endRow=expStart,endColumn=7);
-    ws.getCell(expStart,1).value='EXPENSES'; ws.getCell(expStart,1).font={bold:true};
-    ['Time','Expense','Amount','Cashier'].forEach((h,c)=>{
-      const cell=ws.getCell(expStart+1,c+1); cell.value=h; cell.font={bold:true}; cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:headerFill}}; cell.border={bottom:thin};
-    });
-    let er=expStart+2;
-    (expenses||[]).forEach(x=>{
-      [x.time,x.note,x.amount,x.cashier].forEach((v,c)=>{ const cell=ws.getCell(er,c+1); cell.value=v; cell.border={bottom:thin}; });
-      ws.getCell(er,3).numFmt=moneyFmt; er++;
-    });
-    ws.getCell(er,2).value='TOTAL EXPENSES'; ws.getCell(er,2).font={bold:true};
-    ws.getCell(er,3).value=expenseTotal; ws.getCell(er,3).font={bold:true}; ws.getCell(er,3).numFmt=moneyFmt;
-
-    [14,11,16,14,14,50,17].forEach((w,i)=>ws.getColumn(i+1).width=w);
-    ws.freezePanes='A19';
-    ws.autoFilter={from:{row:orderStart+1,column:1},to:{row:Math.max(orderStart+1,r-1),column:7}};
-
-    const filename = `${excelSafeFilenameDate()}-HibiDaily.xlsx`;
-    const buffer = await wb.xlsx.writeBuffer();
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    const chunkSize = 0x8000;
-    for(let i=0;i<bytes.length;i+=chunkSize){ binary += String.fromCharCode(...bytes.subarray(i, Math.min(i+chunkSize, bytes.length))); }
-    const base64 = btoa(binary);
-
-    if(download){
-      const blob = new Blob([buffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),1000);
-      toast('Excel report exported: '+filename);
-    }
-    return {filename, content:base64};
-  }catch(e){
-    console.error(e);
-    if(download) toast('Could not export Excel: '+(e.message||e));
-    throw e;
-  }
-}
-
-async function sendDailyReportEmail(report, attachment){
-  const endpoint = `${SUPABASE_URL}/functions/v1/resend-email`;
-  let accessToken = CURRENT_USER?.access_token || '';
-  if(supabaseClient?.auth?.getSession){
-    try{
-      const {data} = await supabaseClient.auth.getSession();
-      accessToken = data?.session?.access_token || accessToken;
-    }catch(e){ console.warn('Could not refresh Supabase session for daily report email:', e); }
-  }
-  if(!accessToken) throw new Error('You are not logged in. Please log in again before sending the daily report.');
-  const headers = {'Content-Type':'application/json','apikey':SUPABASE_ANON_KEY,'Authorization':`Bearer ${accessToken}`};
-  const res = await fetch(endpoint, {method:'POST',headers,body:JSON.stringify({report, attachment})});
-  if(!res.ok){
-    const text = await res.text();
-    throw new Error(`Email report failed (${res.status}): ${text}`);
-  }
-  return await res.json().catch(()=>({ok:true}));
-}
-
-function buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expenseTotal, netSales, eod){
-  return {
-    date: dateKey, period: rangeLabel,
-    totalSales: Number(m.totalSales)||0,
-    totalTransactions: Number(m.totalTx)||0, transactions: Number(m.totalTx)||0,
-    cups: Number(m.cups)||0, numberOfCups: Number(m.cups)||0, foodItems: Number(m.foodItems)||0,
-    cashSales: Number(m.pmAgg['Cash']?.sales||0), gcashSales: Number(m.pmAgg['GCash']?.sales||0), grabFoodSales: Number(m.pmAgg['GrabFood']?.sales||0),
-    paymentBreakdown: ['Cash','GCash','GrabFood'].map(method=>({method,transactions:Number(m.pmAgg[method]?.count||0),sales:Number(m.pmAgg[method]?.sales||0)})),
-    openingCash: Number(eod?.opening)||0, startingCash: Number(eod?.opening)||0,
-    expenses: Number(expenseTotal)||0, totalExpenses: Number(expenseTotal)||0,
-    actualCash: Number(eod?.actual)||0, actualCashCounted: Number(eod?.actual)||0,
-    expectedCash: Number(eod?.expected)||0, variance: Number(eod?.variance)||0, cashVariance: Number(eod?.variance)||0,
-    cashIn: Number(eod?.cashIn)||0, cashOut: Number(eod?.cashOut)||0, varianceReason: String(eod?.varianceReason||''),
-    netSales: Number(netSales)||0,
-    orders: (orders||[]).map(o=>({orderNumber:o.orderNumber,date:o.date,time:o.time,channel:o.channel,paymentMethod:o.paymentMethod,payment:o.paymentMethod,cashier:o.cashier,status:o.status,total:Number(o.total)||0,items:o.items||[]})),
-    expenseRows: (expenses||[]).map(x=>({cashier:x.cashier,date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0})),
-    expenseDetails: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier})),
-    expenseList: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier}))
-  };
-}
 }
 
 /* ---------- Excel export ---------- */
@@ -3109,7 +2935,12 @@ async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, 
     ws.getCell('A4').value = 'SUMMARY';
     ws.getCell('A4').font = {bold:true};
     const summary = [
-      ['Total Sales', m.totalSales],
+      ['Sales before refunds', m.grossSales],
+      ['Refunds', m.refundTotal],
+      ['Net Sales', m.totalSales],
+      ['Estimated Grab Fees', m.estimatedFees],
+      ['Owner / Operational Expenses', m.opex||0],
+      ['Estimated Balance after expenses', netSales],
       ['Cash Sales', m.pmAgg['Cash']?.sales || 0],
       ['GCash Sales', m.pmAgg['GCash']?.sales || 0],
       ['GrabFood Sales', m.pmAgg['GrabFood']?.sales || 0],
@@ -3117,23 +2948,23 @@ async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, 
       ['Starting Cash', eod?.opening ?? ''],
       ['Expenses', expenseTotal],
       ['Actual Cash Counted', eod?.actual ?? ''],
-      ['Expected Cash', eod?.expected ?? ((eod?.opening!=null) ? (eod.opening + (m.pmAgg['Cash']?.sales||0) - expenseTotal) : '')],
-      ['Cash Variance', eod?.variance ?? ((eod?.actual!=null && eod?.opening!=null) ? (eod.actual - (eod.opening + (m.pmAgg['Cash']?.sales||0) - expenseTotal)) : '')]
+      ['Expected Cash', eod?.expected ?? ((eod?.opening!=null) ? (eod.opening + (m.pmAgg['Cash']?.sales||0) + (eod.cashIn||0) - (eod.cashOut||0) - expenseTotal) : '')],
+      ['Cash Variance', eod?.variance ?? ((eod?.actual!=null && eod?.opening!=null) ? (eod.actual - (eod.opening + (m.pmAgg['Cash']?.sales||0) + (eod.cashIn||0) - (eod.cashOut||0) - expenseTotal)) : '')]
     ];
     summary.forEach((item,i)=>{
       const row=5+i;
       ws.getCell(row,1).value=item[0];
       ws.getCell(row,2).value=item[1];
       ws.getCell(row,2).numFmt = item[0]==='Number of Cups' ? '0' : moneyFmt;
-      if(item[0]==='Total Sales' || item[0]==='Cash Variance'){
+      if(item[0]==='Net Sales' || item[0]==='Cash Variance'){
         ws.getCell(row,1).font={bold:true}; ws.getCell(row,2).font={bold:true};
         ws.getCell(row,1).fill={type:'pattern',pattern:'solid',fgColor:{argb:summaryFill}};
         ws.getCell(row,2).fill={type:'pattern',pattern:'solid',fgColor:{argb:summaryFill}};
       }
     });
 
-    const orderStart = 17;
-    ws.mergeCells(startRow=orderStart, startColumn=1, endRow=orderStart, endColumn=7);
+    const orderStart = 7 + summary.length;
+    ws.mergeCells(orderStart, 1, orderStart, 7);
     ws.getCell(orderStart,1).value='ORDERS';
     ws.getCell(orderStart,1).font={bold:true};
     const orderHeaders=['Order #','Time','Channel','Payment','Cashier','Items','Total'];
@@ -3148,7 +2979,7 @@ async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, 
         text += ` x${i.qty}`;
         return text;
       }).join('\n');
-      const vals=[o.orderNumber,o.time,o.channel,o.paymentMethod,o.cashier,itemsText,o.total||0];
+      const vals=[o.orderNumber,o.time,o.source,o.paymentMethod,o.cashier,(o.paymentStatus||o.status)+'\n'+itemsText,o.paymentStatus==='LegacyCancelled'?0:(o.total||0)];
       vals.forEach((v,c)=>{
         const cell=ws.getCell(r,c+1); cell.value=v; cell.border={bottom:thin}; cell.alignment={vertical:'top',wrapText:c===5};
         if(idx%2===1) cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:lightFill}};
@@ -3157,11 +2988,11 @@ async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, 
       ws.getRow(r).height=Math.max(24,18*(o.items||[]).length);
       r++;
     });
-    ws.getCell(r+1,6).value='TOTAL SALES'; ws.getCell(r+1,6).font={bold:true};
-    ws.getCell(r+1,7).value=m.totalSales; ws.getCell(r+1,7).font={bold:true}; ws.getCell(r+1,7).numFmt=moneyFmt;
+    ws.getCell(r+1,6).value='SALES BEFORE REFUNDS'; ws.getCell(r+1,6).font={bold:true};
+    ws.getCell(r+1,7).value=m.grossSales; ws.getCell(r+1,7).font={bold:true}; ws.getCell(r+1,7).numFmt=moneyFmt;
 
     const expStart=r+4;
-    ws.mergeCells(startRow=expStart,startColumn=1,endRow=expStart,endColumn=7);
+    ws.mergeCells(expStart,1,expStart,7);
     ws.getCell(expStart,1).value='EXPENSES'; ws.getCell(expStart,1).font={bold:true};
     ['Time','Expense','Amount','Cashier'].forEach((h,c)=>{
       const cell=ws.getCell(expStart+1,c+1); cell.value=h; cell.font={bold:true}; cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:headerFill}}; cell.border={bottom:thin};
@@ -3178,7 +3009,15 @@ async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, 
     ws.freezePanes='A19';
     ws.autoFilter={from:{row:orderStart+1,column:1},to:{row:Math.max(orderStart+1,r-1),column:7}};
 
-    const filename = `${excelSafeFilenameDate()}-HibiDaily.xlsx`;
+    const refundSheet=wb.addWorksheet('Refunds');
+    refundSheet.addRow(['Date','Order','Action','Amount','Cash','GCash','GrabFood','Preparation Started','Reason','Approved By']);
+    (m.refunds||[]).forEach(x=>refundSheet.addRow([x.business_date,x.order?.order_code||x.order_id,x.kind,Number(x.amount),Number(x.cash_amount),Number(x.gcash_amount),Number(x.grab_amount),x.prepared?'Yes':'No',x.reason,x.approved_by_name]));
+    refundSheet.getRow(1).font={bold:true};for(let i=1;i<=10;i++)refundSheet.getColumn(i).width=i===9?40:20;
+    [4,5,6,7].forEach(i=>refundSheet.getColumn(i).numFmt=moneyFmt);
+    const ownerSheet=wb.addWorksheet('Owner Expenses');ownerSheet.addRow(['Date','Category','Description','Payment','Amount']);
+    OWNER_EXPENSES.filter(x=>x.date>=m.reportStart&&x.date<=m.reportEnd&&x.status!=='Voided').forEach(x=>ownerSheet.addRow([x.date,x.category,x.description,x.paymentMethod,x.amount]));
+    for(let i=1;i<=5;i++)ownerSheet.getColumn(i).width=24;ownerSheet.getRow(1).font={bold:true};ownerSheet.getColumn(5).numFmt=moneyFmt;
+    const filename = `${m.reportStart||excelSafeFilenameDate()}-HibiReport.xlsx`;
     const buffer = await wb.xlsx.writeBuffer();
     const bytes = new Uint8Array(buffer);
     let binary = '';
@@ -3233,8 +3072,10 @@ function buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expense
     actualCash: Number(eod?.actual)||0, actualCashCounted: Number(eod?.actual)||0,
     expectedCash: Number(eod?.expected)||0, variance: Number(eod?.variance)||0, cashVariance: Number(eod?.variance)||0,
     cashIn: Number(eod?.cashIn)||0, cashOut: Number(eod?.cashOut)||0, varianceReason: String(eod?.varianceReason||''),
-    netSales: Number(netSales)||0,
-    orders: (orders||[]).map(o=>({orderNumber:o.orderNumber,date:o.date,time:o.time,channel:o.channel,paymentMethod:o.paymentMethod,payment:o.paymentMethod,cashier:o.cashier,status:o.status,total:Number(o.total)||0,items:o.items||[]})),
+    netSales: Number(m.totalSales)||0,
+    estimatedBalance: Number(netSales)||0,
+    grossSales:Number(m.grossSales)||0,refunds:Number(m.refundTotal)||0,estimatedGrabFees:Number(m.estimatedFees)||0,
+    orders: (orders||[]).map(o=>({orderNumber:o.orderNumber,date:o.date,time:o.time,channel:o.source,paymentMethod:o.paymentMethod,payment:o.paymentMethod,cashier:o.cashier,status:o.status,total:Number(o.total)||0,items:o.items||[]})),
     expenseRows: (expenses||[]).map(x=>({cashier:x.cashier,date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0})),
     expenseDetails: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier})),
     expenseList: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier}))
@@ -3601,9 +3442,7 @@ async function renderAuditLog(){
     document.getElementById('audit-rows').innerHTML=filtered.length?filtered.map(x=>`<tr><td>${esc(new Date(x.created_at).toLocaleString('en-PH',{timeZone:'Asia/Manila'}))}</td><td>${esc(x.username||'')}</td><td><b>${esc(x.action||'')}</b></td><td>${esc((x.entity_type||'')+(x.entity_id?': '+x.entity_id:''))}</td><td>${esc(x.reason||'')}</td><td><code style="font-size:11px;white-space:pre-wrap;">${esc(typeof x.details==='string'?x.details:JSON.stringify(x.details||{}))}</code></td></tr>`).join(''):`<tr><td colspan="6"><div class="empty-state">No audit entries match these filters.</div></td></tr>`;
   };
   try{
-    const res=await fetch(`${SUPABASE_URL}/rest/v1/audit_logs?select=*&order=created_at.desc&limit=1000`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${CURRENT_USER.access_token}`}});
-    if(!res.ok) throw new Error(await res.text());
-    const rows=await res.json();
+    const rows=await posGetAll('/rest/v1/audit_logs?select=*&order=created_at.desc,id.desc');
     const actions=[...new Set(rows.map(x=>x.action).filter(Boolean))].sort();
     const entities=[...new Set(rows.map(x=>x.entity_type).filter(Boolean))].sort();
     document.getElementById('audit-action').innerHTML='<option value="">All actions</option>'+actions.map(x=>`<option value="${escAttr(x)}">${esc(x)}</option>`).join('');
@@ -3690,7 +3529,7 @@ function renderSettings(){
       </div>
       <div class="card" style="padding:18px 20px;max-width:600px;">
         <div class="section-title">Data</div>
-        <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">${ORDERS.length} orders on record. Next order number: ${formatOrderNum(SETTINGS.nextOrderNum)}.</div>
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">${ORDERS.length} orders loaded for viewed periods. Next order number: ${formatOrderNum(SETTINGS.nextOrderNum)}.</div>
         <div style="font-size:12px;color:var(--text-dim);">${supabaseOk ? `Connected to Supabase. ${formatSyncAge(LAST_DB_SYNC_AT)}.` : 'Supabase unavailable — orders and financial writes are blocked until reconnected.'}</div>
       </div>${accountPasswordSection}${usersSection}`;
   }
@@ -3706,7 +3545,7 @@ function renderSettings(){
     const rows = await r.json();
     if(rows[0]) CURRENT_PROFILE = {...CURRENT_PROFILE, ...rows[0]};
     SETTINGS.cashierName = CURRENT_PROFILE.display_name || CURRENT_PROFILE.username || 'Staff';
-    await writeAudit('change_display_name','profile',CURRENT_USER.id,reason,{displayName:name});
+    await writeAudit('change_display_name','profile',CURRENT_USER.id,'Display name updated',{displayName:name});
     document.getElementById('cashier-pill').textContent='User: '+SETTINGS.cashierName;
     toast('Display name updated');
   };
@@ -3872,7 +3711,11 @@ function escAttr(s){ return esc(s); }
 /* ============================================================
    BOOT
    ============================================================ */
+</script>
+<script src="phase1.js"></script>
+<script>
 (async function boot(){
+  if(typeof p1Load!=='function'){showLoginError('The Phase 1 application file could not load. Refresh or verify phase1.js was uploaded.');return;}
   if(!supabaseClient){ showLoginError('Supabase authentication is unavailable.'); return; }
   applyBranding();
   document.getElementById('login-btn').onclick=doLogin;
