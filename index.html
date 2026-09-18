@@ -2077,6 +2077,9 @@ function filteredOrders(filter){
     if(filter.mode==='range') return o.date>=filter.start && o.date<=filter.end;
     if(filter.mode==='all'){const [start,end]=p1Range(filter);return o.date>=start&&o.date<=end;}
     return true;
+  }).sort((a,b)=>{
+    const created=o=>Date.parse(o.timestamp)||Date.parse(`${o.date}T${o.time||'00:00'}+08:00`)||0;
+    return created(b)-created(a)||(Number(b.dbOrderNumber)||0)-(Number(a.dbOrderNumber)||0)||String(b.id).localeCompare(String(a.id));
   });
 }
 function shiftDateKey(dateKey, delta){
