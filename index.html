@@ -1417,7 +1417,7 @@ function renderShiftsPage(){
   el.innerHTML=`<div class="page-title"><div><h1>Shift / Drawer</h1><div class="psub">Open, hand off and reconcile the cash drawer by shift.</div></div>${dateKey===businessDayKey()||(isSuperuser()&&open)?`<button class="btn ${open?'btn-secondary':'btn-primary'}" id="shift-main-action">${open?'Close '+esc(open.shiftName):'+ Open Shift'}</button>`:''}</div>
     <div class="filter-bar"><button class="filter-btn" id="shift-prev">←</button><input type="date" id="shift-date" value="${dateKey}"><button class="filter-btn" id="shift-next">→</button><button class="filter-btn ${dateKey===businessDayKey()?'active':''}" id="shift-today">Today</button></div>
     ${open?`<div class="card shift-live" style="padding:18px 20px;margin-bottom:16px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;"><div><div class="section-title" style="margin-bottom:3px;">${esc(open.shiftName)} <span class="shift-status-pill">OPEN</span></div><div style="font-size:12px;color:var(--text-dim);">Opened ${fmtShiftTime(open.openedAt)} · Opened by <strong>${esc(open.openedBy)}</strong></div></div><div style="font-weight:800;font-size:22px;">${PESO(live.expected)}</div></div><div class="stat-grid" style="margin-top:14px;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));"><div><div class="slabel">Opening</div><div style="font-weight:700;">${PESO(open.openingCash)}</div></div><div><div class="slabel">Cash Sales</div><div style="font-weight:700;">${PESO(live.cashSales)}</div></div><div><div class="slabel">Orders</div><div style="font-weight:700;">${live.transactionCount}</div></div><div><div class="slabel">Cups Sold</div><div style="font-weight:700;">${live.cupsSold}</div></div><div><div class="slabel">Cash In / Out</div><div style="font-weight:700;">+${PESO(live.cashIn)} / −${PESO(live.cashOut)}</div></div><div><div class="slabel">Cash Expenses</div><div style="font-weight:700;">${PESO(live.expenses)}</div></div><div><div class="slabel">Expected Drawer</div><div style="font-weight:800;">${PESO(live.expected)}</div></div></div></div>`:`<div class="card" style="padding:18px 20px;margin-bottom:16px;"><span class="shift-status-pill none">NO OPEN SHIFT</span><div style="margin-top:8px;font-size:13px;color:var(--text-dim);">${dateKey===businessDayKey()?'Open a shift before taking orders or recording drawer activity.':'No open shift for this business day.'}</div></div>`}
-    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Shift</th><th>Status</th><th>Opened By</th><th>Opened</th><th>Closed</th><th class="num">Orders</th><th class="num">Cups</th><th class="num">Opening</th><th class="num">Expected</th><th class="num">Actual</th><th class="num">Variance</th>${isSuperuser()?'<th>Action</th>':''}</tr></thead><tbody>${rows.length?rows.map(s=>{const ss=shiftFinancialSummary(s);const orderCount=ss.transactionCount;const cups=ss.cupsSold;return `<tr><td><b>${esc(s.shiftName)}</b><div style="font-size:11px;color:var(--text-dim);">#${s.shiftNumber}</div></td><td><span class="shift-status-pill ${s.status==='Closed'?'closed':''}">${s.status.toUpperCase()}</span></td><td>${esc(s.openedBy||'—')}</td><td>${fmtShiftTime(s.openedAt)}</td><td>${fmtShiftTime(s.closedAt)}</td><td class="num">${orderCount||0}</td><td class="num">${cups||0}</td><td class="num">${PESO(s.openingCash)}</td><td class="num">${s.status==='Open'&&ss?PESO(ss.expected):(s.expectedCash==null?'—':PESO(s.expectedCash))}</td><td class="num">${s.actualCashCounted==null?'—':PESO(s.actualCashCounted)}</td><td class="num" style="${s.variance!=null&&Math.abs(s.variance)>=.005?'color:var(--rust);font-weight:700;':''}">${s.variance==null?'—':PESO(s.variance)}</td>${isSuperuser()?`<td>${s.status==='Closed'?`<button type="button" class="btn btn-secondary" data-reopen-shift="${escAttr(s.id)}">Reopen Shift</button>`:'—'}</td>`:''}</tr>`}).join(''):`<tr><td colspan="${isSuperuser()?12:11}"><div class="empty-state">No shifts recorded for this day.</div></td></tr>`}</tbody></table></div>`;
+    <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Shift</th><th>Status</th><th>Opened By</th><th>Opened</th><th>Closed</th><th class="num">Orders</th><th class="num">Cups</th><th class="num">Opening</th><th class="num">Expected</th><th class="num">Actual</th><th class="num">Variance</th>${isSuperuser()?'<th>Action</th>':''}</tr></thead><tbody>${rows.length?rows.map(s=>{const ss=s.status==='Open'?shiftFinancialSummary(s):null;const orderCount=ss?ss.transactionCount:s.transactionCount;const cups=ss?ss.cupsSold:s.cupsSold;return `<tr><td><b>${esc(s.shiftName)}</b><div style="font-size:11px;color:var(--text-dim);">#${s.shiftNumber}</div></td><td><span class="shift-status-pill ${s.status==='Closed'?'closed':''}">${s.status.toUpperCase()}</span></td><td>${esc(s.openedBy||'—')}</td><td>${fmtShiftTime(s.openedAt)}</td><td>${fmtShiftTime(s.closedAt)}</td><td class="num">${orderCount||0}</td><td class="num">${cups||0}</td><td class="num">${PESO(s.openingCash)}</td><td class="num">${s.status==='Open'&&ss?PESO(ss.expected):(s.expectedCash==null?'—':PESO(s.expectedCash))}</td><td class="num">${s.actualCashCounted==null?'—':PESO(s.actualCashCounted)}</td><td class="num" style="${s.variance!=null&&Math.abs(s.variance)>=.005?'color:var(--rust);font-weight:700;':''}">${s.variance==null?'—':PESO(s.variance)}</td>${isSuperuser()?`<td>${s.status==='Closed'?`<button type="button" class="btn btn-secondary" data-reopen-shift="${escAttr(s.id)}">Reopen Shift</button>`:'—'}</td>`:''}</tr>`}).join(''):`<tr><td colspan="${isSuperuser()?12:11}"><div class="empty-state">No shifts recorded for this day.</div></td></tr>`}</tbody></table></div>`;
   el.querySelectorAll('[data-reopen-shift]').forEach(b=>b.onclick=()=>reopenShift(b.dataset.reopenShift));
   const action=document.getElementById('shift-main-action'); if(action) action.onclick=()=>open?openCloseShiftModal(open):openShiftModal();
   document.getElementById('shift-prev').onclick=()=>{shiftsFilterDate=shiftCalendarDate(dateKey,-1);renderShiftsPage();};
@@ -2077,9 +2077,6 @@ function filteredOrders(filter){
     if(filter.mode==='range') return o.date>=filter.start && o.date<=filter.end;
     if(filter.mode==='all'){const [start,end]=p1Range(filter);return o.date>=start&&o.date<=end;}
     return true;
-  }).sort((a,b)=>{
-    const created=o=>Date.parse(o.timestamp)||Date.parse(`${o.date}T${o.time||'00:00'}+08:00`)||0;
-    return created(b)-created(a)||(Number(b.dbOrderNumber)||0)-(Number(a.dbOrderNumber)||0)||String(b.id).localeCompare(String(a.id));
   });
 }
 function shiftDateKey(dateKey, delta){
@@ -2364,8 +2361,8 @@ function openOwnerExpenseModal(){
    METRICS ENGINE (shared by Dashboard + Reports)
    ============================================================ */
 function computeMetrics(orders){
-  const completed = orders.filter(o=>!p1IsCancelled(o));
-  const cancelled = orders.filter(p1IsCancelled);
+  const completed = orders.filter(o=>o.status!=='Cancelled');
+  const cancelled = orders.filter(o=>o.status==='Cancelled');
   const totalSales = completed.reduce((s,o)=>s+o.total,0);
   const totalTx = completed.length;
   let cups=0, foodItems=0;
@@ -2524,7 +2521,7 @@ function renderMonthlyPerformance(){
   const totalGrab=m.pmAgg['GrabFood']?.sales||0;
   const netAfterDailyExpenses=m.estimatedProceeds-expenseTotal;
   const netAfterAllExpenses=netAfterDailyExpenses-opexTotal;
-  const activeDays=new Set(completed.filter(o=>!p1IsCancelled(o)).map(o=>o.date)).size;
+  const activeDays=new Set(completed.filter(o=>o.paymentStatus!=='LegacyCancelled').map(o=>o.date)).size;
   const dailyRows=[];
   for(let d=1;d<=days;d++){
     const dateKey=`${ym}-${String(d).padStart(2,'0')}`;
@@ -2591,12 +2588,10 @@ function renderMonthlyPerformance(){
       <div class="stat-card"><div class="slabel">Est. Grab Proceeds after Bank OPEX</div><div class="sval" style="font-size:22px;">${moneyFmt(performanceCurrentBank)}</div></div>
     </div>
 
-    <details class="card" style="padding:0;margin-top:16px;overflow-x:auto;" open>
-      <summary style="cursor:pointer;padding:18px 20px;list-style-position:inside;">
-        <span class="section-title" style="display:inline;margin:0;">Daily Summary</span>
-        <span style="display:block;font-size:12px;color:var(--text-dim);margin:5px 0 0 22px;">One row per calendar day. Estimated balance = Net sales − estimated Grab fees − daily expenses − OPEX.</span>
-      </summary>
-      <div style="padding:0 20px 18px;">
+    <div class="card" style="padding:18px 20px;margin-top:16px;overflow-x:auto;">
+      <div class="page-title" style="margin-bottom:10px;">
+        <div><div class="section-title" style="margin:0;">Daily Summary</div><div style="font-size:12px;color:var(--text-dim);margin-top:3px;">One row per calendar day. Estimated balance = Net sales − estimated Grab fees − daily expenses − OPEX.</div></div>
+      </div>
       <table style="min-width:850px;">
         <thead><tr>
           <th>Date</th><th class="num">Est. Balance</th><th class="num">Cups</th><th class="num">Total Sales</th>
@@ -2619,8 +2614,7 @@ function renderMonthlyPerformance(){
           }).join('')}
         </tbody>
       </table>
-      </div>
-    </details>
+    </div>
   `;
   el.querySelector('#monthly-performance-month').onchange=e=>{
     monthlyPerformanceMonth=e.target.value || todayStr().slice(0,7);
@@ -2985,7 +2979,7 @@ async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, 
         text += ` x${i.qty}`;
         return text;
       }).join('\n');
-      const vals=[o.orderNumber,o.time,o.source,o.paymentMethod,o.cashier,(p1IsCancelled(o)?'Cancelled':(o.paymentStatus||o.status))+'\n'+itemsText,p1IsCancelled(o)?0:(o.total||0)];
+      const vals=[o.orderNumber,o.time,o.source,o.paymentMethod,o.cashier,(o.paymentStatus||o.status)+'\n'+itemsText,o.paymentStatus==='LegacyCancelled'?0:(o.total||0)];
       vals.forEach((v,c)=>{
         const cell=ws.getCell(r,c+1); cell.value=v; cell.border={bottom:thin}; cell.alignment={vertical:'top',wrapText:c===5};
         if(idx%2===1) cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:lightFill}};
@@ -3081,7 +3075,7 @@ function buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expense
     netSales: Number(m.totalSales)||0,
     estimatedBalance: Number(netSales)||0,
     grossSales:Number(m.grossSales)||0,refunds:Number(m.refundTotal)||0,estimatedGrabFees:Number(m.estimatedFees)||0,
-    orders: (orders||[]).filter(o=>!p1IsCancelled(o)).map(o=>({orderNumber:o.orderNumber,date:o.date,time:o.time,channel:o.source,paymentMethod:o.paymentMethod,payment:o.paymentMethod,cashier:o.cashier,status:o.status,total:Number(o.total)||0,items:o.items||[]})),
+    orders: (orders||[]).map(o=>({orderNumber:o.orderNumber,date:o.date,time:o.time,channel:o.source,paymentMethod:o.paymentMethod,payment:o.paymentMethod,cashier:o.cashier,status:o.status,total:Number(o.total)||0,items:o.items||[]})),
     expenseRows: (expenses||[]).map(x=>({cashier:x.cashier,date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0})),
     expenseDetails: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier})),
     expenseList: (expenses||[]).map(x=>({date:x.date,time:x.time,note:x.note,amount:Number(x.amount)||0,cashier:x.cashier}))
@@ -3718,7 +3712,7 @@ function escAttr(s){ return esc(s); }
    BOOT
    ============================================================ */
 </script>
-<script src="phase1.js?v=20260918-cancelled-fix"></script>
+<script src="phase1.js"></script>
 <script>
 (async function boot(){
   if(typeof p1Load!=='function'){showLoginError('The Phase 1 application file could not load. Refresh or verify phase1.js was uploaded.');return;}
