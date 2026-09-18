@@ -58,9 +58,19 @@ loadAll=async function(){
 };
 loadPosOrders=async function(){const day=selectedOrderDate||businessDayKey();await p1Load(day,day,true);};
 loadFinancialRows=loadShifts=async function(){const day=businessDayKey();await p1Load(day,day,true);};
-function p1Refunds(start,end=start){return REFUNDS.filter(r=>r.business_date>=start&&r.business_date<=end);}
+function p1Refunds(start,end=start){return REFUNDS.filter(r=>!r.voided_at&&r.business_date>=start&&r.business_date<=end);}
 const cents=n=>Math.round(Number(n||0)*100), money=n=>n/100;
 function p1Parts(o){return o.paymentMethod==='Cash + GCash'?{Cash:Number(o.cashAmount||0),GCash:Number(o.gcashAmount||0)}:{[o.paymentMethod]:Number(o.total||0)};}
+function p1RemainingParts(o){
+ const remaining={Cash:0,GCash:0,GrabFood:0};
+ for(const [method,value] of Object.entries(p1Parts(o))) remaining[method]=Math.max(0,Number(value)||0);
+ for(const r of REFUNDS.filter(x=>x.order_id===o.id&&!x.voided_at)){
+  remaining.Cash=Math.max(0,remaining.Cash-Number(r.cash_amount||0));
+  remaining.GCash=Math.max(0,remaining.GCash-Number(r.gcash_amount||0));
+  remaining.GrabFood=Math.max(0,remaining.GrabFood-Number(r.grab_amount||0));
+ }
+ return remaining;
+}
 computeMetrics=function(orders,refunds=[]){
   const paid=orders.filter(o=>o.paymentStatus!=='LegacyCancelled' && (o.paymentStatus||o.status!=='Cancelled'));
   const pmAgg={},sourceAgg={'Walk-in':{count:0,sales:0,items:0,cups:0,discounts:0},GrabFood:{count:0,sales:0,items:0,cups:0,discounts:0}},productAgg={};
@@ -136,7 +146,7 @@ function p1Decorate(name,start,end){
  const el=document.getElementById(target);el.querySelector('.p1-refund-summary')?.remove();
  const refunds=p1Refunds(start,end);const m=computeMetrics(ORDERS.filter(o=>o.date>=start&&o.date<=end),refunds);
  const panel=document.createElement('div');panel.className='card p1-refund-summary';panel.style.cssText='padding:16px 20px;margin:16px 0;';
- panel.innerHTML=`<div class="section-title">Sales &amp; returns</div><div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px;"><span>Sales before refunds <b>${PESO(m.grossSales)}</b></span><span>Refunds <b>${PESO(m.refundTotal)}</b></span><span>Net sales <b>${PESO(m.totalSales)}</b></span><span>Estimated Grab fees <b>${PESO(m.estimatedFees)}</b></span></div><p style="font-size:11px;color:var(--text-dim);">Refunds appear on the day money is returned. Grab proceeds are estimates using each orderâ€™s saved fee rate; actual settlements may differ. Ingredient costs are not included.</p>${refunds.length?`<details><summary>View ${refunds.length} refund / cancellation record(s)</summary><div style="overflow:auto"><table><thead><tr><th>Date</th><th>Order</th><th>Type</th><th>Amount</th><th>Reason</th></tr></thead><tbody>${refunds.map(r=>`<tr><td>${esc(r.business_date)}</td><td>${esc(r.order?.order_code||r.order_id)}</td><td>${esc(r.kind)}</td><td>${PESO(r.amount)}</td><td>${esc(r.reason)}</td></tr>`).join('')}</tbody></table></div></details>`:''}`;
+ panel.innerHTML=`<div class="section-title">Sales &amp; returns</div><div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px;"><span>Sales before refunds <b>${PESO(m.grossSales)}</b></span><span>Refunds <b>${PESO(m.refundTotal)}</b></span><span>Net sales <b>${PESO(m.totalSales)}</b></span><span>Estimated Grab fees <b>${PESO(m.estimatedFees)}</b></span></div><p style="font-size:11px;color:var(--text-dim);">Refunds appear on the day money is returned. Grab proceeds are estimates using each order’s saved fee rate; actual settlements may differ. Ingredient costs are not included.</p>${refunds.length?`<details><summary>View ${refunds.length} refund / cancellation record(s)</summary><div style="overflow:auto"><table><thead><tr><th>Date</th><th>Order</th><th>Type</th><th>Amount</th><th>Reason</th></tr></thead><tbody>${refunds.map(r=>`<tr><td>${esc(r.business_date)}</td><td>${esc(r.order?.order_code||r.order_id)}</td><td>${esc(r.kind)}</td><td>${PESO(r.amount)}</td><td>${esc(r.reason)}</td></tr>`).join('')}</tbody></table></div></details>`:''}`;
  el.querySelector('.page-title')?.after(panel);
 }
 async function p1Status(id,status,reason=''){
@@ -154,10 +164,24 @@ openOrderDetail=function(id){
  if(isSuperuser()&&o.paymentStatus!=='LegacyCancelled'&&o.paymentStatus!=='Refunded'){
  const button=document.createElement('button');button.className='btn btn-secondary';button.textContent='Refund / Cancel Order';button.onclick=()=>p1RefundModal(o);document.querySelector('#modal-root .modal-foot').prepend(button);
  }
+ const history=REFUNDS.filter(r=>r.order_id===o.id);
+ if(isSuperuser()&&history.length){
+  const host=document.querySelector('#modal-root .modal-body');
+  host.insertAdjacentHTML('beforeend',`<div class="card" style="padding:12px;margin-top:14px;"><div class="section-title">Refund history</div>${history.map(r=>`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;border-top:1px solid var(--line);padding:9px 0;font-size:12px;"><span><strong>${esc(r.kind)}</strong> ${PESO(r.amount)}${r.voided_at?` <span class="badge-inactive">VOIDED</span>`:''}<br><span style="color:var(--text-dim);">${esc(r.reason||'')}</span></span>${r.voided_at?'':`<button type="button" class="icon-btn danger" data-void-refund="${escAttr(r.id)}">Void / Correct</button>`}</div>`).join('')}</div>`);
+  host.querySelectorAll('[data-void-refund]').forEach(b=>b.onclick=()=>p1VoidRefundModal(b.dataset.voidRefund,o));
+ }
 };
+async function p1VoidRefundModal(refundId,o){
+ openModal(`<div class="modal-head"><h3>Void refund ${esc(o.orderNumber)}</h3></div><div class="modal-body"><p>This keeps the original refund in the audit trail and allows a corrected refund to be entered afterward.</p><div class="field"><label>Reason for correction</label><input id="p1-void-reason" placeholder="e.g. Wrong payment method entered"></div></div><div class="modal-foot"><button class="btn btn-secondary" id="p1-void-close">Close</button><button class="btn btn-danger" id="p1-void-save">Void refund</button></div>`);
+ document.getElementById('p1-void-close').onclick=closeModal;
+ document.getElementById('p1-void-save').onclick=async()=>{const reason=document.getElementById('p1-void-reason').value.trim();if(!reason){toast('Enter a reason for the correction.');return;}const btn=document.getElementById('p1-void-save');btn.disabled=true;try{await posApi('/rest/v1/rpc/hibi_void_refund',{method:'POST',body:JSON.stringify({p_request_id:crypto.randomUUID(),p_refund_id:refundId,p_reason:reason})});closeModal();await p1Load(o.date,o.date,true);await p1Load(businessDayKey(),businessDayKey(),true);await renderOrdersPage();toast('Refund voided. Enter the corrected refund.');}catch(e){toast(e.message);btn.disabled=false;}};
+}
 async function p1RefundModal(o){
  const payloadId=crypto.randomUUID();
- openModal(`<div class="modal-head"><h3>Refund / Cancel ${esc(o.orderNumber)}</h3></div><div class="modal-body"><p>Record money actually returned. Refunds use today's business date and do not restore ingredients.</p><div class="field"><label>Action</label><select id="p1-kind"><option>Refund</option><option>Cancellation</option></select></div>${[['cash','Cash'],['gcash','GCash'],['grab','GrabFood']].map(([id,label])=>`<div class="field"><label>${label} refund</label><input id="p1-${id}" type="number" min="0" step="0.01" value="0"></div>`).join('')}<div class="field"><label>Was preparation started?</label><select id="p1-prepared"><option value="">Selectâ€¦</option><option value="true">Yes â€” ingredients may have been used</option><option value="false">No â€” preparation not started</option></select></div><div class="field"><label>Reason</label><input id="p1-reason"></div><p style="font-size:12px">The database checks the remaining refundable amount for each payment method. Cancellation requires a full remaining refund for a preparing order from today.</p></div><div class="modal-foot"><button id="p1-refund-close" class="btn btn-secondary">Close</button><button id="p1-refund-save" class="btn btn-primary">Record Refund</button></div>`);
+ openModal(`<div class="modal-head"><h3>Refund / Cancel ${esc(o.orderNumber)}</h3></div><div class="modal-body"><p>Use <strong>Refund</strong> for a partial or completed-order return. Use <strong>Cancellation</strong> to return the full remaining payment automatically.</p><div class="field"><label>Action</label><select id="p1-kind"><option>Refund</option><option>Cancellation</option></select></div><div id="p1-amount-fields">${[['cash','Cash'],['gcash','GCash'],['grab','GrabFood']].map(([id,label])=>`<div class="field"><label>${label} refund</label><input id="p1-${id}" type="number" min="0" step="0.01" value="0"></div>`).join('')}</div><div id="p1-cancel-note" style="display:none;padding:10px 12px;border-radius:9px;background:#EEF2E4;color:#35563B;font-size:12px;margin-bottom:14px;">Cancellation will automatically return the full remaining payment. Do not enter amounts.</div><div class="field"><label>Was preparation started?</label><select id="p1-prepared"><option value="">Select...</option><option value="true">Yes - ingredients may have been used</option><option value="false">No - preparation not started</option></select></div><div class="field"><label>Reason</label><input id="p1-reason"></div><p style="font-size:12px">Refunds use today's business date and do not restore ingredients. Cancellation is allowed only for a current-day Preparing/New order.</p></div><div class="modal-foot"><button id="p1-refund-close" class="btn btn-secondary">Close</button><button id="p1-refund-save" class="btn btn-primary">Record Refund</button></div>`);
+ const kindSelect=document.getElementById('p1-kind');
+ const syncAmounts=()=>{const cancelling=kindSelect.value==='Cancellation',remaining=p1RemainingParts(o);document.getElementById('p1-cancel-note').style.display=cancelling?'block':'none';document.getElementById('p1-amount-fields').style.display=cancelling?'none':'';for(const [id,method] of [['cash','Cash'],['gcash','GCash'],['grab','GrabFood']]){const input=document.getElementById('p1-'+id);if(cancelling)input.value=(remaining[method]||0).toFixed(2);input.readOnly=cancelling;input.style.background=cancelling?'#EEF2E4':'';}};
+ kindSelect.onchange=syncAmounts;syncAmounts();
  document.getElementById('p1-refund-close').onclick=closeModal;
  let pending=null;const button=document.getElementById('p1-refund-save');
  button.onclick=async()=>{
@@ -221,7 +245,8 @@ p1RefundModal=async function(o){
  button.onclick=async()=>{
   const reason=document.getElementById('p1-reason').value.trim(),prepared=document.getElementById('p1-prepared').value;
   if(!reason||!prepared){toast('Select preparation state and enter a reason.');return;}
-  const payload={p_request_id:crypto.randomUUID(),p_order_id:o.id,p_cash:Number(document.getElementById('p1-cash').value),p_gcash:Number(document.getElementById('p1-gcash').value),p_grab:Number(document.getElementById('p1-grab').value),p_kind:document.getElementById('p1-kind').value,p_prepared:prepared==='true',p_reason:reason};
+  const kind=document.getElementById('p1-kind').value,remaining=p1RemainingParts(o);
+  const payload={p_request_id:crypto.randomUUID(),p_order_id:o.id,p_cash:kind==='Cancellation'?remaining.Cash:Number(document.getElementById('p1-cash').value),p_gcash:kind==='Cancellation'?remaining.GCash:Number(document.getElementById('p1-gcash').value),p_grab:kind==='Cancellation'?remaining.GrabFood:Number(document.getElementById('p1-grab').value),p_kind:kind,p_prepared:prepared==='true',p_reason:reason};
   sessionStorage.setItem(p1RefundKey(),JSON.stringify(payload));button.disabled=true;
   try{
    await posApi('/rest/v1/rpc/hibi_refund',{method:'POST',body:JSON.stringify(payload)});
