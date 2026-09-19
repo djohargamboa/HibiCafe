@@ -3776,7 +3776,7 @@ async function wireUserManagement(){
       if(!r.ok) throw new Error(await r.text());
       const rows=await r.json();
       list.innerHTML=rows.map(u=>{
-        const access=u.role==='superuser'?'All access':'Dashboard, POS, Orders, Expenses, Shifts';
+        const access=u.role==='superuser'?'All access':'Dashboard, POS, Orders, Expenses, Shifts, Daily Reports';
         return `<tr><td>${esc(u.username)}</td><td>${esc(u.display_name||'')}</td><td>${esc(u.role)}</td><td>${u.active?'Yes':'No'}</td><td><span style="font-size:11px;color:var(--text-dim);">${esc(access)}</span> <button class="icon-btn" type="button" data-edit-user="${escAttr(u.auth_user_id)}">Edit</button> <button class="icon-btn" type="button" data-reset-user="${escAttr(u.auth_user_id)}">Change Password</button></td></tr>`;
       }).join('')||'<tr><td colspan="5">No users yet.</td></tr>';
       list.querySelectorAll('[data-edit-user]').forEach(btn=>btn.onclick=()=>{
@@ -3856,7 +3856,7 @@ function escAttr(s){ return esc(s); }
    BOOT
    ============================================================ */
 </script>
-<script src="phase1.js?v=20260919-cashier-dashboard"></script>
+<script src="phase1.js?v=20260919-cashier-refunds"></script>
 <script>
 (async function boot(){
   if(typeof p1Load!=='function'){showLoginError('The Phase 1 application file could not load. Refresh or verify phase1.js was uploaded.');return;}
