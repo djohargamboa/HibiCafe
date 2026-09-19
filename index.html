@@ -882,8 +882,9 @@ const supabaseClient = window.supabase?.createClient ? window.supabase.createCli
 let CURRENT_USER = null;
 let CURRENT_PROFILE = null;
 const DEFAULT_PERMISSIONS = ['pos','grab','orders','expenses','dashboard','reports','menu','audit','settings'];
+const STAFF_PERMISSIONS = new Set(['dashboard','pos','orders','expenses']);
 function isSuperuser(){ return CURRENT_PROFILE?.role==='superuser'; }
-function can(permission){ return isSuperuser() || !!CURRENT_PROFILE?.permissions?.[permission]; }
+function can(permission){ return isSuperuser() || STAFF_PERMISSIONS.has(permission); }
 function applyPermissions(){
   document.querySelectorAll('#nav-tabs button[data-permission]').forEach(b=>{ b.style.display=(can(b.dataset.permission) && (!b.dataset.superuserOnly || isSuperuser()))?'flex':'none'; });
   const first=[...document.querySelectorAll('#nav-tabs button[data-permission]')].find(b=>can(b.dataset.permission) && (!b.dataset.superuserOnly || isSuperuser()));
@@ -1436,19 +1437,20 @@ async function reopenShift(id){
 function lastShiftActualForDate(dateKey){ const s=lastClosedShiftForDate(dateKey); return s?.actualCashCounted==null?null:Number(s.actualCashCounted); }
 function renderShiftsPage(){
   const el=document.getElementById('shifts-content'); if(!el)return;
+  if(!isSuperuser()) shiftsFilterDate=businessDayKey();
   const dateKey=shiftsFilterDate||businessDayKey();
   const open=openShiftForDate(dateKey), rows=shiftsForDate(dateKey);
   const live=open?shiftFinancialSummary(open):null;
   el.innerHTML=`<div class="page-title"><div><h1>Shift / Drawer</h1><div class="psub">Open, hand off and reconcile the cash drawer by shift.</div></div>${dateKey===businessDayKey()||(isSuperuser()&&open)?`<button class="btn ${open?'btn-secondary':'btn-primary'}" id="shift-main-action">${open?'Close '+esc(open.shiftName):'+ Open Shift'}</button>`:''}</div>
-    <div class="filter-bar"><button class="filter-btn" id="shift-prev">←</button><input type="date" id="shift-date" value="${dateKey}"><button class="filter-btn" id="shift-next">→</button><button class="filter-btn ${dateKey===businessDayKey()?'active':''}" id="shift-today">Today</button></div>
+    ${isSuperuser()?`<div class="filter-bar"><button class="filter-btn" id="shift-prev">←</button><input type="date" id="shift-date" value="${dateKey}"><button class="filter-btn" id="shift-next">→</button><button class="filter-btn ${dateKey===businessDayKey()?'active':''}" id="shift-today">Today</button></div>`:`<div class="filter-bar"><span class="filter-btn active">Today · ${dateKey}</span></div>`}
     ${open?`<div class="card shift-live" style="padding:18px 20px;margin-bottom:16px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;"><div><div class="section-title" style="margin-bottom:3px;">${esc(open.shiftName)} <span class="shift-status-pill">OPEN</span></div><div style="font-size:12px;color:var(--text-dim);">Opened ${fmtShiftTime(open.openedAt)} · Opened by <strong>${esc(open.openedBy)}</strong></div></div><div style="font-weight:800;font-size:22px;">${PESO(live.expected)}</div></div><div class="stat-grid" style="margin-top:14px;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));"><div><div class="slabel">Opening</div><div style="font-weight:700;">${PESO(open.openingCash)}</div></div><div><div class="slabel">Cash Sales</div><div style="font-weight:700;">${PESO(live.cashSales)}</div></div><div><div class="slabel">Orders</div><div style="font-weight:700;">${live.transactionCount}</div></div><div><div class="slabel">Cups Sold</div><div style="font-weight:700;">${live.cupsSold}</div></div><div><div class="slabel">Cash In / Out</div><div style="font-weight:700;">+${PESO(live.cashIn)} / −${PESO(live.cashOut)}</div></div><div><div class="slabel">Cash Expenses</div><div style="font-weight:700;">${PESO(live.expenses)}</div></div><div><div class="slabel">Expected Drawer</div><div style="font-weight:800;">${PESO(live.expected)}</div></div></div></div>`:`<div class="card" style="padding:18px 20px;margin-bottom:16px;"><span class="shift-status-pill none">NO OPEN SHIFT</span><div style="margin-top:8px;font-size:13px;color:var(--text-dim);">${dateKey===businessDayKey()?'Open a shift before taking orders or recording drawer activity.':'No open shift for this business day.'}</div></div>`}
     <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Shift</th><th>Status</th><th>Opened By</th><th>Opened</th><th>Closed</th><th class="num">Orders</th><th class="num">Cups</th><th class="num">Opening</th><th class="num">Expected</th><th class="num">Actual</th><th class="num">Variance</th>${isSuperuser()?'<th>Action</th>':''}</tr></thead><tbody>${rows.length?rows.map(s=>{const ss=shiftFinancialSummary(s);const orderCount=ss.transactionCount;const cups=ss.cupsSold;return `<tr><td><b>${esc(s.shiftName)}</b><div style="font-size:11px;color:var(--text-dim);">#${s.shiftNumber}</div></td><td><span class="shift-status-pill ${s.status==='Closed'?'closed':''}">${s.status.toUpperCase()}</span></td><td>${esc(s.openedBy||'—')}</td><td>${fmtShiftTime(s.openedAt)}</td><td>${fmtShiftTime(s.closedAt)}</td><td class="num">${orderCount||0}</td><td class="num">${cups||0}</td><td class="num">${PESO(s.openingCash)}</td><td class="num">${s.status==='Open'&&ss?PESO(ss.expected):(s.expectedCash==null?'—':PESO(s.expectedCash))}</td><td class="num">${s.actualCashCounted==null?'—':PESO(s.actualCashCounted)}</td><td class="num" style="${s.variance!=null&&Math.abs(s.variance)>=.005?'color:var(--rust);font-weight:700;':''}">${s.variance==null?'—':PESO(s.variance)}</td>${isSuperuser()?`<td>${s.status==='Closed'?`<button type="button" class="btn btn-secondary" data-reopen-shift="${escAttr(s.id)}">Reopen Shift</button>`:'—'}</td>`:''}</tr>`}).join(''):`<tr><td colspan="${isSuperuser()?12:11}"><div class="empty-state">No shifts recorded for this day.</div></td></tr>`}</tbody></table></div>`;
   el.querySelectorAll('[data-reopen-shift]').forEach(b=>b.onclick=()=>reopenShift(b.dataset.reopenShift));
   const action=document.getElementById('shift-main-action'); if(action) action.onclick=()=>open?openCloseShiftModal(open):openShiftModal();
-  document.getElementById('shift-prev').onclick=()=>{shiftsFilterDate=shiftCalendarDate(dateKey,-1);renderShiftsPage();};
-  document.getElementById('shift-next').onclick=()=>{const n=shiftCalendarDate(dateKey,1);if(n<=businessDayKey()){shiftsFilterDate=n;renderShiftsPage();}};
-  document.getElementById('shift-today').onclick=()=>{shiftsFilterDate=businessDayKey();renderShiftsPage();};
-  document.getElementById('shift-date').onchange=e=>{const d=e.target.value||businessDayKey();shiftsFilterDate=d>businessDayKey()?businessDayKey():d;renderShiftsPage();};
+  document.getElementById('shift-prev')?.addEventListener('click',()=>{shiftsFilterDate=shiftCalendarDate(dateKey,-1);renderShiftsPage();});
+  document.getElementById('shift-next')?.addEventListener('click',()=>{const n=shiftCalendarDate(dateKey,1);if(n<=businessDayKey()){shiftsFilterDate=n;renderShiftsPage();}});
+  document.getElementById('shift-today')?.addEventListener('click',()=>{shiftsFilterDate=businessDayKey();renderShiftsPage();});
+  document.getElementById('shift-date')?.addEventListener('change',e=>{const d=e.target.value||businessDayKey();shiftsFilterDate=d>businessDayKey()?businessDayKey():d;renderShiftsPage();});
 }
 
 function mapExpenseRow(row){
@@ -2147,11 +2149,14 @@ function shiftDateKey(dateKey, delta){
 }
 
 function renderOrdersPage(){
+  if(!isSuperuser()){
+    ordersFilter.mode='today';
+    ordersFilter.date=businessDayKey();
+  }
   const bar = document.getElementById('orders-filter');
   bar.innerHTML = `
     <button class="filter-btn ${ordersFilter.mode==='today'?'active':''}" data-mode="today">Today</button>
-    <button class="filter-btn ${ordersFilter.mode==='all'?'active':''}" data-mode="all">All</button>
-    <input type="date" id="orders-date-input" value="${ordersFilter.date}" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);">
+    ${isSuperuser()?`<button class="filter-btn ${ordersFilter.mode==='all'?'active':''}" data-mode="all">All</button><input type="date" id="orders-date-input" value="${ordersFilter.date}" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);">`:''}
     <select id="orders-status-select" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);">
       <option value="all">All statuses</option>
       <option value="New">New</option>
@@ -2160,17 +2165,16 @@ function renderOrdersPage(){
       <option value="Cancelled">Cancelled</option>
     </select>
     <select id="orders-source-select" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);"><option value="all">All sources</option><option value="Walk-in">Walk-in</option><option value="GrabFood">GrabFood</option></select>
-    <button class="filter-btn" id="orders-prev">‹ PREV</button>
-    <button class="filter-btn" id="orders-next" ${shiftDateKey(ordersFilter.date||todayStr(),1)<=todayStr()?'':'disabled'}>NEXT ›</button>
+    ${isSuperuser()?`<button class="filter-btn" id="orders-prev">‹ PREV</button><button class="filter-btn" id="orders-next" ${shiftDateKey(ordersFilter.date||todayStr(),1)<=todayStr()?'':'disabled'}>NEXT ›</button>`:''}
   `;
   bar.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{ ordersFilter.mode=b.dataset.mode; renderOrdersPage(); });
-  bar.querySelector('#orders-date-input').onchange = (e)=>{ ordersFilter.mode='date'; ordersFilter.date=e.target.value; renderOrdersPage(); };
+  bar.querySelector('#orders-date-input')?.addEventListener('change',(e)=>{ ordersFilter.mode='date'; ordersFilter.date=e.target.value; renderOrdersPage(); });
   bar.querySelector('#orders-status-select').value = ordersFilter.status;
   bar.querySelector('#orders-status-select').onchange = (e)=>{ ordersFilter.status=e.target.value; renderOrdersPage(); };
   bar.querySelector('#orders-source-select').value = ordersFilter.source||'all';
   bar.querySelector('#orders-source-select').onchange = (e)=>{ ordersFilter.source=e.target.value; renderOrdersPage(); };
-  bar.querySelector('#orders-prev').onclick = ()=>{ ordersFilter.mode='date'; ordersFilter.date=shiftDateKey(ordersFilter.date||todayStr(),-1); renderOrdersPage(); };
-  bar.querySelector('#orders-next').onclick = ()=>{ const n=shiftDateKey(ordersFilter.date||todayStr(),1); if(n<=businessDayKey()){ ordersFilter.mode='date'; ordersFilter.date=n; renderOrdersPage(); } };
+  bar.querySelector('#orders-prev')?.addEventListener('click',()=>{ ordersFilter.mode='date'; ordersFilter.date=shiftDateKey(ordersFilter.date||todayStr(),-1); renderOrdersPage(); });
+  bar.querySelector('#orders-next')?.addEventListener('click',()=>{ const n=shiftDateKey(ordersFilter.date||todayStr(),1); if(n<=businessDayKey()){ ordersFilter.mode='date'; ordersFilter.date=n; renderOrdersPage(); } });
 
   const rows = filteredOrders(ordersFilter);
   const table = document.getElementById('orders-table');
@@ -2335,6 +2339,7 @@ function filteredExpenses(filter){
 }
 function renderExpensesPage(){
   const el=document.getElementById('expenses-content');
+  if(!isSuperuser()) expensesFilter={mode:'today',date:businessDayKey(),start:businessDayKey(),end:businessDayKey()};
   const rows=filteredExpenses(expensesFilter);
   const activeRows=rows.filter(x=>x.status!=='Voided');
   const total=activeRows.reduce((s,x)=>s+Number(x.amount||0),0);
@@ -2344,18 +2349,19 @@ function renderExpensesPage(){
   const cashOut=activeMoves.filter(x=>x.type==='Out').reduce((s,x)=>s+Number(x.amount||0),0);
   el.innerHTML=`
     <div class="page-title"><div><h1>Expenses</h1><div class="psub">Expenses and cash drawer movements.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-secondary" id="add-cash-movement">+ Cash In / Out</button><button class="btn btn-primary" id="add-expense-btn">+ Add Expense</button></div></div>
-    <div class="filter-bar"><button class="filter-btn ${expensesFilter.mode==='today'?'active':''}" data-em="today">Today</button><button class="filter-btn ${expensesFilter.mode==='all'?'active':''}" data-em="all">All</button><input type="date" id="expense-date-input" value="${expensesFilter.mode==='date'?expensesFilter.date:todayStr()}"><button class="filter-btn" id="expenses-prev">‹ PREV</button><button class="filter-btn" id="expenses-next" ${shiftDateKey(expensesFilter.mode==='date'?expensesFilter.date:todayStr(),1)<=todayStr()?'':'disabled'}>NEXT ›</button></div>
+    <div class="filter-bar"><button class="filter-btn ${expensesFilter.mode==='today'?'active':''}" data-em="today">Today</button>${isSuperuser()?`<button class="filter-btn ${expensesFilter.mode==='all'?'active':''}" data-em="all">All</button><input type="date" id="expense-date-input" value="${expensesFilter.mode==='date'?expensesFilter.date:todayStr()}"><button class="filter-btn" id="expenses-prev">‹ PREV</button><button class="filter-btn" id="expenses-next" ${shiftDateKey(expensesFilter.mode==='date'?expensesFilter.date:todayStr(),1)<=todayStr()?'':'disabled'}>NEXT ›</button>`:`<span style="font-size:12px;color:var(--text-dim);">Current business day only</span>`}</div>
     <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));"><div class="stat-card accent"><div class="slabel">Total Expenses</div><div class="sval">${PESO(total)}</div></div><div class="stat-card"><div class="slabel">Cash In</div><div class="sval" style="font-size:22px;">${PESO(cashIn)}</div></div><div class="stat-card"><div class="slabel">Cash Out</div><div class="sval" style="font-size:22px;color:var(--rust);">${PESO(cashOut)}</div></div><div class="stat-card"><div class="slabel">Expense Entries</div><div class="sval" style="font-size:22px;">${activeRows.length}</div></div></div>
-    <div class="card" style="padding:18px 20px;margin-bottom:16px;overflow-x:auto;"><div class="section-title">Cash Drawer Movements</div><table><thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Reason</th><th>Cashier</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>${moves.length?moves.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td><b>${esc(x.type)}</b></td><td>${esc(x.reason)}</td><td>${esc(x.cashier)}</td><td class="num">${PESO(x.amount)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isStaffLockedDate(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<button class="icon-btn danger" data-void-cash="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No cash drawer movements.</div></td></tr>'}</tbody></table></div>
+    <div class="card" style="padding:18px 20px;margin-bottom:16px;overflow-x:auto;"><div class="section-title">Cash Drawer Movements</div><table><thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Reason</th><th>Cashier</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>${moves.length?moves.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td><b>${esc(x.type)}</b></td><td>${esc(x.reason)}</td><td>${esc(x.cashier)}</td><td class="num">${PESO(x.amount)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':isSuperuser()?'<button class="icon-btn danger" data-void-cash="'+x.id+'">Void</button>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No cash drawer movements.</div></td></tr>'}</tbody></table></div>
     <div class="card" style="overflow-x:auto;"><table><thead><tr><th>Date</th><th>Time</th><th>Note</th><th class="num">Amount</th><th>Cashier</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td>${x.date}</td><td>${x.time}</td><td>${esc(x.note)}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.cashier)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':(isStaffLockedDate(x.date)&&!isSuperuser())?'<span class="badge-inactive">LOCKED</span>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td><td>${x.status==='Voided'?esc(x.voidReason||''):(isStaffLockedDate(x.date)&&!isSuperuser())?'<span style="font-size:11px;color:var(--text-dim);">Locked</span>':'<button class="icon-btn danger" data-del-exp="'+x.id+'">Void</button>'}</td></tr>`).join(''):'<tr><td colspan="7"><div class="empty-state">No expenses logged for this period.</div></td></tr>'}</tbody></table></div>${isSuperuser()?`<div class="card" style="overflow-x:auto;margin-top:16px;"><div class="section-title" style="padding:16px 18px 0;">Owner / Operational Expenses</div><div style="padding:0 18px 14px;color:var(--text-dim);font-size:12px;">For rent, supplies, equipment, utilities, repairs, and other owner-entered business costs. These are separate from drawer expenses. They appear in owner financial summaries but do not change sales or cash reconciliation.</div><table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Payment Method</th><th class="num">Amount</th><th>Entered By</th><th>Status</th><th></th></tr></thead><tbody>${OWNER_EXPENSES.filter(x=>matchesPeriod(x.date,expensesFilter)).sort((a,b)=>(a.date<b.date?1:-1)).map(x=>`<tr><td>${x.date}</td><td>${esc(x.category)}</td><td>${esc(x.description)}</td><td>${esc(x.paymentMethod||'Cash')}</td><td class="num">${PESO(x.amount)}</td><td>${esc(x.enteredBy)}</td><td>${x.status==='Voided'?'<span class="badge-inactive">VOIDED</span>':'<span style="font-size:11px;font-weight:800;color:#287a45;">ACTIVE</span>'}</td><td>${x.status==='Voided'?esc(x.voidReason||''):'<button class="icon-btn danger" data-void-owner-exp="'+x.id+'">Void</button>'}</td></tr>`).join('')||'<tr><td colspan="8"><div class="empty-state">No owner / operational expenses recorded for this period.</div></td></tr>'}</tbody></table></div>`:''}`;
+  if(!isSuperuser()) el.querySelectorAll('[data-del-exp],[data-void-cash]').forEach(button=>{const label=document.createElement('span');label.textContent='ACTIVE';label.style.cssText='font-size:11px;font-weight:800;color:#287a45;';button.replaceWith(label);});
   el.querySelectorAll('[data-em]').forEach(b=>b.onclick=()=>{expensesFilter.mode=b.dataset.em;renderExpensesPage();});
-  el.querySelector('#expense-date-input').onchange=e=>{expensesFilter.mode='date';expensesFilter.date=e.target.value;renderExpensesPage();};
-  el.querySelector('#expenses-prev').onclick=()=>{const current=expensesFilter.mode==='date'?expensesFilter.date:todayStr();expensesFilter.mode='date';expensesFilter.date=shiftDateKey(current,-1);renderExpensesPage();};
-  el.querySelector('#expenses-next').onclick=()=>{const current=expensesFilter.mode==='date'?expensesFilter.date:todayStr();const n=shiftDateKey(current,1);if(n<=businessDayKey()){expensesFilter.mode='date';expensesFilter.date=n;renderExpensesPage();}};
+  el.querySelector('#expense-date-input')?.addEventListener('change',e=>{expensesFilter.mode='date';expensesFilter.date=e.target.value;renderExpensesPage();});
+  el.querySelector('#expenses-prev')?.addEventListener('click',()=>{const current=expensesFilter.mode==='date'?expensesFilter.date:todayStr();expensesFilter.mode='date';expensesFilter.date=shiftDateKey(current,-1);renderExpensesPage();});
+  el.querySelector('#expenses-next')?.addEventListener('click',()=>{const current=expensesFilter.mode==='date'?expensesFilter.date:todayStr();const n=shiftDateKey(current,1);if(n<=businessDayKey()){expensesFilter.mode='date';expensesFilter.date=n;renderExpensesPage();}});
   el.querySelector('#add-expense-btn').onclick=()=>{if(canCreateEntryForDate(businessDayKey())&&requireOpenShift(businessDayKey()))openAddExpenseModal();};
   if(isSuperuser()){ const b=document.createElement('button'); b.className='btn btn-secondary'; b.textContent='+ Owner / Operational Expense'; b.onclick=openOwnerExpenseModal; el.querySelector('.page-title > div:last-child').appendChild(b); }
   el.querySelector('#add-cash-movement').onclick=()=>{if(requireOpenShift(businessDayKey()))openCashMovementModal();};
-  el.querySelectorAll('[data-del-exp]').forEach(b=>b.onclick=async()=>{const x=EXPENSES.find(e=>e.id===b.dataset.delExp);if(!x)return;if(!isSuperuser() && !canCreateEntryForDate(x.date))return;const reason=prompt('Reason for voiding this expense:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}const prev={status:x.status,voidedAt:x.voidedAt,voidedBy:x.voidedBy,voidReason:x.voidReason};x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();try{await saveExpenseRecord(x);await writeAudit('void_expense','expense',x.id,reason.trim(),{amount:x.amount,note:x.note,date:x.date});renderExpensesPage();toast('Expense voided — original record preserved');}catch(e){Object.assign(x,prev);toast('Expense was NOT voided: '+(e?.message||'database error'));}});
+  el.querySelectorAll('[data-del-exp]').forEach(b=>b.onclick=async()=>{if(!isSuperuser()){toast('Only a superuser can void an expense.');return;}const x=EXPENSES.find(e=>e.id===b.dataset.delExp);if(!x)return;const reason=prompt('Reason for voiding this expense:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}const prev={status:x.status,voidedAt:x.voidedAt,voidedBy:x.voidedBy,voidReason:x.voidReason};x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();try{await saveExpenseRecord(x);await writeAudit('void_expense','expense',x.id,reason.trim(),{amount:x.amount,note:x.note,date:x.date});renderExpensesPage();toast('Expense voided — original record preserved');}catch(e){Object.assign(x,prev);toast('Expense was NOT voided: '+(e?.message||'database error'));}});
   el.querySelectorAll('[data-void-owner-exp]').forEach(b=>b.onclick=async()=>{
     if(!isSuperuser()) return;
     const x=OWNER_EXPENSES.find(e=>e.id===b.dataset.voidOwnerExp); if(!x||x.status==='Voided') return;
@@ -2366,7 +2372,7 @@ function renderExpensesPage(){
     try{ await saveOwnerExpenseRecord(x); await writeAudit('void_owner_expense','owner_expense',x.id,reason.trim(),{amount:x.amount,category:x.category,paymentMethod:x.paymentMethod,date:x.date}); renderExpensesPage(); toast('Owner / operational expense voided — original record preserved'); }
     catch(e){ Object.assign(x,prev); toast('Owner expense was NOT voided: '+(e?.message||'database error')); }
   });
-  el.querySelectorAll('[data-void-cash]').forEach(b=>b.onclick=async()=>{const x=CASH_MOVEMENTS.find(m=>m.id===b.dataset.voidCash);if(!x||x.status==='Voided')return;if(!isSuperuser() && !canCreateEntryForDate(x.date))return;const reason=prompt('Reason for voiding this cash movement:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}const prev={status:x.status,voidedAt:x.voidedAt,voidedBy:x.voidedBy,voidReason:x.voidReason};x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();try{await saveCashMovementRecord(x);await writeAudit('void_cash_movement','cash_movement',x.id,reason.trim(),{amount:x.amount,type:x.type,date:x.date});renderExpensesPage();toast('Cash movement voided — original record preserved');}catch(e){Object.assign(x,prev);toast('Cash movement was NOT voided: '+(e?.message||'database error'));}});
+  el.querySelectorAll('[data-void-cash]').forEach(b=>b.onclick=async()=>{if(!isSuperuser()){toast('Only a superuser can void a cash movement.');return;}const x=CASH_MOVEMENTS.find(m=>m.id===b.dataset.voidCash);if(!x||x.status==='Voided')return;const reason=prompt('Reason for voiding this cash movement:');if(!reason||!reason.trim()){toast('Void reason is required.');return;}const prev={status:x.status,voidedAt:x.voidedAt,voidedBy:x.voidedBy,voidReason:x.voidReason};x.status='Voided';x.voidedAt=new Date().toISOString();x.voidedBy=currentActor();x.voidReason=reason.trim();try{await saveCashMovementRecord(x);await writeAudit('void_cash_movement','cash_movement',x.id,reason.trim(),{amount:x.amount,type:x.type,date:x.date});renderExpensesPage();toast('Cash movement voided — original record preserved');}catch(e){Object.assign(x,prev);toast('Cash movement was NOT voided: '+(e?.message||'database error'));}});
 }
 function openAddExpenseModal(){
   openModal(`
@@ -2493,7 +2499,32 @@ function computeMetrics(orders){
 /* ============================================================
    DASHBOARD
    ============================================================ */
+function renderStaffDashboard(){
+  const dateKey=businessDayKey();
+  const operationalOrders=ORDERS.filter(o=>o.date===dateKey&&!p1IsCancelled(o));
+  const preparing=operationalOrders.filter(o=>o.status==='Preparing'||o.status==='New');
+  const cups=operationalOrders.reduce((total,o)=>total+(o.items||[]).filter(item=>item.isDrink).reduce((n,item)=>n+(Number(item.qty)||0),0),0);
+  const currentShift=openShiftForDate(dateKey);
+  const live=currentShift?shiftFinancialSummary(currentShift):null;
+  const el=document.getElementById('dashboard-content');
+  el.innerHTML=`
+    <div class="page-title"><div><h1>Today at Hibi</h1><div class="psub">Business Day: ${dateKey} · Cashier workspace</div></div><span class="db-status-chip ${supabaseOk?'online':'offline'}" style="width:auto;padding:8px 11px;"><span class="db-status-dot"></span>${supabaseOk?'Database connected':'Database offline'}</span></div>
+    <div class="card ${currentShift?'shift-live':''}" style="padding:16px 18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div>${currentShift?`<span class="shift-status-pill">OPEN</span> <strong style="margin-left:6px;">${esc(currentShift.shiftName)}</strong><div style="font-size:12px;color:var(--text-dim);margin-top:5px;">Expected drawer: <strong>${PESO(live.expected)}</strong></div>`:`<span class="shift-status-pill none">NO OPEN SHIFT</span><div style="font-size:12px;color:var(--text-dim);margin-top:5px;">Open a shift before taking orders.</div>`}</div><button class="btn ${currentShift?'btn-secondary':'btn-primary'}" id="staff-shift-btn">${currentShift?'View / Close Shift':'Open Shift'}</button></div>
+    <div class="stat-grid">
+      <div class="stat-card accent"><div class="slabel">Preparing</div><div class="sval">${preparing.length}</div></div>
+      <div class="stat-card"><div class="slabel">Today's Orders</div><div class="sval">${operationalOrders.length}</div></div>
+      <div class="stat-card"><div class="slabel">Cups / Drinks</div><div class="sval">${cups}</div></div>
+      <div class="stat-card"><div class="slabel">Shift</div><div class="sval" style="font-size:22px;">${currentShift?'Open':'Closed'}</div></div>
+    </div>
+    <div class="card" style="padding:18px 20px;"><div class="section-title">Quick Actions</div><div style="display:flex;gap:10px;flex-wrap:wrap;"><button class="btn btn-primary" id="staff-new-order">New Order</button><button class="btn btn-secondary" id="staff-preparing">Preparing Orders${preparing.length?` (${preparing.length})`:''}</button><button class="btn btn-secondary" id="staff-expense">Add Expense</button><button class="btn btn-secondary" id="staff-shifts">Shift / Drawer</button></div></div>`;
+  document.getElementById('staff-shift-btn').onclick=()=>currentShift?goToPage('shifts'):openShiftModal();
+  document.getElementById('staff-new-order').onclick=()=>goToPage('pos');
+  document.getElementById('staff-preparing').onclick=()=>{ordersFilter.mode='today';ordersFilter.status='Preparing';ordersFilter.source='all';goToPage('orders');};
+  document.getElementById('staff-expense').onclick=()=>{if(requireOpenShift(dateKey))openAddExpenseModal();};
+  document.getElementById('staff-shifts').onclick=()=>goToPage('shifts');
+}
 function renderDashboard(){
+  if(!isSuperuser()){renderStaffDashboard();return;}
   const todaysOrders = ORDERS.filter(o=>o.date===businessDayKey());
   const m = computeMetrics(todaysOrders,p1Refunds(businessDayKey()));
   const todaysExpenses = EXPENSES.filter(x=>x.date===businessDayKey());
@@ -3556,8 +3587,8 @@ function renderSettings(){
         <div class="field"><label>Role</label><select id="u-role"><option value="user">User</option><option value="superuser">Superuser</option></select></div>
         <div class="field"><label>Account Status</label><select id="u-active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
       </div>
-      <div class="section-title" style="margin-top:12px;">Tab Access</div>
-      <div id="perm-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px;">${DEFAULT_PERMISSIONS.map(p=>`<label class="addon-row" style="border:1px solid var(--line);border-radius:9px;padding:8px;"><input type="checkbox" data-perm="${p}" checked> ${p==='pos'?'POS':p==='grab'?'GrabFood':p==='orders'?'Orders':p==='expenses'?'Expenses':p==='dashboard'?'Dashboard':p==='reports'?'Reports':p==='menu'?'Menu':p==='audit'?'Audit Log':'Settings'}</label>`).join('')}</div>
+      <div class="section-title" style="margin-top:12px;">Cashier Access</div>
+      <div id="perm-grid" class="permission-note" style="padding:10px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:12px;">Cashier access is fixed to Dashboard, POS (Walk-in and GrabFood), Orders, Expenses and Shifts.${DEFAULT_PERMISSIONS.map(p=>`<input type="checkbox" data-perm="${p}" ${STAFF_PERMISSIONS.has(p)?'checked':''} hidden>`).join('')}</div>
       <div id="u-reset-wrap" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
         <div class="section-title">Change User Password</div>
         <p class="permission-note">Set a new password for this account without knowing the current password.</p>
@@ -3694,7 +3725,7 @@ async function wireUserManagement(){
   let editingId='';
   const resetForm=()=>{
     editingId=''; form.authId.value=''; form.username.value=''; form.display.value=''; form.password.value=''; form.role.value='user'; form.active.value='true';
-    document.querySelectorAll('#perm-grid [data-perm]').forEach(x=>x.checked=true);
+    document.querySelectorAll('#perm-grid [data-perm]').forEach(x=>x.checked=STAFF_PERMISSIONS.has(x.dataset.perm));
     form.save.textContent='Create User'; form.cancel.style.display='none'; form.passwordWrap.style.display='block';
     document.getElementById('u-edit-password-note').style.display='none';
     form.resetWrap.style.display='none'; form.resetPassword.value=''; form.resetConfirm.value='';
@@ -3705,7 +3736,7 @@ async function wireUserManagement(){
       if(!r.ok) throw new Error(await r.text());
       const rows=await r.json();
       list.innerHTML=rows.map(u=>{
-        const access=DEFAULT_PERMISSIONS.filter(p=>u.permissions?.[p]).map(p=>p==='pos'?'POS':p==='grab'?'GrabFood':p==='orders'?'Orders':p==='expenses'?'Expenses':p==='dashboard'?'Dashboard':p==='reports'?'Reports':p==='menu'?'Menu':p==='audit'?'Audit Log':'Settings').join(', ') || 'None';
+        const access=u.role==='superuser'?'All access':'Dashboard, POS, Orders, Expenses, Shifts';
         return `<tr><td>${esc(u.username)}</td><td>${esc(u.display_name||'')}</td><td>${esc(u.role)}</td><td>${u.active?'Yes':'No'}</td><td><span style="font-size:11px;color:var(--text-dim);">${esc(access)}</span> <button class="icon-btn" type="button" data-edit-user="${escAttr(u.auth_user_id)}">Edit</button> <button class="icon-btn" type="button" data-reset-user="${escAttr(u.auth_user_id)}">Change Password</button></td></tr>`;
       }).join('')||'<tr><td colspan="5">No users yet.</td></tr>';
       list.querySelectorAll('[data-edit-user]').forEach(btn=>btn.onclick=()=>{
@@ -3748,7 +3779,7 @@ async function wireUserManagement(){
   form.save.onclick=async()=>{
     let auth_user_id=form.authId.value.trim(), username=form.username.value.trim().toLowerCase(), display_name=form.display.value.trim(), role=form.role.value, password=form.password.value, active=form.active.value==='true';
     if(!username){toast('Username is required.');return;}
-    const permissions={}; document.querySelectorAll('#perm-grid [data-perm]').forEach(x=>permissions[x.dataset.perm]=x.checked);
+    const permissions={}; DEFAULT_PERMISSIONS.forEach(p=>permissions[p]=STAFF_PERMISSIONS.has(p));
     const reason=requireActionReason(`${editingId?'updating':'creating'} user ${username}`); if(!reason)return;
     if(!editingId && !auth_user_id){
       if(!password || password.length<6){toast('For a new user, enter a password of at least 6 characters.');return;}
@@ -3785,7 +3816,7 @@ function escAttr(s){ return esc(s); }
    BOOT
    ============================================================ */
 </script>
-<script src="phase1.js?v=20260918-cancelled-fix"></script>
+<script src="phase1.js?v=20260919-cashier-limit"></script>
 <script>
 (async function boot(){
   if(typeof p1Load!=='function'){showLoginError('The Phase 1 application file could not load. Refresh or verify phase1.js was uploaded.');return;}

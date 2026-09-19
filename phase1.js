@@ -161,13 +161,24 @@ async function p1Status(id,status,reason=''){
  const res=await posApi('/rest/v1/rpc/hibi_order_status',{method:'POST',body:JSON.stringify({p_id:id,p_status:status,p_reason:reason})});
  const row=await res.json();const order=ORDERS.find(x=>x.id===id);if(order){order.status=row.status;order.completedAt=row.completed_at;}return row;
 }
-completeOrderFromList=async function(id){try{await p1Status(id,'Completed','Preparation completed');await renderOrdersPage();toast('Order completed');}catch(e){toast(e.message);}};
+completeOrderFromList=async function(id){
+ const o=ORDERS.find(x=>x.id===id);
+ if(!o)return;
+ if(!isSuperuser()&&(o.status!=='Preparing'||o.date!==businessDayKey()||isDateLocked(o.date))){toast('Cashiers can only complete current-day Preparing orders.');return;}
+ try{await p1Status(id,'Completed','Preparation completed');await renderOrdersPage();toast('Order completed');}catch(e){toast(e.message);}
+};
 const p1OpenOrderDetail=openOrderDetail;
 openOrderDetail=function(id){
  p1OpenOrderDetail(id);const o=ORDERS.find(x=>x.id===id);if(!o)return;
  const selector=document.getElementById('status-select');
- selector.innerHTML=['Preparing','Completed'].map(s=>`<option value="${s}" ${s===o.status?'selected':''}>${s}</option>`).join('');selector.disabled=o.status==='Cancelled'||isDateLocked(o.date)||(!isSuperuser()&&o.date!==businessDayKey());
- const save=document.getElementById('modal-save-status');save.disabled=selector.disabled;save.onclick=async()=>{const reason=requireActionReason('changing preparation status');if(!reason)return;save.disabled=true;try{await p1Status(id,selector.value,reason);closeModal();await renderOrdersPage();}catch(e){toast(e.message);save.disabled=false;}};
+ const staffCanComplete=!isSuperuser()&&o.status==='Preparing'&&o.date===businessDayKey()&&!isDateLocked(o.date);
+ const allowedStatuses=isSuperuser()?['Preparing','Completed']:(staffCanComplete?['Preparing','Completed']:[o.status]);
+ selector.innerHTML=allowedStatuses.map(s=>`<option value="${s}" ${s===o.status?'selected':''}>${s}</option>`).join('');
+ selector.disabled=isSuperuser()?(o.status==='Cancelled'||isDateLocked(o.date)):!staffCanComplete;
+ const save=document.getElementById('modal-save-status');save.disabled=selector.disabled;save.onclick=async()=>{
+  if(!isSuperuser()&&(!staffCanComplete||selector.value!=='Completed')){toast('Cashiers can only complete current-day Preparing orders.');return;}
+  const reason=requireActionReason('changing preparation status');if(!reason)return;save.disabled=true;try{await p1Status(id,selector.value,reason);closeModal();await renderOrdersPage();}catch(e){toast(e.message);save.disabled=false;}
+ };
  const body=document.querySelector('#modal-root .modal-body');body.insertAdjacentHTML('beforeend',`<p>Payment: <strong>${esc(o.paymentStatus||'Paid')}</strong></p>`);
  if(isSuperuser()&&o.paymentStatus!=='LegacyCancelled'&&o.paymentStatus!=='Refunded'){
  const button=document.createElement('button');button.className='btn btn-secondary';button.textContent='Refund / Cancel Order';button.onclick=()=>p1RefundModal(o);document.querySelector('#modal-root .modal-foot').prepend(button);
