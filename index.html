@@ -483,6 +483,20 @@ details[open]>:not(summary){animation:details-in var(--motion-normal) var(--moti
 @keyframes details-in{from{opacity:0;transform:translateY(-5px);}to{opacity:1;transform:translateY(0);}}
 .success-check{animation:success-pop 280ms var(--motion-ease) both;}
 @keyframes success-pop{0%{opacity:0;transform:scale(.72);}70%{transform:scale(1.06);}100%{opacity:1;transform:scale(1);}}
+.staff-quick-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;}
+.staff-quick-action{appearance:none;border:1px solid var(--line);background:linear-gradient(145deg,#fff,var(--cream-dim));border-radius:14px;padding:16px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;min-height:82px;transition:transform var(--motion-fast) var(--motion-ease),box-shadow var(--motion-fast) var(--motion-ease),border-color var(--motion-fast) var(--motion-ease);}
+.staff-quick-action:hover{transform:translateY(-2px);box-shadow:0 9px 22px rgba(59,56,31,.10);border-color:var(--caramel);}
+.staff-quick-action.primary{background:linear-gradient(145deg,var(--caramel),var(--caramel-dark));border-color:transparent;color:#fff;}
+.staff-quick-icon{width:42px;height:42px;border-radius:12px;background:rgba(184,118,62,.12);display:grid;place-items:center;flex:0 0 auto;font-size:11px;font-weight:900;letter-spacing:.4px;}
+.staff-quick-action.primary .staff-quick-icon{background:rgba(255,255,255,.18);}
+.staff-quick-copy strong{display:block;font-size:14px;line-height:1.2;}
+.staff-quick-copy small{display:block;margin-top:5px;color:var(--text-dim);font-size:11px;line-height:1.3;}
+.staff-quick-action.primary .staff-quick-copy small{color:rgba(255,255,255,.78);}
+.staff-preparing-card{margin-top:16px;overflow-x:auto;}
+.staff-preparing-head{padding:17px 20px 12px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.staff-preparing-count{min-width:28px;height:28px;padding:0 9px;border-radius:999px;background:var(--caramel);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:800;}
+@media(max-width:900px){.staff-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:520px){.staff-quick-grid{grid-template-columns:1fr;}.staff-quick-action{min-height:70px;}}
 @media(max-width:720px){.modal-overlay .modal{transform-origin:bottom center;}@keyframes modal-in{from{opacity:0;transform:translateY(22px);}to{opacity:1;transform:translateY(0);}}@keyframes modal-out{from{opacity:1;transform:translateY(0);}to{opacity:0;transform:translateY(18px);}}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;}}
 </style>
@@ -882,7 +896,7 @@ const supabaseClient = window.supabase?.createClient ? window.supabase.createCli
 let CURRENT_USER = null;
 let CURRENT_PROFILE = null;
 const DEFAULT_PERMISSIONS = ['pos','grab','orders','expenses','dashboard','reports','menu','audit','settings'];
-const STAFF_PERMISSIONS = new Set(['dashboard','pos','orders','expenses']);
+const STAFF_PERMISSIONS = new Set(['dashboard','pos','orders','expenses','reports']);
 function isSuperuser(){ return CURRENT_PROFILE?.role==='superuser'; }
 function can(permission){ return isSuperuser() || STAFF_PERMISSIONS.has(permission); }
 function applyPermissions(){
@@ -2102,15 +2116,11 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
     await writeAudit('create_order','order',order.id,'',{orderNumber:order.orderNumber,businessDate:order.date,actualEntryTimestamp:order.timestamp,lateEntry:!!order.lateEntry,loyaltyReward:!!loyaltyItemKey,loyaltyCharge:Number(loyaltyCharge)||0,total:order.total,source:order.source,paymentMethod:order.paymentMethod,status:order.status});
     CART=[];grabCode='';grabDiscountType='None';grabDiscountAmount=0;loyaltyRewardKey=null;renderCart();renderOrderNumPreview();
 
-    // Refresh the order list from Supabase after the save, then take staff directly
-    // to Orders so the new Preparing ticket is immediately visible.
+    // Refresh from Supabase, then return to the dashboard where the new
+    // Preparing ticket is already expanded in the live preparation list.
     try{ await loadPosOrders(); }catch(refreshErr){ console.warn('Order list refresh failed after save:',refreshErr); }
     closeModal();
-    ordersFilter.mode = order.date===businessDayKey() ? 'today' : 'date';
-    ordersFilter.date = order.date;
-    ordersFilter.status = 'all';
-    ordersFilter.source = 'all';
-    goToPage('orders');
+    goToPage('dashboard');
     toast('Order ' + order.orderNumber + ' is now Preparing');
   }catch(e){
     console.error('Order save failed:',e);
@@ -2121,8 +2131,8 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
 }
 
 function showOrderConfirmation(order){
-  openModal(`<div class="modal-body" style="text-align:center;padding-top:26px;"><div class="success-check">✓</div><div class="confirm-order-num">${esc(order.orderNumber)}</div><div style="color:var(--text-dim);font-size:13.5px;margin-bottom:16px;">${order.source==='GrabFood'?'GrabFood order saved — preparing':'Payment confirmed — order preparing'}${order.lateEntry?`<br><strong>Business Date: ${order.date} · Late Entry: Yes</strong><br><span style="font-size:12px;">Entered ${new Date(order.timestamp).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}</span>`:''}</div><div style="text-align:left;background:var(--cream-dim);border-radius:10px;padding:14px 16px;"><div class="sumrow"><span>Source</span><span>${esc(order.source||'Walk-in')}</span></div><div class="sumrow"><span>Order Total</span><span>${PESO(order.total)}</span></div>${order.discountAmount?`<div class="sumrow"><span>Discount</span><span>−${PESO(order.discountAmount)}</span></div>`:''}<div class="sumrow"><span>Payment</span><span>${esc(order.paymentMethod)}</span></div>${order.paymentMethod==='Cash'||order.paymentMethod==='Cash + GCash'?`<div class="sumrow"><span>Change</span><span>${PESO(order.changeGiven)}</span></div>`:''}</div></div><div class="modal-foot"><button class="btn btn-primary" id="modal-done" style="flex:1;">View Orders</button></div>`);
-  document.getElementById('modal-done').onclick=()=>{closeModal();goToPage('orders')};
+  openModal(`<div class="modal-body" style="text-align:center;padding-top:26px;"><div class="success-check">✓</div><div class="confirm-order-num">${esc(order.orderNumber)}</div><div style="color:var(--text-dim);font-size:13.5px;margin-bottom:16px;">${order.source==='GrabFood'?'GrabFood order saved — preparing':'Payment confirmed — order preparing'}${order.lateEntry?`<br><strong>Business Date: ${order.date} · Late Entry: Yes</strong><br><span style="font-size:12px;">Entered ${new Date(order.timestamp).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}</span>`:''}</div><div style="text-align:left;background:var(--cream-dim);border-radius:10px;padding:14px 16px;"><div class="sumrow"><span>Source</span><span>${esc(order.source||'Walk-in')}</span></div><div class="sumrow"><span>Order Total</span><span>${PESO(order.total)}</span></div>${order.discountAmount?`<div class="sumrow"><span>Discount</span><span>−${PESO(order.discountAmount)}</span></div>`:''}<div class="sumrow"><span>Payment</span><span>${esc(order.paymentMethod)}</span></div>${order.paymentMethod==='Cash'||order.paymentMethod==='Cash + GCash'?`<div class="sumrow"><span>Change</span><span>${PESO(order.changeGiven)}</span></div>`:''}</div></div><div class="modal-foot"><button class="btn btn-primary" id="modal-done" style="flex:1;">Back to Dashboard</button></div>`);
+  document.getElementById('modal-done').onclick=()=>{closeModal();goToPage('dashboard')};
 }
 
 /* ============================================================
@@ -2502,7 +2512,7 @@ function computeMetrics(orders){
 function renderStaffDashboard(){
   const dateKey=businessDayKey();
   const operationalOrders=ORDERS.filter(o=>o.date===dateKey&&!p1IsCancelled(o));
-  const preparing=operationalOrders.filter(o=>o.status==='Preparing'||o.status==='New');
+  const preparing=filteredOrders({mode:'today',status:'Preparing',source:'all'}).filter(o=>!p1IsCancelled(o));
   const cups=operationalOrders.reduce((total,o)=>total+(o.items||[]).filter(item=>item.isDrink).reduce((n,item)=>n+(Number(item.qty)||0),0),0);
   const currentShift=openShiftForDate(dateKey);
   const live=currentShift?shiftFinancialSummary(currentShift):null;
@@ -2516,12 +2526,38 @@ function renderStaffDashboard(){
       <div class="stat-card"><div class="slabel">Cups / Drinks</div><div class="sval">${cups}</div></div>
       <div class="stat-card"><div class="slabel">Shift</div><div class="sval" style="font-size:22px;">${currentShift?'Open':'Closed'}</div></div>
     </div>
-    <div class="card" style="padding:18px 20px;"><div class="section-title">Quick Actions</div><div style="display:flex;gap:10px;flex-wrap:wrap;"><button class="btn btn-primary" id="staff-new-order">New Order</button><button class="btn btn-secondary" id="staff-preparing">Preparing Orders${preparing.length?` (${preparing.length})`:''}</button><button class="btn btn-secondary" id="staff-expense">Add Expense</button><button class="btn btn-secondary" id="staff-shifts">Shift / Drawer</button></div></div>`;
+    <div class="card" style="padding:18px 20px;">
+      <div class="section-title">Quick Actions</div>
+      <div class="staff-quick-grid">
+        <button class="staff-quick-action primary" id="staff-new-order"><span class="staff-quick-icon">NEW</span><span class="staff-quick-copy"><strong>New Order</strong><small>Start a Walk-in or GrabFood order</small></span></button>
+        <button class="staff-quick-action" id="staff-expense"><span class="staff-quick-icon">CASH</span><span class="staff-quick-copy"><strong>Add Expense</strong><small>Record a current-shift expense</small></span></button>
+        <button class="staff-quick-action" id="staff-shifts"><span class="staff-quick-icon">SHIFT</span><span class="staff-quick-copy"><strong>Shift / Drawer</strong><small>${currentShift?'View or close the open shift':'Open today\'s cash drawer'}</small></span></button>
+        <button class="staff-quick-action" id="staff-report"><span class="staff-quick-icon">EOD</span><span class="staff-quick-copy"><strong>Daily Report</strong><small>Review and send reconciliation</small></span></button>
+      </div>
+    </div>
+    <div class="card staff-preparing-card">
+      <div class="staff-preparing-head"><div><div class="section-title" style="margin:0;">Preparing Orders</div><div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Newest orders appear first. Item details are expanded automatically.</div></div><span class="staff-preparing-count">${preparing.length}</span></div>
+      <table id="staff-preparing-table">
+        <thead><tr><th>Order #</th><th>Date</th><th>Time</th><th>Items</th><th>Payment</th><th class="num">Total</th><th>Status</th><th>Cashier</th><th></th></tr></thead>
+        <tbody>${preparing.length?preparing.map(o=>orderTableRows(o)).join(''):`<tr><td colspan="9"><div class="empty-state">No orders are waiting to be prepared.</div></td></tr>`}</tbody>
+      </table>
+    </div>`;
   document.getElementById('staff-shift-btn').onclick=()=>currentShift?goToPage('shifts'):openShiftModal();
   document.getElementById('staff-new-order').onclick=()=>goToPage('pos');
-  document.getElementById('staff-preparing').onclick=()=>{ordersFilter.mode='today';ordersFilter.status='Preparing';ordersFilter.source='all';goToPage('orders');};
   document.getElementById('staff-expense').onclick=()=>{if(requireOpenShift(dateKey))openAddExpenseModal();};
   document.getElementById('staff-shifts').onclick=()=>goToPage('shifts');
+  document.getElementById('staff-report').onclick=()=>goToPage('reports');
+  const table=document.getElementById('staff-preparing-table');
+  table.querySelectorAll('[data-toggle-order]').forEach(btn=>btn.onclick=(event)=>{
+    event.stopPropagation();
+    const detail=[...table.querySelectorAll('[data-order-detail]')].find(row=>row.dataset.orderDetail===btn.dataset.toggleOrder);
+    if(!detail)return;
+    detail.hidden=!detail.hidden;
+    btn.textContent=detail.hidden?'Expand':'Collapse';
+  });
+  table.querySelectorAll('[data-order-summary]').forEach(row=>row.onclick=(event)=>{if(!event.target.closest('button'))row.querySelector('[data-toggle-order]')?.click();});
+  table.querySelectorAll('[data-view]').forEach(button=>button.onclick=(event)=>{event.stopPropagation();openOrderDetail(button.dataset.view);});
+  table.querySelectorAll('[data-complete-order]').forEach(button=>button.onclick=(event)=>{event.stopPropagation();completeOrderFromList(button.dataset.completeOrder);});
 }
 function renderDashboard(){
   if(!isSuperuser()){renderStaffDashboard();return;}
@@ -2753,7 +2789,11 @@ function openingCashForDate(dateStr){
 let reportsView = 'daily';
 function renderReports(){
   if(!can('reports')) return;
-  if(!isSuperuser()) reportsView='daily';
+  if(!isSuperuser()){
+    reportsView='daily';
+    const today=businessDayKey();
+    reportsFilter={mode:'today',date:today,start:today,end:today};
+  }
   const monthly=reportsView==='monthly';
   document.querySelectorAll('#report-view-switcher [data-report-view]').forEach(button=>{
     const selected=button.dataset.reportView===reportsView;
@@ -2793,7 +2833,7 @@ function renderReports(){
       <button class="btn btn-secondary" id="export-report-btn">⬇ Export Excel</button>
     </div>
     <div class="filter-bar">
-      <button class="filter-btn ${reportsFilter.mode==='today'?'active':''}" data-rm="today">Today</button>
+      ${isSuperuser()?`<button class="filter-btn ${reportsFilter.mode==='today'?'active':''}" data-rm="today">Today</button>
       <button class="filter-btn ${reportsFilter.mode==='month'?'active':''}" data-rm="month">This Month</button>
       <span style="color:var(--text-dim);font-size:12px;">or pick date:</span>
       <input type="date" id="report-date" value="${reportsFilter.mode==='date'?reportsFilter.date:todayStr()}">
@@ -2803,7 +2843,7 @@ function renderReports(){
       <input type="date" id="report-end" value="${reportsFilter.end}">
       <button class="filter-btn" id="report-apply-range">Apply Range</button>
       <button class="filter-btn" id="reports-prev">‹ PREV</button>
-      <button class="filter-btn" id="reports-next" ${shiftDateKey(reportsFilter.mode==='date'?reportsFilter.date:todayStr(),1)<=todayStr()?'':'disabled'}>NEXT ›</button>
+      <button class="filter-btn" id="reports-next" ${shiftDateKey(reportsFilter.mode==='date'?reportsFilter.date:todayStr(),1)<=todayStr()?'':'disabled'}>NEXT ›</button>`:`<button class="filter-btn active" type="button">Today · ${esc(businessDayKey())}</button><span style="color:var(--text-dim);font-size:12px;">Current business day reconciliation</span>`}
     </div>
 
     <div class="stat-grid">
@@ -2915,12 +2955,12 @@ function renderReports(){
 
   // wire filter bar
   el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ reportsFilter.mode=b.dataset.rm; renderReports(); });
-  el.querySelector('#report-date').onchange = (e)=>{ reportsFilter.mode='date'; reportsFilter.date=e.target.value; renderReports(); };
-  el.querySelector('#report-start').onchange = (e)=>{ reportsFilter.start=e.target.value; };
-  el.querySelector('#report-end').onchange = (e)=>{ reportsFilter.end=e.target.value; };
-  el.querySelector('#reports-prev').onclick=()=>{const current=reportsFilter.mode==='date'?reportsFilter.date:todayStr();reportsFilter.mode='date';reportsFilter.date=shiftDateKey(current,-1);renderReports();};
-  el.querySelector('#reports-next').onclick=()=>{const current=reportsFilter.mode==='date'?reportsFilter.date:todayStr();const n=shiftDateKey(current,1);if(n<=businessDayKey()){reportsFilter.mode='date';reportsFilter.date=n;renderReports();}};
-  el.querySelector('#report-apply-range').onclick = ()=>{ reportsFilter.mode='range'; renderReports(); };
+  el.querySelector('#report-date')?.addEventListener('change',(e)=>{ reportsFilter.mode='date'; reportsFilter.date=e.target.value; renderReports(); });
+  el.querySelector('#report-start')?.addEventListener('change',(e)=>{ reportsFilter.start=e.target.value; });
+  el.querySelector('#report-end')?.addEventListener('change',(e)=>{ reportsFilter.end=e.target.value; });
+  el.querySelector('#reports-prev')?.addEventListener('click',()=>{const current=reportsFilter.mode==='date'?reportsFilter.date:todayStr();reportsFilter.mode='date';reportsFilter.date=shiftDateKey(current,-1);renderReports();});
+  el.querySelector('#reports-next')?.addEventListener('click',()=>{const current=reportsFilter.mode==='date'?reportsFilter.date:todayStr();const n=shiftDateKey(current,1);if(n<=businessDayKey()){reportsFilter.mode='date';reportsFilter.date=n;renderReports();}});
+  el.querySelector('#report-apply-range')?.addEventListener('click',()=>{ reportsFilter.mode='range'; renderReports(); });
   el.querySelector('#export-report-btn').onclick = ()=> exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, eod);
   const unlockBtn=el.querySelector('#eod-unlock');
   if(unlockBtn) unlockBtn.onclick=async()=>{
@@ -3588,7 +3628,7 @@ function renderSettings(){
         <div class="field"><label>Account Status</label><select id="u-active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
       </div>
       <div class="section-title" style="margin-top:12px;">Cashier Access</div>
-      <div id="perm-grid" class="permission-note" style="padding:10px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:12px;">Cashier access is fixed to Dashboard, POS (Walk-in and GrabFood), Orders, Expenses and Shifts.${DEFAULT_PERMISSIONS.map(p=>`<input type="checkbox" data-perm="${p}" ${STAFF_PERMISSIONS.has(p)?'checked':''} hidden>`).join('')}</div>
+      <div id="perm-grid" class="permission-note" style="padding:10px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:12px;">Cashier access is fixed to Dashboard, POS (Walk-in and GrabFood), Orders, Expenses, Shifts and Daily Reports/Reconciliation.${DEFAULT_PERMISSIONS.map(p=>`<input type="checkbox" data-perm="${p}" ${STAFF_PERMISSIONS.has(p)?'checked':''} hidden>`).join('')}</div>
       <div id="u-reset-wrap" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
         <div class="section-title">Change User Password</div>
         <p class="permission-note">Set a new password for this account without knowing the current password.</p>
@@ -3816,7 +3856,7 @@ function escAttr(s){ return esc(s); }
    BOOT
    ============================================================ */
 </script>
-<script src="phase1.js?v=20260919-cashier-limit"></script>
+<script src="phase1.js?v=20260919-cashier-dashboard"></script>
 <script>
 (async function boot(){
   if(typeof p1Load!=='function'){showLoginError('The Phase 1 application file could not load. Refresh or verify phase1.js was uploaded.');return;}

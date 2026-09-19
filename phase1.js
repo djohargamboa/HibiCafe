@@ -165,7 +165,7 @@ completeOrderFromList=async function(id){
  const o=ORDERS.find(x=>x.id===id);
  if(!o)return;
  if(!isSuperuser()&&(o.status!=='Preparing'||o.date!==businessDayKey()||isDateLocked(o.date))){toast('Cashiers can only complete current-day Preparing orders.');return;}
- try{await p1Status(id,'Completed','Preparation completed');await renderOrdersPage();toast('Order completed');}catch(e){toast(e.message);}
+ try{await p1Status(id,'Completed','Preparation completed');const active=document.querySelector('nav.tabs button.active')?.dataset.page;if(active==='dashboard')await renderDashboard();else await renderOrdersPage();toast('Order completed');}catch(e){toast(e.message);}
 };
 const p1OpenOrderDetail=openOrderDetail;
 openOrderDetail=function(id){
@@ -224,7 +224,7 @@ async function p1Submit(payload){
 async function p1RecoverOrder(){
  const pending=JSON.parse(sessionStorage.getItem(p1PendingKey())||'null');if(!pending)return;
  const button=document.getElementById('p1-pending-retry');if(button)button.disabled=true;
- try{const res=await posApi('/rest/v1/rpc/hibi_create_order_v2',{method:'POST',body:JSON.stringify({p_request_id:pending.id,p_payload:pending.payload})});const row=await res.json();if(!row?.id)throw Error('No order confirmation');sessionStorage.removeItem(p1PendingKey());CART=[];renderCart();await p1Load(row.order_date,row.order_date,true);ordersFilter.mode='date';ordersFilter.date=row.order_date;goToPage('orders');toast('Order confirmed: '+row.order_code);}
+ try{const res=await posApi('/rest/v1/rpc/hibi_create_order_v2',{method:'POST',body:JSON.stringify({p_request_id:pending.id,p_payload:pending.payload})});const row=await res.json();if(!row?.id)throw Error('No order confirmation');sessionStorage.removeItem(p1PendingKey());CART=[];renderCart();await p1Load(row.order_date,row.order_date,true);goToPage('dashboard');toast('Order confirmed: '+row.order_code);}
  catch(e){toast(e.message);}finally{if(button)button.disabled=false;}
 }
 const p1RenderPOS=renderPOS;
@@ -283,7 +283,7 @@ p1RecoverOrder=async function(){
  const button=document.getElementById('p1-pending-retry');if(button)button.disabled=true;
  try{const result=await p1Resolve(pending.id);sessionStorage.removeItem(p1PendingKey());
   if(result.state==='saved'){
-   const row=result.result;CART=[];renderCart();await p1Load(row.order_date,row.order_date,true);ordersFilter.mode='date';ordersFilter.date=row.order_date;goToPage('orders');toast('Order was already saved: '+row.order_code);
+   const row=result.result;CART=[];renderCart();await p1Load(row.order_date,row.order_date,true);goToPage('dashboard');toast('Order was already saved: '+row.order_code);
   }else{toast('The order was not saved. Check the cart and submit again.');}
   renderPOS();
  }catch(e){toast(e.message);}finally{if(button)button.disabled=false;}
