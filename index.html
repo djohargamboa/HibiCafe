@@ -2919,6 +2919,17 @@ function renderMonthlyPerformance(){
           <th class="num">Cash</th><th class="num">GCash</th><th class="num">Grab</th><th class="num">Expenses</th><th class="num">OPEX</th>
         </tr></thead>
         <tbody>
+          <tr class="total-row" style="position:sticky;top:0;z-index:1;background:var(--card);">
+            <td><strong>MONTH TOTAL</strong></td>
+            <td class="num">${moneyFmt(netAfterAllExpenses)}</td>
+            <td class="num">${m.cups||0}</td>
+            <td class="num">${moneyFmt(m.totalSales)}</td>
+            <td class="num">${moneyFmt(performanceCash)}</td>
+            <td class="num">${moneyFmt(performanceGcash)}</td>
+            <td class="num">${moneyFmt(performanceGrab)}</td>
+            <td class="num">${moneyFmt(expenseTotal)}</td>
+            <td class="num">${moneyFmt(opexTotal)}</td>
+          </tr>
           ${dailyRows.map(r=>{
             const hasActivity=r.dm.totalTx||r.dm.refundTotal||r.opex||r.exp||r.opening||r.cashIn||r.cashOut||r.actual!=null;
             return `<tr style="${hasActivity?'':'opacity:.52;'}">
