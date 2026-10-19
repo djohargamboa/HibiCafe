@@ -2672,20 +2672,20 @@ function fundTransactionLabel(x){
 function renderAvailableFunds(){
   if(!isSuperuser()) return '';
   const b=fundBalances(), active=FUND_TRANSACTIONS.filter(x=>x.status==='Active'), latest=active.slice(0,6);
-  const hasOpening=['Cash','GCash','Bank'].every(account=>active.some(x=>x.type==='Opening Balance'&&x.account===account));
+  const hasCashAnchor=active.some(x=>x.type==='Opening Balance'&&x.account==='Cash')||SHIFTS.some(s=>s.status==='Closed'&&s.actualCashCounted!=null&&s.closedAt);
   return `
     <section class="card" style="padding:18px 20px;margin-bottom:16px;border-color:#D7DCCB;" aria-label="Available funds">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
-        <div><div class="section-title" style="margin-bottom:4px;">Available Funds</div><div style="font-size:12px;color:var(--text-dim);">Superuser only · Calculated from POS records and recorded account movements</div></div>
+        <div><div class="section-title" style="margin-bottom:4px;">Available Funds</div><div style="font-size:12px;color:var(--text-dim);">Superuser only · Cash uses actual-count logic; GCash and Bank follow cumulative Monthly Reports sales less tagged OPEX</div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn btn-secondary" id="fund-refresh-btn" style="padding:9px 12px;">Refresh</button><button type="button" class="btn btn-primary" id="fund-add-btn" style="padding:9px 12px;">+ Record Movement</button></div>
       </div>
       <div class="stat-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:12px;">
         <div class="stat-card"><div class="slabel">Cash on Hand</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.Cash)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">${SHIFTS.some(s=>s.status==='Closed'&&s.actualCashCounted!=null)?'Latest actual count + later records':'Based on recorded cash activity'}</div></div>
-        <div class="stat-card"><div class="slabel">GCash ${FUND_TRANSACTIONS.some(x=>x.status==='Active'&&x.type==='Opening Balance'&&x.account==='GCash')?'Balance':'Net Recorded Activity'}</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.GCash)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">${FUND_TRANSACTIONS.some(x=>x.status==='Active'&&x.type==='Opening Balance'&&x.account==='GCash')?'Includes opening balance':'Opening balance not recorded'}</div></div>
-        <div class="stat-card"><div class="slabel">Bank ${FUND_TRANSACTIONS.some(x=>x.status==='Active'&&x.type==='Opening Balance'&&x.account==='Bank')?'Balance':'Net Recorded Activity'}</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.Bank)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">${FUND_TRANSACTIONS.some(x=>x.status==='Active'&&x.type==='Opening Balance'&&x.account==='Bank')?'Actual settlements recorded':'Unrecorded payouts excluded'}</div></div>
+        <div class="stat-card"><div class="slabel">GCash · Net Sales Less OPEX</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.GCash)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">All GCash sales less non-voided GCash OPEX</div></div>
+        <div class="stat-card"><div class="slabel">Bank · GrabFood Net Proceeds</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.Bank)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">GrabFood sales less 25% fee and non-voided Bank Transfer OPEX</div></div>
       </div>
-      ${!hasOpening?'<div style="padding:10px 12px;border-radius:9px;background:#FFF5E9;color:#8A5528;font-size:12px;margin-bottom:12px;">Setup required: record the current actual opening balance for Cash, GCash, and Bank. Until then, uninitialized accounts show ₱0.00.</div>':''}
-      <div style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:12px;">Cash and GCash use the POS records already entered. Bank counts actual recorded settlements and bank-paid expenses; GrabFood sales are not treated as bank deposits until settled. Record an opening balance if you want the account total to include money held before POS records began. Use manual movements only for activity not already captured elsewhere, to avoid double-counting.</div>
+      ${!hasCashAnchor?'<div style="padding:10px 12px;border-radius:9px;background:#FFF5E9;color:#8A5528;font-size:12px;margin-bottom:12px;">Cash has no actual count or opening balance anchor yet; the cash figure is based on recorded activity only.</div>':''}
+      <div style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:12px;">Cash remains based on the latest actual cash count plus later cash activity. GCash is cumulative net GCash sales (including split payments) less non-voided GCash OPEX. Bank is cumulative net GrabFood sales less the 25% fee and non-voided Bank Transfer OPEX. Opening balances, settlements, and manual movements are not added to GCash or Bank totals, to avoid double-counting sales.</div>
       <details style="border-top:1px solid var(--line);padding-top:10px;">
         <summary style="cursor:pointer;font-weight:700;font-size:13px;">Recent account movements <span style="font-weight:500;color:var(--text-dim);">(${active.length})</span></summary>
         <div style="overflow-x:auto;margin-top:10px;"><table style="min-width:620px;"><thead><tr><th>Date</th><th>Movement</th><th>Description</th><th class="num">Amount</th></tr></thead><tbody>
@@ -2800,7 +2800,7 @@ function renderDashboard(){
     </div>
   `;
   document.getElementById('fund-add-btn')?.addEventListener('click',openFundMovementModal);
-  document.getElementById('fund-refresh-btn')?.addEventListener('click',async()=>{try{await loadFundTransactions();renderDashboard();toast('Available Funds refreshed.');}catch(e){toast('Could not refresh account balances.');}});
+  document.getElementById('fund-refresh-btn')?.addEventListener('click',async()=>{try{const today=businessDayKey();await Promise.all([p1Load('1900-01-01',today,true),loadFundTransactions()]);renderDashboard();toast('Available Funds refreshed.');}catch(e){toast('Could not refresh account balances.');}});
   const dashShiftBtn=document.getElementById('dashboard-shift-btn'); if(dashShiftBtn) dashShiftBtn.onclick=()=>currentShift?goToPage('shifts'):openShiftModal();
 }
 
