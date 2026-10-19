@@ -2501,6 +2501,26 @@ function computeMetrics(orders){
       // add-on revenue folded into product sales already via lineTotal
     });
   });
+  // Subtract recorded refunds from the same payment/source buckets used by the summary cards,
+  // so channel totals reconcile to Net Sales instead of remaining gross while the headline is net.
+  refundRows.forEach(r=>{
+    if(!r || r.status==='Voided' || r.voidedAt) return;
+    const amount=Number(r.amount)||0;
+    const cash=Number(r.cashAmount)||0;
+    const gcash=Number(r.gcashAmount)||0;
+    const grab=Number(r.grabAmount)||0;
+    const hasSplit=cash+gcash+grab>0;
+    const order=completed.find(o=>String(o.id)===String(r.orderId||r.order_id));
+    const deductions=hasSplit
+      ? [{key:'Cash',amount:cash},{key:'GCash',amount:gcash},{key:'GrabFood',amount:grab}]
+      : [{key:order?.source==='GrabFood'?'GrabFood':order?.paymentMethod==='GCash'?'GCash':'Cash',amount}];
+    deductions.forEach(d=>{
+      if(!d.amount) return;
+      if(pmAgg[d.key]) pmAgg[d.key].sales=Math.max(0,pmAgg[d.key].sales-d.amount);
+      const sourceKey=d.key==='GrabFood'?'GrabFood':'Walk-in';
+      if(sourceAgg[sourceKey]) sourceAgg[sourceKey].sales=Math.max(0,sourceAgg[sourceKey].sales-d.amount);
+    });
+  });
   const avgOrder = totalTx ? totalSales/totalTx : 0;
   const products = Object.entries(productAgg).map(([name,v])=>({name,...v}));
   products.sort((a,b)=>b.qty-a.qty);
