@@ -2647,32 +2647,22 @@ function fundBalances(){
   }
   result.Cash=cash;
 
-  // GCash can be derived from recorded sales and GCash-paid OPEX. A known opening
-  // balance anchors the calculation; without one, this is only net movement.
-  const gcashOpening=activeFunds.filter(x=>x.account==='GCash'&&x.type==='Opening Balance')
-    .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0))[0];
-  const gcashBaseTime=gcashOpening?new Date(gcashOpening.createdAt||0).getTime():0;
-  let gcash=gcashOpening?amount(gcashOpening.amount):0;
-  for(const o of ORDERS){if(stamp(o)>gcashBaseTime)gcash+=gcashOrder(o);}
-  for(const x of OWNER_EXPENSES){if(isActive(x)&&x.paymentMethod==='GCash'&&stamp(x)>gcashBaseTime)gcash-=amount(x.amount);}
-  gcash=addFundFlows('GCash',gcashBaseTime,gcash);
-  result.GCash=gcash;
+  // GCash and Bank follow the Monthly Reports payment breakdown, which
+  // excludes cancelled orders and deducts valid refunds from their original buckets.
+  // GCash = all recorded net GCash sales (including split payments) less active GCash OPEX.
+  const reportRefunds=REFUNDS.filter(r=>!r.voided_at&&r.business_date>='1900-01-01'&&r.business_date<=businessDayKey());
+  const fundMetrics=computeMetrics(ORDERS,reportRefunds);
+  const gcashSales=Number(fundMetrics.pmAgg.GCash?.sales)||0;
+  const gcashOpex=OWNER_EXPENSES.filter(x=>isActive(x)&&x.paymentMethod==='GCash')
+    .reduce((sum,x)=>sum+amount(x.amount),0);
+  result.GCash=gcashSales-gcashOpex;
 
-  // Bank balance is not fully knowable from sales alone. Only count actual recorded
-  // settlements as receipts; do not treat all GrabFood orders as bank deposits.
-  const bankOpening=activeFunds.filter(x=>x.account==='Bank'&&x.type==='Opening Balance')
-    .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0))[0];
-  const bankBaseTime=bankOpening?new Date(bankOpening.createdAt||0).getTime():0;
-  let bank=bankOpening?amount(bankOpening.amount):0;
-  for(const x of OWNER_EXPENSES){if(isActive(x)&&x.paymentMethod==='Bank Transfer'&&stamp(x)>bankBaseTime)bank-=amount(x.amount);}
-  for(const x of activeFunds){
-    const t=x.createdAt?new Date(x.createdAt).getTime():0;if(t<=bankBaseTime)continue;
-    if(x.type==='Transfer'){if(x.fromAccount==='Bank')bank-=amount(x.amount);if(x.toAccount==='Bank')bank+=amount(x.amount);}
-    else if(x.account==='Bank'&&x.type!=='Opening Balance'){
-      bank+=(x.direction==='Out'?-1:1)*amount(x.amount);
-    }
-  }
-  result.Bank=bank;
+  // Bank = net GrabFood sales less the fixed 25% platform fee, then bank-transfer OPEX.
+  // Settlements and opening balances are not added again because that would double-count sales.
+  const grabSales=Number(fundMetrics.pmAgg.GrabFood?.sales)||0;
+  const bankOpex=OWNER_EXPENSES.filter(x=>isActive(x)&&x.paymentMethod==='Bank Transfer')
+    .reduce((sum,x)=>sum+amount(x.amount),0);
+  result.Bank=grabSales-(grabSales*0.25)-bankOpex;
   return result;
 }
 function fundTransactionLabel(x){
