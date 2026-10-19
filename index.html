@@ -2617,7 +2617,7 @@ function fundBalances(){
   for(const x of activeFunds){
     const t=x.createdAt?new Date(x.createdAt).getTime():0;if(t<=cashBaseTime)continue;
     if(x.type==='Transfer'){if(x.fromAccount==='Cash')cash-=amount(x.amount);if(x.toAccount==='Cash')cash+=amount(x.amount);}
-    else if(x.account==='Cash'&&x.type!=='Opening Balance'&&x.type!=='Money Out'&&x.type!=='Money In')cash+=(x.direction==='Out'?-1:1)*amount(x.amount);
+    else if(x.account==='Cash'&&x.type!=='Opening Balance')cash+=(x.direction==='Out'?-1:1)*amount(x.amount);
   }
   result.Cash=cash;
 
@@ -2643,9 +2643,6 @@ function fundBalances(){
     const t=x.createdAt?new Date(x.createdAt).getTime():0;if(t<=bankBaseTime)continue;
     if(x.type==='Transfer'){if(x.fromAccount==='Bank')bank-=amount(x.amount);if(x.toAccount==='Bank')bank+=amount(x.amount);}
     else if(x.account==='Bank'&&x.type!=='Opening Balance'){
-      // Bank-paid OPEX is already included above; don't count a generic "Money Out"
-      // a second time when it represents the same expense.
-      if(x.type==='Money Out')continue;
       bank+=(x.direction==='Out'?-1:1)*amount(x.amount);
     }
   }
@@ -2667,9 +2664,9 @@ function renderAvailableFunds(){
         <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn btn-secondary" id="fund-refresh-btn" style="padding:9px 12px;">Refresh</button><button type="button" class="btn btn-primary" id="fund-add-btn" style="padding:9px 12px;">+ Record Movement</button></div>
       </div>
       <div class="stat-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:12px;">
-        <div class="stat-card"><div class="slabel">Cash on Hand</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.Cash)}</div></div>
-        <div class="stat-card"><div class="slabel">GCash Balance</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.GCash)}</div></div>
-        <div class="stat-card"><div class="slabel">Bank Balance</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.Bank)}</div></div>
+        <div class="stat-card"><div class="slabel">Cash on Hand</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.Cash)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">${SHIFTS.some(s=>s.status==='Closed'&&s.actualCashCounted!=null)?'Latest actual count + later records':'Based on recorded cash activity'}</div></div>
+        <div class="stat-card"><div class="slabel">GCash ${FUND_TRANSACTIONS.some(x=>x.status==='Active'&&x.type==='Opening Balance'&&x.account==='GCash')?'Balance':'Net Recorded Activity'}</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.GCash)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">${FUND_TRANSACTIONS.some(x=>x.status==='Active'&&x.type==='Opening Balance'&&x.account==='GCash')?'Includes opening balance':'Opening balance not recorded'}</div></div>
+        <div class="stat-card"><div class="slabel">Bank ${FUND_TRANSACTIONS.some(x=>x.status==='Active'&&x.type==='Opening Balance'&&x.account==='Bank')?'Balance':'Net Recorded Activity'}</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.Bank)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">${FUND_TRANSACTIONS.some(x=>x.status==='Active'&&x.type==='Opening Balance'&&x.account==='Bank')?'Actual settlements recorded':'Unrecorded payouts excluded'}</div></div>
       </div>
       ${!hasOpening?'<div style="padding:10px 12px;border-radius:9px;background:#FFF5E9;color:#8A5528;font-size:12px;margin-bottom:12px;">Setup required: record the current actual opening balance for Cash, GCash, and Bank. Until then, uninitialized accounts show ₱0.00.</div>':''}
       <div style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:12px;">Cash and GCash use the POS records already entered. Bank counts actual recorded settlements and bank-paid expenses; GrabFood sales are not treated as bank deposits until settled. Record an opening balance if you want the account total to include money held before POS records began. Use manual movements only for activity not already captured elsewhere, to avoid double-counting.</div>
