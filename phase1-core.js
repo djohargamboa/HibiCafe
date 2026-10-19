@@ -54,7 +54,14 @@ mapDbOrder=function(row){return {...p1MapDbOrder(row),paymentStatus:row.payment_
 loadAll=async function(){
   MENU=await storeGet('hibi-menu',MENU);ADDONS=await storeGet('hibi-addons',ADDONS);SETTINGS=await storeGet('hibi-settings',SETTINGS);applyBranding();
   ORDERS=[];EXPENSES=[];OWNER_EXPENSES=[];CASH_MOVEMENTS=[];SHIFTS=[];REFUNDS=[];EOD={};p1Ranges.clear();
-  const today=businessDayKey();await Promise.all([p1Load(today.slice(0,7)+'-01',today,true),loadProductAvailability()]);
+  const today=businessDayKey();
+  // Available Funds is cumulative, so load all historical POS financial records,
+  // not just the current month. Include the fund ledger for superuser account movements.
+  await Promise.all([
+    p1Load('1900-01-01',today,true),
+    loadProductAvailability(),
+    isSuperuser()?loadFundTransactions():Promise.resolve()
+  ]);
 };
 loadPosOrders=async function(){const day=selectedOrderDate||businessDayKey();await p1Load(day,day,true);};
 loadFinancialRows=loadShifts=async function(){const day=businessDayKey();await p1Load(day,day,true);};
