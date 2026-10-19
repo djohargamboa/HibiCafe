@@ -1542,7 +1542,8 @@ function mapDbOrder(row){
     changeGiven:Number(row.change_given)||0,
     gcashRef:row.gcash_ref||null,
     status:row.status||'Completed',
-    cashier:row.cashier||'Staff'
+    cashier:row.cashier||'Staff',
+    grabFeeRate:row.grab_fee_rate==null?null:Number(row.grab_fee_rate)
   };
 }
 
@@ -2449,7 +2450,12 @@ function openOwnerExpenseModal(){
 function computeMetrics(orders){
   const completed = orders.filter(o=>!p1IsCancelled(o));
   const cancelled = orders.filter(p1IsCancelled);
-  const totalSales = completed.reduce((s,o)=>s+o.total,0);
+  const grossSales = completed.reduce((s,o)=>s+(Number(o.total)||0),0);
+  const refundRows = Array.isArray(arguments[1]) ? arguments[1] : [];
+  const refundTotal = refundRows.reduce((sum,r)=>sum+(Number(r.amount)||0),0);
+  const totalSales = Math.max(0,grossSales-refundTotal);
+  const estimatedFees = completed.filter(o=>(o.source||'Walk-in')==='GrabFood').reduce((sum,o)=>sum+(Number(o.total)||0)*(Number.isFinite(Number(o.grabFeeRate)) && o.grabFeeRate!==null ? Number(o.grabFeeRate) : 0.25),0);
+  const estimatedProceeds = totalSales-estimatedFees;
   const totalTx = completed.length;
   let cups=0, foodItems=0;
   const cupBySize = {'Hot 12oz':0,'Iced 16oz':0,'Iced 20oz':0};
@@ -2504,7 +2510,7 @@ function computeMetrics(orders){
   const leastSelling = products.length ? [...products].sort((a,b)=>a.qty-b.qty)[0] : null;
   const popularSize = Object.entries(cupBySize).sort((a,b)=>b[1]-a[1])[0];
   const cancelledAmount = cancelled.reduce((s,o)=>s+o.total,0);
-  return {totalSales,totalTx,cups,foodItems,avgOrder,cupBySize,products,pmAgg,sourceAgg,bestByQty,bestByRevenue,bestFood,leastSelling,popularSize,cancelled,cancelledAmount};
+  return {grossSales,refundTotal,estimatedFees,estimatedProceeds,totalSales,totalTx,cups,foodItems,avgOrder,cupBySize,products,pmAgg,sourceAgg,bestByQty,bestByRevenue,bestFood,leastSelling,popularSize,cancelled,cancelledAmount};
 }
 
 /* ============================================================
