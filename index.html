@@ -938,7 +938,7 @@ async function doLogin(){
   catch(e){ console.error(e); showLoginError(e.message==='Invalid login credentials'?'Invalid username or password.':e.message||'Unable to sign in.'); if(supabaseClient) await supabaseClient.auth.signOut(); }
   finally{btn.disabled=false;btn.textContent='Sign in';}
 }
-async function doLogout(){ stopDatabaseHealthMonitor(); if(CURRENT_USER) await writeAudit('logout','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); if(supabaseClient) await supabaseClient.auth.signOut(); CURRENT_USER=null; CURRENT_PROFILE=null; document.getElementById('app').style.display='none'; document.getElementById('login-screen').style.display='flex'; document.getElementById('login-password').value=''; showLoginError(''); }
+async function doLogout(){ stopDatabaseHealthMonitor(); if(CURRENT_USER) await writeAudit('logout','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); if(supabaseClient) await supabaseClient.auth.signOut(); CURRENT_USER=null; CURRENT_PROFILE=null; FUND_TRANSACTIONS=[]; document.getElementById('app').style.display='none'; document.getElementById('login-screen').style.display='flex'; document.getElementById('login-password').value=''; showLoginError(''); }
 
 let supabaseOk = HAS_SUPABASE; // connection health only; never used as permission or as a reason to save locally
 let LAST_DB_SYNC_AT = null;
