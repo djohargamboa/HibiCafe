@@ -2568,15 +2568,89 @@ async function loadFundTransactions(){
   FUND_TRANSACTIONS=rows.map(r=>({id:r.id,date:r.business_date,type:r.transaction_type,account:r.account||null,direction:r.direction||null,amount:Number(r.amount)||0,fromAccount:r.from_account||null,toAccount:r.to_account||null,description:r.description||'',reference:r.reference||'',status:r.status||'Active',createdAt:r.created_at,createdBy:r.created_by_name||''}));
 }
 function fundBalances(){
-  const balances={Cash:0,GCash:0,Bank:0};
-  for(const x of FUND_TRANSACTIONS){
-    if(x.status!=='Active') continue;
-    if(x.type==='Transfer'){
-      if(x.fromAccount in balances) balances[x.fromAccount]-=Number(x.amount)||0;
-      if(x.toAccount in balances) balances[x.toAccount]+=Number(x.amount)||0;
-    }else if(x.account in balances) balances[x.account]+=(x.direction==='Out'?-1:1)*(Number(x.amount)||0);
+  const activeFunds=FUND_TRANSACTIONS.filter(x=>x.status==='Active');
+  const result={Cash:0,GCash:0,Bank:0};
+  const amount=x=>Number(x)||0;
+  const validOrder=o=>o.status!=='Cancelled';
+  const cashOrder=o=>validOrder(o)?cashPortionOfOrder(o):0;
+  const gcashOrder=o=>!validOrder(o)?0:o.paymentMethod==='GCash'?amount(o.total):o.paymentMethod==='Cash + GCash'?amount(o.gcashAmount):0;
+  const isActive=x=>x.status!=='Voided';
+  const stamp=x=>x?.timestamp?new Date(x.timestamp).getTime():0;
+  const addFundFlows=(account,baseTime,baseAmount)=>{
+    let total=baseAmount;
+    for(const x of activeFunds){
+      const t=x.createdAt?new Date(x.createdAt).getTime():0;
+      if(t<=baseTime) continue;
+      if(x.type==='Transfer'){
+        if(x.fromAccount===account) total-=amount(x.amount);
+        if(x.toAccount===account) total+=amount(x.amount);
+      }else if(x.account===account && x.type!=='Opening Balance'){
+        total+=(x.direction==='Out'?-1:1)*amount(x.amount);
+      }
+    }
+    return total;
+  };
+
+  // Cash starts from the most recent physical count (or an opening balance if newer),
+  // then uses the actual POS records entered after that point.
+  const cashCount=[...SHIFTS]
+    .filter(s=>s.status==='Closed'&&s.actualCashCounted!=null&&s.closedAt)
+    .sort((a,b)=>new Date(b.closedAt)-new Date(a.closedAt))[0];
+  const cashOpening=activeFunds.filter(x=>x.account==='Cash'&&x.type==='Opening Balance')
+    .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0))[0];
+  let cashBaseTime=0, cashBase=0;
+  if(cashCount){cashBaseTime=new Date(cashCount.closedAt).getTime();cashBase=amount(cashCount.actualCashCounted);}
+  if(cashOpening && new Date(cashOpening.createdAt||0).getTime()>cashBaseTime){
+    cashBaseTime=new Date(cashOpening.createdAt||0).getTime();cashBase=amount(cashOpening.amount);
   }
-  return balances;
+  if(!cashCount&&!cashOpening){
+    const firstOpen=[...SHIFTS].filter(s=>s.openedAt).sort((a,b)=>new Date(a.openedAt)-new Date(b.openedAt))[0];
+    if(firstOpen){cashBaseTime=new Date(firstOpen.openedAt).getTime();cashBase=amount(firstOpen.openingCash);}
+  }
+  let cash=cashBase;
+  for(const o of ORDERS){if(stamp(o)>cashBaseTime)cash+=cashOrder(o);}
+  for(const x of CASH_MOVEMENTS){if(isActive(x)&&stamp(x)>cashBaseTime)cash+=(x.type==='Out'?-1:1)*amount(x.amount);}
+  for(const x of EXPENSES){if(isActive(x)&&stamp(x)>cashBaseTime)cash-=amount(x.amount);}
+  for(const x of OWNER_EXPENSES){if(isActive(x)&&x.paymentMethod==='Cash'&&stamp(x)>cashBaseTime)cash-=amount(x.amount);}
+  // Apply only supplemental fund movements after the cash anchor. Avoid re-applying
+  // ledger entries dated before the latest physical count.
+  for(const x of activeFunds){
+    const t=x.createdAt?new Date(x.createdAt).getTime():0;if(t<=cashBaseTime)continue;
+    if(x.type==='Transfer'){if(x.fromAccount==='Cash')cash-=amount(x.amount);if(x.toAccount==='Cash')cash+=amount(x.amount);}
+    else if(x.account==='Cash'&&x.type!=='Opening Balance'&&x.type!=='Money Out'&&x.type!=='Money In')cash+=(x.direction==='Out'?-1:1)*amount(x.amount);
+  }
+  result.Cash=cash;
+
+  // GCash can be derived from recorded sales and GCash-paid OPEX. A known opening
+  // balance anchors the calculation; without one, this is only net movement.
+  const gcashOpening=activeFunds.filter(x=>x.account==='GCash'&&x.type==='Opening Balance')
+    .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0))[0];
+  const gcashBaseTime=gcashOpening?new Date(gcashOpening.createdAt||0).getTime():0;
+  let gcash=gcashOpening?amount(gcashOpening.amount):0;
+  for(const o of ORDERS){if(stamp(o)>gcashBaseTime)gcash+=gcashOrder(o);}
+  for(const x of OWNER_EXPENSES){if(isActive(x)&&x.paymentMethod==='GCash'&&stamp(x)>gcashBaseTime)gcash-=amount(x.amount);}
+  gcash=addFundFlows('GCash',gcashBaseTime,gcash);
+  result.GCash=gcash;
+
+  // Bank balance is not fully knowable from sales alone. Only count actual recorded
+  // settlements as receipts; do not treat all GrabFood orders as bank deposits.
+  const bankOpening=activeFunds.filter(x=>x.account==='Bank'&&x.type==='Opening Balance')
+    .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0))[0];
+  const bankBaseTime=bankOpening?new Date(bankOpening.createdAt||0).getTime():0;
+  let bank=bankOpening?amount(bankOpening.amount):0;
+  for(const x of OWNER_EXPENSES){if(isActive(x)&&x.paymentMethod==='Bank Transfer'&&stamp(x)>bankBaseTime)bank-=amount(x.amount);}
+  for(const x of activeFunds){
+    const t=x.createdAt?new Date(x.createdAt).getTime():0;if(t<=bankBaseTime)continue;
+    if(x.type==='Transfer'){if(x.fromAccount==='Bank')bank-=amount(x.amount);if(x.toAccount==='Bank')bank+=amount(x.amount);}
+    else if(x.account==='Bank'&&x.type!=='Opening Balance'){
+      // Bank-paid OPEX is already included above; don't count a generic "Money Out"
+      // a second time when it represents the same expense.
+      if(x.type==='Money Out')continue;
+      bank+=(x.direction==='Out'?-1:1)*amount(x.amount);
+    }
+  }
+  result.Bank=bank;
+  return result;
 }
 function fundTransactionLabel(x){
   if(x.type==='Transfer') return 'Transfer · '+x.fromAccount+' → '+x.toAccount;
@@ -2589,7 +2663,7 @@ function renderAvailableFunds(){
   return `
     <section class="card" style="padding:18px 20px;margin-bottom:16px;border-color:#D7DCCB;" aria-label="Available funds">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
-        <div><div class="section-title" style="margin-bottom:4px;">Available Funds</div><div style="font-size:12px;color:var(--text-dim);">Superuser only · Recorded account balances</div></div>
+        <div><div class="section-title" style="margin-bottom:4px;">Available Funds</div><div style="font-size:12px;color:var(--text-dim);">Superuser only · Calculated from POS records and recorded account movements</div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn btn-secondary" id="fund-refresh-btn" style="padding:9px 12px;">Refresh</button><button type="button" class="btn btn-primary" id="fund-add-btn" style="padding:9px 12px;">+ Record Movement</button></div>
       </div>
       <div class="stat-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:12px;">
@@ -2598,7 +2672,7 @@ function renderAvailableFunds(){
         <div class="stat-card"><div class="slabel">Bank Balance</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.Bank)}</div></div>
       </div>
       ${!hasOpening?'<div style="padding:10px 12px;border-radius:9px;background:#FFF5E9;color:#8A5528;font-size:12px;margin-bottom:12px;">Setup required: record the current actual opening balance for Cash, GCash, and Bank. Until then, uninitialized accounts show ₱0.00.</div>':''}
-      <div style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:12px;">Record opening balances and each receipt, payment, GrabFood settlement, adjustment, or transfer to keep this ledger accurate. Transfers move value between accounts without changing the combined total. These are ledger balances; POS sales and expenses are not yet posted automatically.</div>
+      <div style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:12px;">Cash and GCash use the POS records already entered. Bank counts actual recorded settlements and bank-paid expenses; GrabFood sales are not treated as bank deposits until settled. Record an opening balance if you want the account total to include money held before POS records began. Use manual movements only for activity not already captured elsewhere, to avoid double-counting.</div>
       <details style="border-top:1px solid var(--line);padding-top:10px;">
         <summary style="cursor:pointer;font-weight:700;font-size:13px;">Recent account movements <span style="font-weight:500;color:var(--text-dim);">(${active.length})</span></summary>
         <div style="overflow-x:auto;margin-top:10px;"><table style="min-width:620px;"><thead><tr><th>Date</th><th>Movement</th><th>Description</th><th class="num">Amount</th></tr></thead><tbody>
