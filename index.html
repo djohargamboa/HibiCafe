@@ -886,6 +886,7 @@ let monthlyPerformanceMonth = businessDayKey().slice(0,7);
 let PRODUCT_AVAILABILITY = {};
 let SHIFTS = [];
 let shiftsFilterDate = businessDayKey();
+let FUND_TRANSACTIONS = [];
 
 /* ---------- Storage helpers ---------- */
 // Shared storage uses Supabase only. Writes fail closed: no browser/local fallback for shared data.
@@ -937,7 +938,7 @@ async function doLogin(){
   catch(e){ console.error(e); showLoginError(e.message==='Invalid login credentials'?'Invalid username or password.':e.message||'Unable to sign in.'); if(supabaseClient) await supabaseClient.auth.signOut(); }
   finally{btn.disabled=false;btn.textContent='Sign in';}
 }
-async function doLogout(){ stopDatabaseHealthMonitor(); if(CURRENT_USER) await writeAudit('logout','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); if(supabaseClient) await supabaseClient.auth.signOut(); CURRENT_USER=null; CURRENT_PROFILE=null; document.getElementById('app').style.display='none'; document.getElementById('login-screen').style.display='flex'; document.getElementById('login-password').value=''; showLoginError(''); }
+async function doLogout(){ stopDatabaseHealthMonitor(); if(CURRENT_USER) await writeAudit('logout','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); if(supabaseClient) await supabaseClient.auth.signOut(); CURRENT_USER=null; CURRENT_PROFILE=null; FUND_TRANSACTIONS=[]; document.getElementById('app').style.display='none'; document.getElementById('login-screen').style.display='flex'; document.getElementById('login-password').value=''; showLoginError(''); }
 
 let supabaseOk = HAS_SUPABASE; // connection health only; never used as permission or as a reason to save locally
 let LAST_DB_SYNC_AT = null;
@@ -1557,7 +1558,7 @@ async function loadAll(){
   ADDONS = await storeGet('hibi-addons', ADDONS);
   SETTINGS = await storeGet('hibi-settings', SETTINGS);
   applyBranding();
-  await Promise.all([loadPosOrders(),loadFinancialRows(),loadProductAvailability(),loadShifts()]);
+  await Promise.all([loadPosOrders(),loadFinancialRows(),loadProductAvailability(),loadShifts(),isSuperuser()?loadFundTransactions():Promise.resolve()]);
   await migrateLegacyProductImages();
 }
 async function persistMenu(){ await storeSet('hibi-menu', MENU); }
@@ -2559,6 +2560,88 @@ function renderStaffDashboard(){
   table.querySelectorAll('[data-view]').forEach(button=>button.onclick=(event)=>{event.stopPropagation();openOrderDetail(button.dataset.view);});
   table.querySelectorAll('[data-complete-order]').forEach(button=>button.onclick=(event)=>{event.stopPropagation();completeOrderFromList(button.dataset.completeOrder);});
 }
+
+/* ---------- Superuser-only available funds ledger ---------- */
+async function loadFundTransactions(){
+  if(!isSuperuser()){ FUND_TRANSACTIONS=[]; return; }
+  const rows=await posGetAll('/rest/v1/fund_transactions?select=*&order=created_at.desc');
+  FUND_TRANSACTIONS=rows.map(r=>({id:r.id,date:r.business_date,type:r.transaction_type,account:r.account||null,direction:r.direction||null,amount:Number(r.amount)||0,fromAccount:r.from_account||null,toAccount:r.to_account||null,description:r.description||'',reference:r.reference||'',status:r.status||'Active',createdAt:r.created_at,createdBy:r.created_by_name||''}));
+}
+function fundBalances(){
+  const balances={Cash:0,GCash:0,Bank:0};
+  for(const x of FUND_TRANSACTIONS){
+    if(x.status!=='Active') continue;
+    if(x.type==='Transfer'){
+      if(x.fromAccount in balances) balances[x.fromAccount]-=Number(x.amount)||0;
+      if(x.toAccount in balances) balances[x.toAccount]+=Number(x.amount)||0;
+    }else if(x.account in balances) balances[x.account]+=(x.direction==='Out'?-1:1)*(Number(x.amount)||0);
+  }
+  return balances;
+}
+function fundTransactionLabel(x){
+  if(x.type==='Transfer') return 'Transfer · '+x.fromAccount+' → '+x.toAccount;
+  return x.type+' · '+x.account+(x.direction==='Out'?' (Out)':' (In)');
+}
+function renderAvailableFunds(){
+  if(!isSuperuser()) return '';
+  const b=fundBalances(), active=FUND_TRANSACTIONS.filter(x=>x.status==='Active'), latest=active.slice(0,6);
+  const hasOpening=['Cash','GCash','Bank'].every(account=>active.some(x=>x.type==='Opening Balance'&&x.account===account));
+  return `
+    <section class="card" style="padding:18px 20px;margin-bottom:16px;border-color:#D7DCCB;" aria-label="Available funds">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+        <div><div class="section-title" style="margin-bottom:4px;">Available Funds</div><div style="font-size:12px;color:var(--text-dim);">Superuser only · Recorded account balances</div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn btn-secondary" id="fund-refresh-btn" style="padding:9px 12px;">Refresh</button><button type="button" class="btn btn-primary" id="fund-add-btn" style="padding:9px 12px;">+ Record Movement</button></div>
+      </div>
+      <div class="stat-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:12px;">
+        <div class="stat-card"><div class="slabel">Cash on Hand</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.Cash)}</div></div>
+        <div class="stat-card"><div class="slabel">GCash Balance</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.GCash)}</div></div>
+        <div class="stat-card"><div class="slabel">Bank Balance</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.Bank)}</div></div>
+      </div>
+      ${!hasOpening?'<div style="padding:10px 12px;border-radius:9px;background:#FFF5E9;color:#8A5528;font-size:12px;margin-bottom:12px;">Setup required: record the current actual opening balance for Cash, GCash, and Bank. Until then, uninitialized accounts show ₱0.00.</div>':''}
+      <div style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:12px;">Record opening balances and each receipt, payment, GrabFood settlement, adjustment, or transfer to keep this ledger accurate. Transfers move value between accounts without changing the combined total. These are ledger balances; POS sales and expenses are not yet posted automatically.</div>
+      <details style="border-top:1px solid var(--line);padding-top:10px;">
+        <summary style="cursor:pointer;font-weight:700;font-size:13px;">Recent account movements <span style="font-weight:500;color:var(--text-dim);">(${active.length})</span></summary>
+        <div style="overflow-x:auto;margin-top:10px;"><table style="min-width:620px;"><thead><tr><th>Date</th><th>Movement</th><th>Description</th><th class="num">Amount</th></tr></thead><tbody>
+        ${latest.length?latest.map(x=>`<tr><td>${esc(x.date||'')}</td><td>${esc(fundTransactionLabel(x))}</td><td>${esc(x.description||'—')}</td><td class="num" style="font-weight:700;">${x.type==='Transfer'?esc(PESO(x.amount)):((x.direction==='Out'?'−':'＋')+esc(PESO(x.amount)))}</td></tr>`).join(''):'<tr><td colspan="4" style="color:var(--text-dim);text-align:center;padding:18px;">No account movements recorded yet.</td></tr>'}
+        </tbody></table></div>
+      </details>
+    </section>`;
+}
+function openFundMovementModal(){
+  if(!isSuperuser()){toast('Available Funds is restricted to superusers.');return;}
+  openModal(`
+    <div class="modal-head"><h3>Record Funds Movement</h3><div class="msub">This updates the account ledger only. Enter actual balances as opening entries first.</div></div>
+    <div class="modal-body">
+      <div class="field"><label>Movement Type</label><select id="fund-type"><option>Opening Balance</option><option>Money In</option><option>Money Out</option><option>GrabFood Settlement</option><option>Adjustment</option><option>Transfer</option></select></div>
+      <div id="fund-account-fields"><div class="field"><label>Account</label><select id="fund-account"><option>Cash</option><option>GCash</option><option>Bank</option></select></div></div>
+      <div id="fund-transfer-fields" style="display:none;"><div class="field"><label>Transfer From</label><select id="fund-from"><option>Cash</option><option>GCash</option><option>Bank</option></select></div><div class="field"><label>Transfer To</label><select id="fund-to"><option>Bank</option><option>Cash</option><option>GCash</option></select></div></div>
+      <div class="field" id="fund-direction-wrap" style="display:none;"><label>Adjustment Direction</label><select id="fund-direction"><option value="In">Increase balance</option><option value="Out">Decrease balance</option></select></div>
+      <div class="field"><label>Amount (₱)</label><input type="number" id="fund-amount" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00"></div>
+      <div class="field"><label>Date</label><input type="date" id="fund-date" value="${businessDayKey()}"></div>
+      <div class="field"><label>Description / Reason</label><input type="text" id="fund-description" maxlength="240" placeholder="e.g. Actual opening balance / GrabFood payout" required></div>
+      <div class="field"><label>Reference (optional)</label><input type="text" id="fund-reference" maxlength="120" placeholder="Bank ref / GCash ref / settlement ID"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" id="fund-cancel">Cancel</button><button class="btn btn-primary" id="fund-save">Save Movement</button></div>`);
+  const typeEl=document.getElementById('fund-type');
+  const updateFields=()=>{const transfer=typeEl.value==='Transfer';document.getElementById('fund-account-fields').style.display=transfer?'none':'';document.getElementById('fund-transfer-fields').style.display=transfer?'':'none';document.getElementById('fund-direction-wrap').style.display=typeEl.value==='Adjustment'?'':'none';};
+  typeEl.onchange=updateFields;updateFields();
+  document.getElementById('fund-cancel').onclick=closeModal;
+  document.getElementById('fund-save').onclick=async()=>{
+    const btn=document.getElementById('fund-save');if(!btn||btn.disabled)return;
+    const type=typeEl.value,amount=Number(document.getElementById('fund-amount').value),date=document.getElementById('fund-date').value||businessDayKey();
+    const description=(document.getElementById('fund-description').value||'').trim(),reference=(document.getElementById('fund-reference').value||'').trim();
+    if(!Number.isFinite(amount)||amount<=0){toast('Enter an amount greater than zero.');return;}
+    if(!date||!description){toast('Date and description are required.');return;}
+    const common={business_date:date,transaction_type:type,amount,description,reference:reference||null,created_by:CURRENT_USER?.id,created_by_name:currentActor()};
+    let payload;
+    if(type==='Transfer'){const from=document.getElementById('fund-from').value,to=document.getElementById('fund-to').value;if(from===to){toast('Choose two different accounts for a transfer.');return;}payload={...common,account:null,direction:null,from_account:from,to_account:to};}
+    else{const direction=type==='Money Out'?'Out':type==='Adjustment'?document.getElementById('fund-direction').value:'In';payload={...common,account:document.getElementById('fund-account').value,direction,from_account:null,to_account:null};}
+    btn.disabled=true;btn.textContent='Saving…';
+    try{await posApi('/rest/v1/fund_transactions',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify(payload)});await writeAudit('fund_movement','fund_transaction',date,description,{type,amount,account:payload.account,fromAccount:payload.from_account,toAccount:payload.to_account,direction:payload.direction,reference});await loadFundTransactions();closeModal();renderDashboard();toast('Funds movement recorded.');}
+    catch(err){console.error('Fund movement save failed:',err);btn.disabled=false;btn.textContent='Save Movement';toast('Funds movement was NOT saved: '+(err?.message||'database error'));}
+  };
+}
+
 function renderDashboard(){
   if(!isSuperuser()){renderStaffDashboard();return;}
   const todaysOrders = ORDERS.filter(o=>o.date===businessDayKey());
@@ -2572,6 +2655,7 @@ function renderDashboard(){
   el.innerHTML = `
     <div class="page-title"><div><h1>Dashboard</h1><div class="psub">Business Day: ${businessDayKey()} — ${isBusinessDayClosing()?'CLOSING':'OPEN'} · Calendar date: ${todayStr()}</div></div></div>
     <div class="card ${currentShift?'shift-live':''}" style="padding:14px 18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div>${currentShift?`<span class="shift-status-pill">OPEN</span> <strong style="margin-left:6px;">${esc(currentShift.shiftName)}</strong><div style="font-size:12px;color:var(--text-dim);margin-top:5px;">Expected drawer now: <strong>${PESO(shiftLive.expected)}</strong></div>`:`<span class="shift-status-pill none">NO OPEN SHIFT</span><div style="font-size:12px;color:var(--text-dim);margin-top:5px;">Open a shift before taking orders.</div>`}</div><button class="btn ${currentShift?'btn-secondary':'btn-primary'}" id="dashboard-shift-btn">${currentShift?'View Shift':'Open Shift'}</button></div>
+    ${renderAvailableFunds()}
     <div class="stat-grid">
       <div class="stat-card accent"><div class="slabel">Today's Sales</div><div class="sval">${PESO(m.totalSales)}</div></div>
       <div class="stat-card"><div class="slabel">Transactions</div><div class="sval">${m.totalTx}</div></div>
@@ -2628,6 +2712,8 @@ function renderDashboard(){
       </div>
     </div>
   `;
+  document.getElementById('fund-add-btn')?.addEventListener('click',openFundMovementModal);
+  document.getElementById('fund-refresh-btn')?.addEventListener('click',async()=>{try{await loadFundTransactions();renderDashboard();toast('Available Funds refreshed.');}catch(e){toast('Could not refresh account balances.');}});
   const dashShiftBtn=document.getElementById('dashboard-shift-btn'); if(dashShiftBtn) dashShiftBtn.onclick=()=>currentShift?goToPage('shifts'):openShiftModal();
 }
 
