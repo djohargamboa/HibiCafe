@@ -873,6 +873,7 @@ let EXPENSES = [];
 let CASH_MOVEMENTS = [];
 let CART = [];
 let orderChannel = 'Walk-in';
+let serviceType = '';
 let grabCode = '';
 let grabDiscountType = 'None';
 let grabDiscountAmount = 0;
@@ -1525,6 +1526,7 @@ function mapDbOrder(row){
     timestamp:row.created_at,
     lateEntry: row.created_at ? isLateEntryForBusinessDate(row.order_date,new Date(row.created_at)) : false,
     source:row.source||'Walk-in',
+    serviceType:row.service_type||null,
     grabCode:normalizedGrabCode||null,
     items:(row.pos_order_items||[]).map(i=>({
       productId:i.product_id, name:i.name, category:i.category, size:i.size,
@@ -1675,8 +1677,8 @@ function renderPOS(){
   const posDate=document.getElementById('pos-entry-date'); if(posDate) posDate.onchange=e=>{ selectedOrderDate=e.target.value||todayStr(); CART=[]; loyaltyRewardKey=null; renderPOS(); };
   const opsWrap=document.getElementById('pos-ops-wrap'); if(opsWrap){ const currentShift=openShiftForDate(businessDayKey()); const soCount=soldOutCount(businessDayKey()); opsWrap.innerHTML=`<button class="btn btn-secondary" id="quick-availability-btn" type="button">Availability${soCount?` (${soCount} sold out)`:''}</button>${selectedOrderDate===businessDayKey()?`<button class="btn ${currentShift?'btn-secondary':'btn-primary'}" id="pos-shift-btn" type="button">${currentShift?esc(currentShift.shiftName)+' · OPEN':'Open Shift'}</button>`:''}`; document.getElementById('quick-availability-btn')?.addEventListener('click',openAvailabilityModal); document.getElementById('pos-shift-btn')?.addEventListener('click',()=>currentShift?goToPage('shifts'):openShiftModal()); }
   const wb=document.getElementById('walkin-mode-btn'), gb=document.getElementById('grab-mode-btn');
-  if(wb){ wb.classList.toggle('active',orderChannel==='Walk-in'); wb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; grabCode=''; grabDiscountType='None'; grabDiscountAmount=0; loyaltyRewardKey=null; orderChannel='Walk-in'; renderPOS(); }; }
-  if(gb){ gb.classList.toggle('active',orderChannel==='GrabFood'); gb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; loyaltyRewardKey=null; orderChannel='GrabFood'; renderPOS(); }; }
+  if(wb){ wb.classList.toggle('active',orderChannel==='Walk-in'); wb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; grabCode=''; grabDiscountType='None'; grabDiscountAmount=0; loyaltyRewardKey=null; orderChannel='Walk-in'; serviceType=''; renderPOS(); }; }
+  if(gb){ gb.classList.toggle('active',orderChannel==='GrabFood'); gb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; loyaltyRewardKey=null; orderChannel='GrabFood'; serviceType='Take Out'; renderPOS(); }; }
   const gcw=document.getElementById('grab-code-wrap'), gci=document.getElementById('grab-code-input');
   if(gcw){ gcw.style.display=orderChannel==='GrabFood'?'block':'none'; if(gci){ gci.value=grabCode; gci.oninput=e=>grabCode=e.target.value.trim(); } }
   if(!activeCategory) activeCategory = MENU.categories[0];
@@ -2000,6 +2002,7 @@ function openCheckoutModal(){
   function canConfirm(){
     if(submitting) return false;
     if(orderChannel==='GrabFood') return !!grabCode.trim();
+    if(!['Dine In','Take Out'].includes(serviceType)) return false;
     if(method==='Cash') return received!=='' && Number(received)>=total();
     if(method==='GCash') return gcashConfirmed;
     const g=Number(gcashPart)||0,c=Number(cashPart)||0,t=total(); return g>0 && g<t && c>=(t-g) && gcashConfirmed;
@@ -2009,6 +2012,7 @@ function openCheckoutModal(){
     const lr=loyalty();
     return `<div class="modal-head"><h3>${orderChannel==='GrabFood'?'Save GrabFood Order':'Checkout'}</h3><div class="msub">${CART.reduce((s,i)=>s+i.qty,0)} item(s) · ${CART.filter(i=>cartItemIsDrink(i)).reduce((s,i)=>s+i.qty,0)} cup(s)</div></div>
     <div class="modal-body">
+      <div class="field"><label>Order Type <span style="color:var(--rust);">*</span></label>${orderChannel==='GrabFood'?`<div class="addon-row" style="border:1.5px solid var(--line);border-radius:10px;padding:12px;"><strong>Take Out</strong><span style="margin-left:auto;color:var(--text-dim);font-size:12px;">Automatic for GrabFood</span></div>`:`<select id="service-type" required><option value="">Select Dine In or Take Out</option><option value="Dine In" ${serviceType==='Dine In'?'selected':''}>Dine In</option><option value="Take Out" ${serviceType==='Take Out'?'selected':''}>Take Out</option></select><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">Choose how this walk-in order will be served.</div>`}</div>
       ${orderChannel==='Walk-in' && eligible.length ? `<div class="field"><label>Loyalty Card Reward</label><select id="loyalty-reward"><option value="">No loyalty reward</option>${eligible.map(i=>{const r=loyaltyRewardForItem(i);return r.eligible?`<option value="${escAttr(i.key)}" ${selectedLoyaltyKey===i.key?'selected':''}>10th drink free — ${esc(i.name)} ${i.size?`(${esc(i.size)})`:''} · ${esc(r.label)}</option>`:''}).join('')}</select><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">Present/verify the completed loyalty card. One 10th drink reward per order.</div></div>` : ''}
       ${orderChannel==='Walk-in' ? `<label class="pwd-discount-card ${pwdSelected?'active':''}" for="pwd-discount"><div class="pwd-main"><div class="pwd-icon">20%</div><div class="pwd-title">PWD / Senior Discount</div></div><input type="checkbox" id="pwd-discount" ${pwdSelected?'checked':''}><span class="pwd-switch"></span></label>` : ''}
       ${orderChannel==='GrabFood'?`<div class="field"><label>GrabFood Code</label><input id="modal-grab-code" type="text" value="${escAttr(grabCode)}" placeholder="e.g. GF123456"></div>
@@ -2034,6 +2038,7 @@ function openCheckoutModal(){
   function render(){
     openModal(body());
     document.getElementById('modal-cancel').onclick=closeModal;
+    const serviceSelect=document.getElementById('service-type'); if(serviceSelect) serviceSelect.onchange=e=>{serviceType=e.target.value;render();};
     const lrSel=document.getElementById('loyalty-reward'); if(lrSel) lrSel.onchange=e=>{selectedLoyaltyKey=e.target.value||null;loyaltyRewardKey=selectedLoyaltyKey;render();};
     const pwdCb=document.getElementById('pwd-discount'); if(pwdCb) pwdCb.onchange=e=>{pwdSelected=e.target.checked;render();};
     if(orderChannel==='Walk-in'){
@@ -2051,11 +2056,11 @@ function openCheckoutModal(){
       const da=document.getElementById('discount-amount'); if(da)da.oninput=e=>{discountAmount=e.target.value.replace(/[^0-9.]/g,'');grabDiscountAmount=Number(discountAmount)||0;updateUI();const totalEl=document.querySelector('.big-total .amt');if(totalEl)totalEl.textContent=PESO(total())};
     }
     updateUI();
-    document.getElementById('modal-confirm').onclick=async()=>{if(!canConfirm())return;if(!canCreateEntryForDate(selectedOrderDate))return;submitting=true;updateUI();try{const lr=loyalty();const loyaltyItem=lr.item;const finalDiscount=discount();const walkinDiscountType=orderChannel==='Walk-in'?(pwdSelected?(loyaltyItem?'PWD/Senior Discount + Loyalty Reward':'PWD/Senior Discount'):(loyaltyItem?'Loyalty Reward':'None')):discountType;await finalizeOrder({method,subtotal,received:received?parseFloat(received):null,ref,cashPart:cashPart?parseFloat(cashPart):null,gcashPart:gcashPart?parseFloat(gcashPart):null,discountType:walkinDiscountType,discountAmount:finalDiscount,loyaltyItemKey:loyaltyItem?.key||null,loyaltyCharge:lr.charge||0});}finally{submitting=false;if(document.getElementById('modal-confirm'))updateUI();}};
+    document.getElementById('modal-confirm').onclick=async()=>{if(!canConfirm())return;if(!canCreateEntryForDate(selectedOrderDate))return;submitting=true;updateUI();try{const lr=loyalty();const loyaltyItem=lr.item;const finalDiscount=discount();const walkinDiscountType=orderChannel==='Walk-in'?(pwdSelected?(loyaltyItem?'PWD/Senior Discount + Loyalty Reward':'PWD/Senior Discount'):(loyaltyItem?'Loyalty Reward':'None')):discountType;await finalizeOrder({method,subtotal,received:received?parseFloat(received):null,ref,cashPart:cashPart?parseFloat(cashPart):null,gcashPart:gcashPart?parseFloat(gcashPart):null,discountType:walkinDiscountType,discountAmount:finalDiscount,loyaltyItemKey:loyaltyItem?.key||null,loyaltyCharge:lr.charge||0,serviceType:orderChannel==='GrabFood'?'Take Out':serviceType});}finally{submitting=false;if(document.getElementById('modal-confirm'))updateUI();}};
   }
   render();
 }
-async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,discountType='None',discountAmount=0,loyaltyItemKey=null,loyaltyCharge=0}){
+async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,discountType='None',discountAmount=0,loyaltyItemKey=null,loyaltyCharge=0,serviceType='Take Out'}){
   if(!canCreateEntryForDate(selectedOrderDate)) return;
   if(selectedOrderDate===businessDayKey()&&!requireOpenShift(selectedOrderDate)) return;
   if(!CURRENT_USER?.access_token){
@@ -2088,6 +2093,7 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
     });
     const payload={
       p_source:orderChannel,
+      p_service_type:orderChannel==='GrabFood'?'Take Out':serviceType,
       p_grab_code:grabOrderCode,
       p_order_date:selectedOrderDate,
       p_order_time:nowTimeStr(),
@@ -2115,7 +2121,7 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
     const order=mapDbOrder({...dbOrder,pos_order_items:dbOrder.items||[]});
     order.orderNumber=orderChannel==='GrabFood'?(grabOrderCode||order.orderNumber):order.orderNumber;
     ORDERS.unshift(order);
-    await writeAudit('create_order','order',order.id,'',{orderNumber:order.orderNumber,businessDate:order.date,actualEntryTimestamp:order.timestamp,lateEntry:!!order.lateEntry,loyaltyReward:!!loyaltyItemKey,loyaltyCharge:Number(loyaltyCharge)||0,total:order.total,source:order.source,paymentMethod:order.paymentMethod,status:order.status});
+    await writeAudit('create_order','order',order.id,'',{orderNumber:order.orderNumber,businessDate:order.date,actualEntryTimestamp:order.timestamp,lateEntry:!!order.lateEntry,loyaltyReward:!!loyaltyItemKey,loyaltyCharge:Number(loyaltyCharge)||0,total:order.total,source:order.source,serviceType:order.serviceType||serviceType,paymentMethod:order.paymentMethod,status:order.status});
     CART=[];grabCode='';grabDiscountType='None';grabDiscountAmount=0;loyaltyRewardKey=null;renderCart();renderOrderNumPreview();
 
     // Refresh from Supabase, then return to the dashboard where the new
@@ -2133,7 +2139,7 @@ async function finalizeOrder({method,subtotal,received,ref,cashPart,gcashPart,di
 }
 
 function showOrderConfirmation(order){
-  openModal(`<div class="modal-body" style="text-align:center;padding-top:26px;"><div class="success-check">✓</div><div class="confirm-order-num">${esc(order.orderNumber)}</div><div style="color:var(--text-dim);font-size:13.5px;margin-bottom:16px;">${order.source==='GrabFood'?'GrabFood order saved — preparing':'Payment confirmed — order preparing'}${order.lateEntry?`<br><strong>Business Date: ${order.date} · Late Entry: Yes</strong><br><span style="font-size:12px;">Entered ${new Date(order.timestamp).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}</span>`:''}</div><div style="text-align:left;background:var(--cream-dim);border-radius:10px;padding:14px 16px;"><div class="sumrow"><span>Source</span><span>${esc(order.source||'Walk-in')}</span></div><div class="sumrow"><span>Order Total</span><span>${PESO(order.total)}</span></div>${order.discountAmount?`<div class="sumrow"><span>Discount</span><span>−${PESO(order.discountAmount)}</span></div>`:''}<div class="sumrow"><span>Payment</span><span>${esc(order.paymentMethod)}</span></div>${order.paymentMethod==='Cash'||order.paymentMethod==='Cash + GCash'?`<div class="sumrow"><span>Change</span><span>${PESO(order.changeGiven)}</span></div>`:''}</div></div><div class="modal-foot"><button class="btn btn-primary" id="modal-done" style="flex:1;">Back to Dashboard</button></div>`);
+  openModal(`<div class="modal-body" style="text-align:center;padding-top:26px;"><div class="success-check">✓</div><div class="confirm-order-num">${esc(order.orderNumber)}</div><div style="color:var(--text-dim);font-size:13.5px;margin-bottom:16px;">${order.source==='GrabFood'?'GrabFood order saved — preparing':'Payment confirmed — order preparing'}${order.lateEntry?`<br><strong>Business Date: ${order.date} · Late Entry: Yes</strong><br><span style="font-size:12px;">Entered ${new Date(order.timestamp).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}</span>`:''}</div><div style="text-align:left;background:var(--cream-dim);border-radius:10px;padding:14px 16px;"><div class="sumrow"><span>Source</span><span>${esc(order.source||'Walk-in')}</span></div>${order.serviceType?`<div class="sumrow"><span>Service Type</span><span>${esc(order.serviceType)}</span></div>`:''}<div class="sumrow"><span>Order Total</span><span>${PESO(order.total)}</span></div>${order.discountAmount?`<div class="sumrow"><span>Discount</span><span>−${PESO(order.discountAmount)}</span></div>`:''}<div class="sumrow"><span>Payment</span><span>${esc(order.paymentMethod)}</span></div>${order.paymentMethod==='Cash'||order.paymentMethod==='Cash + GCash'?`<div class="sumrow"><span>Change</span><span>${PESO(order.changeGiven)}</span></div>`:''}</div></div><div class="modal-foot"><button class="btn btn-primary" id="modal-done" style="flex:1;">Back to Dashboard</button></div>`);
   document.getElementById('modal-done').onclick=()=>{closeModal();goToPage('dashboard')};
 }
 
@@ -2246,7 +2252,7 @@ function orderTableRows(o){
       <td colspan="9">
         <div class="order-expand-panel ${o.status==='Preparing'?'preparing':''}">
           <div class="order-expand-head">
-            <div><div class="order-expand-title">${o.status==='Preparing'?'Prepare this order':'Order items'}</div>${o.source==='GrabFood'?`<div style="font-size:12px;color:var(--text-dim);margin-top:3px;">GrabFood · ${esc(o.grabCode||o.orderNumber)}</div>`:''}</div>
+            <div><div class="order-expand-title">${o.status==='Preparing'?'Prepare this order':'Order items'}</div><div style="font-size:12px;color:var(--text-dim);margin-top:3px;">${esc(o.source||'Walk-in')}${o.serviceType?' · '+esc(o.serviceType):''}${o.source==='GrabFood'?' · '+esc(o.grabCode||o.orderNumber):''}</div></div>
             ${o.status==='Preparing'?`<button class="btn order-complete-btn" data-complete-order="${escAttr(o.id)}" ${lockedForStaff?'disabled':''}>Complete</button>`:''}
           </div>
           <div class="order-items-prep">${itemCards}</div>
@@ -2294,6 +2300,7 @@ function openOrderDetail(id){
             </div>
           </div>`).join('')}
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">
+          <div class="sumrow"><span>Source</span><span>${esc(o.source||'Walk-in')}</span></div>${o.serviceType?`<div class="sumrow"><span>Service Type</span><span>${esc(o.serviceType)}</span></div>`:''}
           <div class="sumrow"><span>Payment</span><span>${o.paymentMethod}</span></div>
           ${o.source==='GrabFood'?`<div class="sumrow"><span>Grab Code</span><span>${esc(o.grabCode||o.orderNumber)}</span></div><div class="sumrow"><span>Discount</span><span>${o.discountAmount?`−${PESO(o.discountAmount)}`:'—'}</span></div>`:(o.paymentMethod==='Cash'?`<div class="sumrow"><span>Received / Change</span><span>${PESO(o.amountReceived)} / ${PESO(o.changeGiven)}</span></div>`:o.paymentMethod==='Cash + GCash'?`<div class="sumrow"><span>Cash + GCash</span><span>${PESO(o.cashAmount||0)} + ${PESO(o.gcashAmount||0)}</span></div>`:`<div class="sumrow"><span>Reference</span><span>${o.gcashRef||'—'}</span></div>`)}
           <div class="sumrow grand"><span>Total</span><span>${PESO(o.total)}</span></div>
@@ -3444,7 +3451,7 @@ function renderMenuMgmt(){
       <div class="card" style="padding:16px 20px;margin-bottom:14px;">
         <div class="section-title">${esc(cat)} <span style="font-weight:400;color:var(--text-dim);font-size:12px;">(${items.length})</span></div>
         <div>
-          ${items.map(pr=>`
+          ${items.map((pr,index)=>`
             <div class="mgmt-row">
               <div class="toggle ${pr.active?'on':''}" data-toggle="${pr.id}"><div class="knob"></div></div>
               ${pr.image?`<img src="${pr.image}" alt="" style="width:42px;height:42px;object-fit:cover;border-radius:8px;flex-shrink:0;">`:`<div style="width:42px;height:42px;border-radius:8px;background:#F0F0EC;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${productIcon(pr)}</div>`}
@@ -3452,6 +3459,8 @@ function renderMenuMgmt(){
               <div class="mprices">Walk-in: ${Object.entries(pr.sizes).map(([k,v])=>`${k}: ${PESO(v)}`).join(' · ')}<br><span style="color:var(--caramel-dark)">Grab: ${Object.entries(pr.sizes).map(([k,v])=>`${k}: ${PESO((pr.grabPrices||pr.sizes)[k]??v)}`).join(' · ')}</span></div>
               <button class="icon-btn mgmt-photo-btn" data-photo="${pr.id}">${pr.image?'Change Photo':'Add Photo'}</button>
               <input class="mgmt-file-input" type="file" accept="image/*" data-photo-input="${pr.id}">
+              <button class="icon-btn" data-move-up="${pr.id}" ${index===0?'disabled':''} title="Move up" aria-label="Move ${escAttr(pr.name)} up">↑</button>
+              <button class="icon-btn" data-move-down="${pr.id}" ${index===items.length-1?'disabled':''} title="Move down" aria-label="Move ${escAttr(pr.name)} down">↓</button>
               <button class="icon-btn" data-edit="${pr.id}">Edit</button>
               <button class="icon-btn danger" data-del="${pr.id}">Delete</button>
             </div>`).join('') || `<div style="color:var(--text-dim);font-size:13px;padding:8px 0;">No products yet.</div>`}
@@ -3494,6 +3503,19 @@ function renderMenuMgmt(){
       toast('Product photo updated');
     }catch(err){ console.error(err); toast(productImageUploadErrorMessage(err)); }
   });
+  async function moveMenuItem(id,direction){
+    const pr=MENU.products.find(p=>p.id===id); if(!pr)return;
+    const categoryItems=MENU.products.filter(p=>p.category===pr.category);
+    const current=categoryItems.findIndex(p=>p.id===id), target=current+direction;
+    if(current<0||target<0||target>=categoryItems.length)return;
+    const reason=requireActionReason(`moving ${pr.name} ${direction<0?'up':'down'} in the menu`); if(!reason)return;
+    const a=MENU.products.indexOf(categoryItems[current]), b=MENU.products.indexOf(categoryItems[target]);
+    [MENU.products[a],MENU.products[b]]=[MENU.products[b],MENU.products[a]];
+    try{await persistMenu();await writeAudit('reorder_product','product',pr.id,reason,{name:pr.name,category:pr.category,direction:direction<0?'up':'down'});renderMenuMgmt();renderPOS();toast('Menu order updated.');}
+    catch(err){[MENU.products[a],MENU.products[b]]=[MENU.products[b],MENU.products[a]];console.error(err);renderMenuMgmt();renderPOS();toast('Menu order was not saved: '+(err?.message||'database error'));}
+  }
+  catsWrap.querySelectorAll('[data-move-up]').forEach(b=>b.onclick=()=>moveMenuItem(b.dataset.moveUp,-1));
+  catsWrap.querySelectorAll('[data-move-down]').forEach(b=>b.onclick=()=>moveMenuItem(b.dataset.moveDown,1));
   catsWrap.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEditProductModal(MENU.products.find(p=>p.id===b.dataset.edit)));
   catsWrap.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
     if(confirm('Delete this product? This cannot be undone.')){
@@ -3668,14 +3690,17 @@ function openEditProductModal(pr){
       readSizesFromDom();
       if(!name.trim() || sizes.length===0){ toast('Please enter a name and at least one size/price.'); return; }
       const reason=requireActionReason(`${isNew?'creating':'editing'} product ${name.trim()}`); if(!reason)return;
+      const saveButton=document.getElementById('modal-save');
+      if(saveButton){saveButton.disabled=true;saveButton.textContent='Saving…';}
       const sizeMap = {}; const grabMap={}; sizes.forEach(s=>{sizeMap[s.name]=s.price;grabMap[s.name]=s.grabPrice;});
+      const productId=isNew?uid():pr.id;
+      const beforeProducts=MENU.products.map(p=>({ref:p,values:{...p,sizes:{...p.sizes},grabPrices:{...(p.grabPrices||{})}}}));
       let imagePath = pr?.imagePath || extractProductImagePath(pr?.image);
       try{
         if(selectedImageFile){
           if(!HAS_SUPABASE || !supabaseOk) throw new Error('Supabase Storage is not available.');
           toast('Uploading photo…');
           const oldPath=imagePath;
-          const productId=isNew ? uid() : pr.id;
           const result=await uploadProductImage(selectedImageFile, productId);
           image=result.url; imagePath=result.path;
           if(oldPath && oldPath!==imagePath) await deleteProductImage(oldPath);
@@ -3685,18 +3710,31 @@ function openEditProductModal(pr){
             pr.name=name.trim(); pr.category=category; pr.sizes=sizeMap; pr.grabPrices=grabMap; pr.isDrink=isDrink; pr.addonEligible=addonEligible; pr.image=image; pr.imagePath=imagePath;
           }
         }else if(isNew){
-          MENU.products.push({id:uid(), name:name.trim(), category, sizes:sizeMap, grabPrices:grabMap, isDrink, addonEligible, image:'', active:true});
+          MENU.products.push({id:productId, name:name.trim(), category, sizes:sizeMap, grabPrices:grabMap, isDrink, addonEligible, image:'', active:true});
         }else{
           if(removeExistingImage && imagePath) await deleteProductImage(imagePath);
           pr.name=name.trim(); pr.category=category; pr.sizes=sizeMap; pr.grabPrices=grabMap; pr.isDrink=isDrink; pr.addonEligible=addonEligible; pr.image=image;
           if(removeExistingImage) pr.imagePath='';
         }
-      }catch(err){ console.error(err); toast(productImageUploadErrorMessage(err)+' Product was not saved.'); return; }
-      await persistMenu();
-      await writeAudit(isNew?'create_product':'edit_product','product',isNew?productId:pr.id,reason,{name:name.trim(),category});
+      }catch(err){
+        console.error(err);
+        MENU.products.splice(0,MENU.products.length,...beforeProducts.map(snapshot=>{Object.assign(snapshot.ref,snapshot.values);return snapshot.ref;}));
+        if(saveButton){saveButton.disabled=false;saveButton.textContent=isNew?'Save Product':'Save Changes';}
+        toast((selectedImageFile?productImageUploadErrorMessage(err):'Product could not be saved: '+(err?.message||'database error'))+' Product was not saved.');
+        return;
+      }
+      try{
+        await persistMenu();
+        await writeAudit(isNew?'create_product':'edit_product','product',productId,reason,{name:name.trim(),category});
+      }catch(err){
+        MENU.products.splice(0,MENU.products.length,...beforeProducts.map(snapshot=>{Object.assign(snapshot.ref,snapshot.values);return snapshot.ref;}));
+        if(saveButton){saveButton.disabled=false;saveButton.textContent=isNew?'Save Product':'Save Changes';}
+        console.error(err);toast('Product was NOT saved: '+(err?.message||'database error'));return;
+      }
       closeModal();
       renderMenuMgmt();
-      toast('Product saved');
+      renderPOS();
+      toast(isNew?'New product added successfully. Menu refreshed.':'Product updated successfully. Menu refreshed.');
     };
   }
   function render(){ openModal(body()); wire(); }
