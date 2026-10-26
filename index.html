@@ -1677,8 +1677,8 @@ function renderPOS(){
   const posDate=document.getElementById('pos-entry-date'); if(posDate) posDate.onchange=e=>{ selectedOrderDate=e.target.value||todayStr(); CART=[]; loyaltyRewardKey=null; renderPOS(); };
   const opsWrap=document.getElementById('pos-ops-wrap'); if(opsWrap){ const currentShift=openShiftForDate(businessDayKey()); const soCount=soldOutCount(businessDayKey()); opsWrap.innerHTML=`<button class="btn btn-secondary" id="quick-availability-btn" type="button">Availability${soCount?` (${soCount} sold out)`:''}</button>${selectedOrderDate===businessDayKey()?`<button class="btn ${currentShift?'btn-secondary':'btn-primary'}" id="pos-shift-btn" type="button">${currentShift?esc(currentShift.shiftName)+' · OPEN':'Open Shift'}</button>`:''}`; document.getElementById('quick-availability-btn')?.addEventListener('click',openAvailabilityModal); document.getElementById('pos-shift-btn')?.addEventListener('click',()=>currentShift?goToPage('shifts'):openShiftModal()); }
   const wb=document.getElementById('walkin-mode-btn'), gb=document.getElementById('grab-mode-btn');
-  if(wb){ wb.classList.toggle('active',orderChannel==='Walk-in'); wb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; grabCode=''; grabDiscountType='None'; grabDiscountAmount=0; loyaltyRewardKey=null; orderChannel='Walk-in'; renderPOS(); }; }
-  if(gb){ gb.classList.toggle('active',orderChannel==='GrabFood'); gb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; loyaltyRewardKey=null; orderChannel='GrabFood'; renderPOS(); }; }
+  if(wb){ wb.classList.toggle('active',orderChannel==='Walk-in'); wb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; grabCode=''; grabDiscountType='None'; grabDiscountAmount=0; loyaltyRewardKey=null; orderChannel='Walk-in'; serviceType=''; renderPOS(); }; }
+  if(gb){ gb.classList.toggle('active',orderChannel==='GrabFood'); gb.onclick=()=>{ if(CART.length && !confirm('Switch order type and clear current order?')) return; CART=[]; loyaltyRewardKey=null; orderChannel='GrabFood'; serviceType='Take Out'; renderPOS(); }; }
   const gcw=document.getElementById('grab-code-wrap'), gci=document.getElementById('grab-code-input');
   if(gcw){ gcw.style.display=orderChannel==='GrabFood'?'block':'none'; if(gci){ gci.value=grabCode; gci.oninput=e=>grabCode=e.target.value.trim(); } }
   if(!activeCategory) activeCategory = MENU.categories[0];
@@ -2252,7 +2252,7 @@ function orderTableRows(o){
       <td colspan="9">
         <div class="order-expand-panel ${o.status==='Preparing'?'preparing':''}">
           <div class="order-expand-head">
-            <div><div class="order-expand-title">${o.status==='Preparing'?'Prepare this order':'Order items'}</div>${o.source==='GrabFood'?`<div style="font-size:12px;color:var(--text-dim);margin-top:3px;">GrabFood · ${esc(o.grabCode||o.orderNumber)}</div>`:''}</div>
+            <div><div class="order-expand-title">${o.status==='Preparing'?'Prepare this order':'Order items'}</div><div style="font-size:12px;color:var(--text-dim);margin-top:3px;">${esc(o.source||'Walk-in')}${o.serviceType?' · '+esc(o.serviceType):''}${o.source==='GrabFood'?' · '+esc(o.grabCode||o.orderNumber):''}</div></div>
             ${o.status==='Preparing'?`<button class="btn order-complete-btn" data-complete-order="${escAttr(o.id)}" ${lockedForStaff?'disabled':''}>Complete</button>`:''}
           </div>
           <div class="order-items-prep">${itemCards}</div>
@@ -2300,6 +2300,7 @@ function openOrderDetail(id){
             </div>
           </div>`).join('')}
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">
+          <div class="sumrow"><span>Source</span><span>${esc(o.source||'Walk-in')}</span></div>${o.serviceType?`<div class="sumrow"><span>Service Type</span><span>${esc(o.serviceType)}</span></div>`:''}
           <div class="sumrow"><span>Payment</span><span>${o.paymentMethod}</span></div>
           ${o.source==='GrabFood'?`<div class="sumrow"><span>Grab Code</span><span>${esc(o.grabCode||o.orderNumber)}</span></div><div class="sumrow"><span>Discount</span><span>${o.discountAmount?`−${PESO(o.discountAmount)}`:'—'}</span></div>`:(o.paymentMethod==='Cash'?`<div class="sumrow"><span>Received / Change</span><span>${PESO(o.amountReceived)} / ${PESO(o.changeGiven)}</span></div>`:o.paymentMethod==='Cash + GCash'?`<div class="sumrow"><span>Cash + GCash</span><span>${PESO(o.cashAmount||0)} + ${PESO(o.gcashAmount||0)}</span></div>`:`<div class="sumrow"><span>Reference</span><span>${o.gcashRef||'—'}</span></div>`)}
           <div class="sumrow grand"><span>Total</span><span>${PESO(o.total)}</span></div>
