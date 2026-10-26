@@ -3694,7 +3694,7 @@ function openEditProductModal(pr){
       if(saveButton){saveButton.disabled=true;saveButton.textContent='Saving…';}
       const sizeMap = {}; const grabMap={}; sizes.forEach(s=>{sizeMap[s.name]=s.price;grabMap[s.name]=s.grabPrice;});
       const productId=isNew?uid():pr.id;
-      const beforeProducts=MENU.products.map(p=>({...p,sizes:{...p.sizes},grabPrices:{...(p.grabPrices||{})}}));
+      const beforeProducts=MENU.products.map(p=>({ref:p,values:{...p,sizes:{...p.sizes},grabPrices:{...(p.grabPrices||{})}}}));
       let imagePath = pr?.imagePath || extractProductImagePath(pr?.image);
       try{
         if(selectedImageFile){
@@ -3718,7 +3718,7 @@ function openEditProductModal(pr){
         }
       }catch(err){
         console.error(err);
-        if(isNew) MENU.products=beforeProducts;
+        if(isNew) MENU.products.splice(0,MENU.products.length,...beforeProducts.map(snapshot=>{Object.assign(snapshot.ref,snapshot.values);return snapshot.ref;}));
         if(saveButton){saveButton.disabled=false;saveButton.textContent=isNew?'Save Product':'Save Changes';}
         toast((selectedImageFile?productImageUploadErrorMessage(err):'Product could not be saved: '+(err?.message||'database error'))+' Product was not saved.');
         return;
@@ -3727,7 +3727,7 @@ function openEditProductModal(pr){
         await persistMenu();
         await writeAudit(isNew?'create_product':'edit_product','product',productId,reason,{name:name.trim(),category});
       }catch(err){
-        MENU.products=beforeProducts;
+        MENU.products.splice(0,MENU.products.length,...beforeProducts.map(snapshot=>{Object.assign(snapshot.ref,snapshot.values);return snapshot.ref;}));
         if(saveButton){saveButton.disabled=false;saveButton.textContent=isNew?'Save Product':'Save Changes';}
         console.error(err);toast('Product was NOT saved: '+(err?.message||'database error'));return;
       }
