@@ -500,6 +500,9 @@ details[open]>:not(summary){animation:details-in var(--motion-normal) var(--moti
 @media(max-width:720px){.modal-overlay .modal{transform-origin:bottom center;}@keyframes modal-in{from{opacity:0;transform:translateY(22px);}to{opacity:1;transform:translateY(0);}}@keyframes modal-out{from{opacity:1;transform:translateY(0);}to{opacity:0;transform:translateY(18px);}}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;}}
 </style>
+<style>
+.service-type-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}.service-type-card{display:flex;flex-direction:column;align-items:flex-start;gap:8px;text-align:left;min-height:112px;padding:15px;border:1.5px solid #E1E1DB;border-radius:13px;background:#fff;color:#292929;transition:.15s}.service-type-card:hover{border-color:#F0B16F;background:#FFFCF7}.service-type-card.selected{border-color:var(--caramel);background:#FFF4E8;box-shadow:0 0 0 2px rgba(242,140,40,.12)}.service-type-card .service-icon{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:#F0F0EC;font-size:19px}.service-type-card.selected .service-icon{background:var(--caramel);color:#fff}.service-type-card strong{font-size:14px}.service-type-card small{font-size:11px;color:#8A8A83;line-height:1.35}.service-type-card .service-selected-mark{margin-left:auto;font-size:10px;font-weight:800;color:var(--caramel-dark)}.service-type-card .service-card-top{display:flex;align-items:center;width:100%;gap:8px}.reorder-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;margin-bottom:12px;border:1px solid #E4E4DF;border-radius:12px;background:#fff}.reorder-toolbar p{margin:3px 0 0;font-size:12px;color:#85857F}.mgmt-row.reorder-enabled{border:1px dashed #D2D2CB;border-radius:10px;margin:6px 0;background:#fff;cursor:grab}.mgmt-row.dragging{opacity:.42}.mgmt-row.drop-target{border-color:var(--caramel);background:#FFF4E8}.reorder-handle{display:none;flex:0 0 34px;width:34px;height:38px;align-items:center;justify-content:center;border-radius:8px;background:#F0F0EC;color:#686862;font-size:20px;cursor:grab}.reorder-enabled .reorder-handle{display:flex}@media(max-width:720px){.service-type-card{min-height:104px;padding:12px}.service-type-cards{gap:8px}.reorder-toolbar{align-items:flex-start}.reorder-toolbar .btn{min-height:42px}}
+</style>
 </head>
 <body>
 <div id="login-screen" class="login-screen">
@@ -874,6 +877,9 @@ let CASH_MOVEMENTS = [];
 let CART = [];
 let orderChannel = 'Walk-in';
 let serviceType = '';
+let menuReorderMode = false;
+let menuReorderSnapshot = null;
+let menuDraggedProductId = null;
 let grabCode = '';
 let grabDiscountType = 'None';
 let grabDiscountAmount = 0;
@@ -2012,7 +2018,7 @@ function openCheckoutModal(){
     const lr=loyalty();
     return `<div class="modal-head"><h3>${orderChannel==='GrabFood'?'Save GrabFood Order':'Checkout'}</h3><div class="msub">${CART.reduce((s,i)=>s+i.qty,0)} item(s) · ${CART.filter(i=>cartItemIsDrink(i)).reduce((s,i)=>s+i.qty,0)} cup(s)</div></div>
     <div class="modal-body">
-      <div class="field"><label>Order Type <span style="color:var(--rust);">*</span></label>${orderChannel==='GrabFood'?`<div class="addon-row" style="border:1.5px solid var(--line);border-radius:10px;padding:12px;"><strong>Take Out</strong><span style="margin-left:auto;color:var(--text-dim);font-size:12px;">Automatic for GrabFood</span></div>`:`<select id="service-type" required><option value="">Select Dine In or Take Out</option><option value="Dine In" ${serviceType==='Dine In'?'selected':''}>Dine In</option><option value="Take Out" ${serviceType==='Take Out'?'selected':''}>Take Out</option></select><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">Choose how this walk-in order will be served.</div>`}</div>
+      <div class="field"><label>Order Type <span style="color:var(--rust);">*</span></label>${orderChannel==='GrabFood'?`<div class="addon-row" style="border:1.5px solid var(--line);border-radius:10px;padding:12px;"><strong>Take Out</strong><span style="margin-left:auto;color:var(--text-dim);font-size:12px;">Automatic for GrabFood</span></div>`:`<div class="service-type-cards" role="group" aria-label="Choose order type"><button type="button" class="service-type-card ${serviceType==='Dine In'?'selected':''}" data-service-type="Dine In" aria-pressed="${serviceType==='Dine In'}"><span class="service-card-top"><span class="service-icon">♨</span>${serviceType==='Dine In'?'<span class="service-selected-mark">SELECTED</span>':''}</span><strong>Dine In</strong><small>Enjoy your order at Hibi Cafe</small></button><button type="button" class="service-type-card ${serviceType==='Take Out'?'selected':''}" data-service-type="Take Out" aria-pressed="${serviceType==='Take Out'}"><span class="service-card-top"><span class="service-icon">↗</span>${serviceType==='Take Out'?'<span class="service-selected-mark">SELECTED</span>':''}</span><strong>Take Out</strong><small>Pack your order to go</small></button></div><div style="font-size:11px;color:var(--text-dim);margin-top:7px;">Choose how this walk-in order will be served.</div>`}</div>
       ${orderChannel==='Walk-in' && eligible.length ? `<div class="field"><label>Loyalty Card Reward</label><select id="loyalty-reward"><option value="">No loyalty reward</option>${eligible.map(i=>{const r=loyaltyRewardForItem(i);return r.eligible?`<option value="${escAttr(i.key)}" ${selectedLoyaltyKey===i.key?'selected':''}>10th drink free — ${esc(i.name)} ${i.size?`(${esc(i.size)})`:''} · ${esc(r.label)}</option>`:''}).join('')}</select><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">Present/verify the completed loyalty card. One 10th drink reward per order.</div></div>` : ''}
       ${orderChannel==='Walk-in' ? `<label class="pwd-discount-card ${pwdSelected?'active':''}" for="pwd-discount"><div class="pwd-main"><div class="pwd-icon">20%</div><div class="pwd-title">PWD / Senior Discount</div></div><input type="checkbox" id="pwd-discount" ${pwdSelected?'checked':''}><span class="pwd-switch"></span></label>` : ''}
       ${orderChannel==='GrabFood'?`<div class="field"><label>GrabFood Code</label><input id="modal-grab-code" type="text" value="${escAttr(grabCode)}" placeholder="e.g. GF123456"></div>
@@ -2038,7 +2044,7 @@ function openCheckoutModal(){
   function render(){
     openModal(body());
     document.getElementById('modal-cancel').onclick=closeModal;
-    const serviceSelect=document.getElementById('service-type'); if(serviceSelect) serviceSelect.onchange=e=>{serviceType=e.target.value;render();};
+    document.querySelectorAll('[data-service-type]').forEach(btn=>btn.onclick=()=>{serviceType=btn.dataset.serviceType;render();});
     const lrSel=document.getElementById('loyalty-reward'); if(lrSel) lrSel.onchange=e=>{selectedLoyaltyKey=e.target.value||null;loyaltyRewardKey=selectedLoyaltyKey;render();};
     const pwdCb=document.getElementById('pwd-discount'); if(pwdCb) pwdCb.onchange=e=>{pwdSelected=e.target.checked;render();};
     if(orderChannel==='Walk-in'){
@@ -2323,15 +2329,15 @@ function openOrderDetail(id){
     if(!isSuperuser() && o.date!==businessDayKey()){ toast('Staff cannot edit the status of previous-date orders.'); return; }
     const newStatus = document.getElementById('status-select').value;
     if(newStatus===o.status){ toast('No status change was made.'); return; }
-    const reason = requireActionReason(`changing status of order ${o.orderNumber}`);
-    if(!reason) return;
+    const reason = newStatus==='Cancelled' ? requireActionReason(`cancelling order ${o.orderNumber}`) : '';
+    if(newStatus==='Cancelled' && !reason) return;
     const oldStatus=o.status;
     try{
       const res=await posApi(`/rest/v1/pos_orders?id=eq.${encodeURIComponent(o.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({status:newStatus})});
       const updated=await res.json();
       if(!updated?.length) throw new Error('Order status was not updated.');
       o.status=newStatus;
-      await writeAudit('update_order_status','order',o.id,reason,{orderNumber:o.orderNumber,date:o.date,oldStatus,newStatus});
+      await writeAudit('update_order_status','order',o.id,reason||'',{orderNumber:o.orderNumber,date:o.date,oldStatus,newStatus});
       closeModal();
       renderOrdersPage();
       toast('Order ' + o.orderNumber + ' marked ' + newStatus);
@@ -3426,10 +3432,12 @@ function renderMenuMgmt(){
       <div><h1>Menu Management</h1><div class="psub">Add products, edit prices, manage categories, photos and add-ons</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-secondary" id="quick-availability-menu-btn">Availability</button>
-        <button class="btn btn-secondary" id="add-category-btn">+ Category</button>
-        <button class="btn btn-primary" id="add-product-btn">+ Product</button>
+        ${menuReorderMode?`<button class="btn btn-secondary" id="cancel-menu-reorder-btn">Cancel</button><button class="btn btn-primary" id="save-menu-reorder-btn">Save Order</button>`:`<button class="btn btn-secondary" id="start-menu-reorder-btn">↕ Rearrange Items</button>`}
+        <button class="btn btn-secondary" id="add-category-btn" ${menuReorderMode?'disabled':''}>+ Category</button>
+        <button class="btn btn-primary" id="add-product-btn" ${menuReorderMode?'disabled':''}>+ Product</button>
       </div>
     </div>
+    ${menuReorderMode?`<div class="reorder-toolbar"><div><strong>Rearrange menu items</strong><p>Drag items within each category, then save your new order.</p></div><span style="font-size:11px;color:#777;">Changes are not saved until you choose Save Order.</span></div>`:''}
     <div id="menu-categories"></div>
     <div class="card" style="padding:18px 20px;margin-top:18px;">
       <div class="page-title" style="margin-bottom:10px;">
@@ -3440,6 +3448,12 @@ function renderMenuMgmt(){
     </div>
   `;
   document.getElementById('quick-availability-menu-btn').onclick = openAvailabilityModal;
+  const startReorderBtn=document.getElementById('start-menu-reorder-btn');
+  if(startReorderBtn) startReorderBtn.onclick=()=>{menuReorderSnapshot=MENU.products.map(p=>({...p,sizes:{...p.sizes},grabPrices:{...(p.grabPrices||{})}}));menuReorderMode=true;renderMenuMgmt();};
+  const cancelReorderBtn=document.getElementById('cancel-menu-reorder-btn');
+  if(cancelReorderBtn) cancelReorderBtn.onclick=()=>{if(menuReorderSnapshot) MENU.products=menuReorderSnapshot.map(p=>({...p,sizes:{...p.sizes},grabPrices:{...(p.grabPrices||{})}}));menuReorderSnapshot=null;menuDraggedProductId=null;menuReorderMode=false;renderMenuMgmt();renderPOS();};
+  const saveReorderBtn=document.getElementById('save-menu-reorder-btn');
+  if(saveReorderBtn) saveReorderBtn.onclick=async()=>{saveReorderBtn.disabled=true;saveReorderBtn.textContent='Saving…';try{await persistMenu();await writeAudit('reorder_menu','menu','products','',{productOrder:MENU.products.map(p=>({id:p.id,name:p.name,category:p.category}))});menuReorderSnapshot=null;menuReorderMode=false;menuDraggedProductId=null;renderMenuMgmt();renderPOS();toast('Menu order saved. POS menu refreshed.');}catch(err){console.error(err);toast('Menu order was not saved: '+(err?.message||'database error'));saveReorderBtn.disabled=false;saveReorderBtn.textContent='Save Order';}};
   document.getElementById('add-category-btn').onclick = openAddCategoryModal;
   document.getElementById('add-product-btn').onclick = ()=>openEditProductModal(null);
   document.getElementById('add-addon-btn').onclick = ()=>openEditAddonModal(null);
@@ -3452,28 +3466,33 @@ function renderMenuMgmt(){
         <div class="section-title">${esc(cat)} <span style="font-weight:400;color:var(--text-dim);font-size:12px;">(${items.length})</span></div>
         <div>
           ${items.map((pr,index)=>`
-            <div class="mgmt-row">
-              <div class="toggle ${pr.active?'on':''}" data-toggle="${pr.id}"><div class="knob"></div></div>
+            <div class="mgmt-row ${menuReorderMode?'reorder-enabled':''}" data-product-row="${pr.id}" ${menuReorderMode?'draggable="true"':''}>
+              <span class="reorder-handle" aria-hidden="true" title="Drag to reorder">⠿</span>
+              <div class="toggle ${pr.active?'on':''}" data-toggle="${pr.id}" style="${menuReorderMode?'pointer-events:none;opacity:.55':''}"><div class="knob"></div></div>
               ${pr.image?`<img src="${pr.image}" alt="" style="width:42px;height:42px;object-fit:cover;border-radius:8px;flex-shrink:0;">`:`<div style="width:42px;height:42px;border-radius:8px;background:#F0F0EC;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${productIcon(pr)}</div>`}
               <div class="mname">${esc(pr.name)}${pr.isDrink?'':' <span class="badge-inactive">FOOD</span>'}${isProductSoldOut(pr,businessDayKey())?' <span class="badge-inactive" style="background:#FBEDE8;color:#8B3A2B;">SOLD OUT TODAY</span>':''}</div>
               <div class="mprices">Walk-in: ${Object.entries(pr.sizes).map(([k,v])=>`${k}: ${PESO(v)}`).join(' · ')}<br><span style="color:var(--caramel-dark)">Grab: ${Object.entries(pr.sizes).map(([k,v])=>`${k}: ${PESO((pr.grabPrices||pr.sizes)[k]??v)}`).join(' · ')}</span></div>
-              <button class="icon-btn mgmt-photo-btn" data-photo="${pr.id}">${pr.image?'Change Photo':'Add Photo'}</button>
+              <button class="icon-btn mgmt-photo-btn" data-photo="${pr.id}" ${menuReorderMode?'disabled':''}>${pr.image?'Change Photo':'Add Photo'}</button>
               <input class="mgmt-file-input" type="file" accept="image/*" data-photo-input="${pr.id}">
-              <button class="icon-btn" data-move-up="${pr.id}" ${index===0?'disabled':''} title="Move up" aria-label="Move ${escAttr(pr.name)} up">↑</button>
-              <button class="icon-btn" data-move-down="${pr.id}" ${index===items.length-1?'disabled':''} title="Move down" aria-label="Move ${escAttr(pr.name)} down">↓</button>
-              <button class="icon-btn" data-edit="${pr.id}">Edit</button>
-              <button class="icon-btn danger" data-del="${pr.id}">Delete</button>
+              ${menuReorderMode?'':`<button class="icon-btn" data-move-up="${pr.id}" ${index===0?'disabled':''} title="Move up" aria-label="Move ${escAttr(pr.name)} up">↑</button><button class="icon-btn" data-move-down="${pr.id}" ${index===items.length-1?'disabled':''} title="Move down" aria-label="Move ${escAttr(pr.name)} down">↓</button><button class="icon-btn" data-edit="${pr.id}">Edit</button><button class="icon-btn danger" data-del="${pr.id}">Delete</button>`}
             </div>`).join('') || `<div style="color:var(--text-dim);font-size:13px;padding:8px 0;">No products yet.</div>`}
         </div>
       </div>`;
   }).join('');
+  if(menuReorderMode){
+    catsWrap.querySelectorAll('[data-product-row]').forEach(row=>{
+      row.addEventListener('dragstart',e=>{menuDraggedProductId=row.dataset.productRow;row.classList.add('dragging');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',menuDraggedProductId);});
+      row.addEventListener('dragend',()=>{row.classList.remove('dragging');catsWrap.querySelectorAll('.drop-target').forEach(x=>x.classList.remove('drop-target'));menuDraggedProductId=null;});
+      row.addEventListener('dragover',e=>{e.preventDefault();if(row.dataset.productRow!==menuDraggedProductId)row.classList.add('drop-target');e.dataTransfer.dropEffect='move';});
+      row.addEventListener('dragleave',()=>row.classList.remove('drop-target'));
+      row.addEventListener('drop',e=>{e.preventDefault();row.classList.remove('drop-target');const fromId=e.dataTransfer.getData('text/plain')||menuDraggedProductId,toId=row.dataset.productRow;if(!fromId||!toId||fromId===toId)return;const from=MENU.products.findIndex(p=>p.id===fromId),to=MENU.products.findIndex(p=>p.id===toId);if(from<0||to<0||MENU.products[from].category!==MENU.products[to].category){toast('Items can only be rearranged within the same category.');return;}const [moved]=MENU.products.splice(from,1);MENU.products.splice(to,0,moved);renderMenuMgmt();});
+    });
+  }
   catsWrap.querySelectorAll('[data-toggle]').forEach(t=>t.onclick=async()=>{
     const pr = MENU.products.find(p=>p.id===t.dataset.toggle);
-    const reason=requireActionReason(`${pr.active?'deactivating':'activating'} product ${pr.name}`);
-    if(!reason) return;
     pr.active = !pr.active;
     await persistMenu();
-    await writeAudit('toggle_product','product',pr.id,reason,{name:pr.name,active:pr.active});
+    await writeAudit('toggle_product','product',pr.id,'',{name:pr.name,active:pr.active});
     renderMenuMgmt();
   });
   catsWrap.querySelectorAll('[data-photo]').forEach(b=>b.onclick=()=>{
@@ -3487,8 +3506,6 @@ function renderMenuMgmt(){
     if(file.size>10*1024*1024){ toast('Please choose an image smaller than 10 MB.'); input.value=''; return; }
     const pr=MENU.products.find(p=>p.id===input.dataset.photoInput);
     if(!pr) return;
-    const reason=requireActionReason(`changing photo for ${pr.name}`);
-    if(!reason) { input.value=''; return; }
     try{
       if(!HAS_SUPABASE || !supabaseOk){ toast('Supabase Storage is not available. Please check the connection.'); return; }
       toast('Uploading photo…');
@@ -3498,7 +3515,7 @@ function renderMenuMgmt(){
       pr.imagePath=result.path;
       await persistMenu();
       if(oldPath && oldPath!==result.path) await deleteProductImage(oldPath);
-      await writeAudit('update_product_photo','product',pr.id,reason,{name:pr.name});
+      await writeAudit('update_product_photo','product',pr.id,'',{name:pr.name});
       renderMenuMgmt();
       toast('Product photo updated');
     }catch(err){ console.error(err); toast(productImageUploadErrorMessage(err)); }
@@ -3508,10 +3525,9 @@ function renderMenuMgmt(){
     const categoryItems=MENU.products.filter(p=>p.category===pr.category);
     const current=categoryItems.findIndex(p=>p.id===id), target=current+direction;
     if(current<0||target<0||target>=categoryItems.length)return;
-    const reason=requireActionReason(`moving ${pr.name} ${direction<0?'up':'down'} in the menu`); if(!reason)return;
     const a=MENU.products.indexOf(categoryItems[current]), b=MENU.products.indexOf(categoryItems[target]);
     [MENU.products[a],MENU.products[b]]=[MENU.products[b],MENU.products[a]];
-    try{await persistMenu();await writeAudit('reorder_product','product',pr.id,reason,{name:pr.name,category:pr.category,direction:direction<0?'up':'down'});renderMenuMgmt();renderPOS();toast('Menu order updated.');}
+    try{await persistMenu();await writeAudit('reorder_product','product',pr.id,'',{name:pr.name,category:pr.category,direction:direction<0?'up':'down'});renderMenuMgmt();renderPOS();toast('Menu order updated.');}
     catch(err){[MENU.products[a],MENU.products[b]]=[MENU.products[b],MENU.products[a]];console.error(err);renderMenuMgmt();renderPOS();toast('Menu order was not saved: '+(err?.message||'database error'));}
   }
   catsWrap.querySelectorAll('[data-move-up]').forEach(b=>b.onclick=()=>moveMenuItem(b.dataset.moveUp,-1));
@@ -3520,10 +3536,9 @@ function renderMenuMgmt(){
   catsWrap.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
     if(confirm('Delete this product? This cannot be undone.')){
       const pr=MENU.products.find(p=>p.id===b.dataset.del); if(!pr)return;
-      const reason=requireActionReason(`deleting product ${pr.name}`); if(!reason)return;
       MENU.products = MENU.products.filter(p=>p.id!==b.dataset.del);
       await persistMenu();
-      await writeAudit('delete_product','product',pr.id,reason,{name:pr.name});
+      await writeAudit('delete_product','product',pr.id,'',{name:pr.name});
       renderMenuMgmt();
     }
   });
@@ -3539,16 +3554,14 @@ function renderMenuMgmt(){
     </div>`).join('') || `<div style="color:var(--text-dim);font-size:13px;">No add-ons yet.</div>`;
   addonWrap.querySelectorAll('[data-atoggle]').forEach(t=>t.onclick=async()=>{
     const a = ADDONS.find(x=>x.id===t.dataset.atoggle);
-    const reason=requireActionReason(`${a.active?'deactivating':'activating'} add-on ${a.name}`); if(!reason)return;
-    a.active=!a.active; await persistAddons(); await writeAudit('toggle_addon','addon',a.id,reason,{name:a.name,active:a.active}); renderMenuMgmt();
+    a.active=!a.active; await persistAddons(); await writeAudit('toggle_addon','addon',a.id,'',{name:a.name,active:a.active}); renderMenuMgmt();
   });
   addonWrap.querySelectorAll('[data-aedit]').forEach(b=>b.onclick=()=>openEditAddonModal(ADDONS.find(a=>a.id===b.dataset.aedit)));
   addonWrap.querySelectorAll('[data-adel]').forEach(b=>b.onclick=async()=>{
     if(confirm('Delete this add-on?')){
       const a=ADDONS.find(x=>x.id===b.dataset.adel); if(!a)return;
-      const reason=requireActionReason(`deleting add-on ${a.name}`); if(!reason)return;
       ADDONS = ADDONS.filter(a=>a.id!==b.dataset.adel);
-      await persistAddons(); await writeAudit('delete_addon','addon',a.id,reason,{name:a.name}); renderMenuMgmt();
+      await persistAddons(); await writeAudit('delete_addon','addon',a.id,'',{name:a.name}); renderMenuMgmt();
     }
   });
 }
@@ -3567,10 +3580,9 @@ function openAddCategoryModal(){
   document.getElementById('modal-save').onclick = async ()=>{
     const name = document.getElementById('new-cat-name').value.trim();
     if(!name) return;
-    const reason=requireActionReason(`adding category ${name}`); if(!reason)return;
     if(!MENU.categories.includes(name)) MENU.categories.push(name);
     await persistMenu();
-    await writeAudit('create_category','category',name,reason,{name});
+    await writeAudit('create_category','category',name,'',{name});
     closeModal();
     renderMenuMgmt();
   };
@@ -3689,7 +3701,6 @@ function openEditProductModal(pr){
     document.getElementById('modal-save').onclick = async ()=>{
       readSizesFromDom();
       if(!name.trim() || sizes.length===0){ toast('Please enter a name and at least one size/price.'); return; }
-      const reason=requireActionReason(`${isNew?'creating':'editing'} product ${name.trim()}`); if(!reason)return;
       const saveButton=document.getElementById('modal-save');
       if(saveButton){saveButton.disabled=true;saveButton.textContent='Saving…';}
       const sizeMap = {}; const grabMap={}; sizes.forEach(s=>{sizeMap[s.name]=s.price;grabMap[s.name]=s.grabPrice;});
@@ -3725,7 +3736,7 @@ function openEditProductModal(pr){
       }
       try{
         await persistMenu();
-        await writeAudit(isNew?'create_product':'edit_product','product',productId,reason,{name:name.trim(),category});
+        await writeAudit(isNew?'create_product':'edit_product','product',productId,'',{name:name.trim(),category});
       }catch(err){
         MENU.products.splice(0,MENU.products.length,...beforeProducts.map(snapshot=>{Object.assign(snapshot.ref,snapshot.values);return snapshot.ref;}));
         if(saveButton){saveButton.disabled=false;saveButton.textContent=isNew?'Save Product':'Save Changes';}
@@ -3760,12 +3771,11 @@ function openEditAddonModal(a){
     const p = parseFloat(document.getElementById('f-aprice').value)||0;
     const gp = parseFloat(document.getElementById('f-agrabprice').value)||p;
     if(!n) return;
-    const reason=requireActionReason(`${isNew?'creating':'editing'} add-on ${n}`); if(!reason)return;
     const id=isNew?uid():a.id;
     if(isNew) ADDONS.push({id, name:n, price:p, grabPrice:gp, active:true});
     else { a.name=n; a.price=p; a.grabPrice=gp; }
     await persistAddons();
-    await writeAudit(isNew?'create_addon':'edit_addon','addon',id,reason,{name:n,price:p,grabPrice:gp});
+    await writeAudit(isNew?'create_addon':'edit_addon','addon',id,'',{name:n,price:p,grabPrice:gp});
     closeModal();
     renderMenuMgmt();
     toast('Add-on saved');
@@ -3938,21 +3948,19 @@ function renderSettings(){
     if(saveLogoBtn) saveLogoBtn.onclick=async()=>{
       if(pendingLogo===undefined) pendingLogo=SETTINGS.logoUrl||'';
       if(pendingLogo===(SETTINGS.logoUrl||'')) return;
-      const reason=requireActionReason('changing the POS logo'); if(!reason)return;
       SETTINGS.logoUrl=pendingLogo||'';
       await persistSettings();
-      await writeAudit('change_branding','settings','logo',reason,{hasLogo:!!SETTINGS.logoUrl});
+      await writeAudit('change_branding','settings','logo','',{hasLogo:!!SETTINGS.logoUrl});
       applyBranding();
       toast(SETTINGS.logoUrl?'Logo updated.':'Logo removed.');
       renderSettings();
     };
     if(removeLogoBtn) removeLogoBtn.onclick=async()=>{
       if(!SETTINGS.logoUrl) return;
-      const reason=requireActionReason('removing the POS logo'); if(!reason)return;
       pendingLogo='';
       SETTINGS.logoUrl='';
       await persistSettings();
-      await writeAudit('remove_branding','settings','logo',reason,{});
+      await writeAudit('remove_branding','settings','logo','',{});
       applyBranding();
       toast('Logo removed.');
       renderSettings();
@@ -3964,11 +3972,10 @@ function renderSettings(){
     const cp=document.getElementById('my-confirm-password')?.value||'';
     if(np.length<6){toast('Password must be at least 6 characters.');return;}
     if(np!==cp){toast('Passwords do not match.');return;}
-    const reason=requireActionReason('changing own password'); if(!reason)return;
     try{
       const {error}=await supabaseClient.auth.updateUser({password:np});
       if(error) throw error;
-      await writeAudit('change_password','user',CURRENT_USER.id,reason,{self:true});
+      await writeAudit('change_password','user',CURRENT_USER.id,'',{self:true});
       document.getElementById('my-new-password').value=''; document.getElementById('my-confirm-password').value='';
       toast('Password changed successfully.');
     }catch(e){toast('Could not change password: '+(e.message||e));}
@@ -4028,12 +4035,11 @@ async function wireUserManagement(){
     if(np.length<6){toast('Password must be at least 6 characters.');return;}
     if(np!==cp){toast('Passwords do not match.');return;}
     const username=form.username.value.trim().toLowerCase();
-    const reason=requireActionReason(`changing password for user ${username}`); if(!reason)return;
     try{
       const r=await fetch(`${SUPABASE_URL}/functions/v1/manage-users`,{method:'POST',headers:{...headers},body:JSON.stringify({action:'reset_password',target_user_id:editingId,password:np})});
       let data={}; try{data=await r.json();}catch(e){}
       if(!r.ok) throw new Error(data.error||`Request failed (${r.status})`);
-      await writeAudit('admin_change_password','user',editingId,reason,{username});
+      await writeAudit('admin_change_password','user',editingId,'',{username});
       form.resetPassword.value=''; form.resetConfirm.value='';
       toast('Password changed successfully.');
     }catch(e){toast('Could not change password: '+(e.message||e));}
@@ -4042,7 +4048,6 @@ async function wireUserManagement(){
     let auth_user_id=form.authId.value.trim(), username=form.username.value.trim().toLowerCase(), display_name=form.display.value.trim(), role=form.role.value, password=form.password.value, active=form.active.value==='true';
     if(!username){toast('Username is required.');return;}
     const permissions={}; DEFAULT_PERMISSIONS.forEach(p=>permissions[p]=STAFF_PERMISSIONS.has(p));
-    const reason=requireActionReason(`${editingId?'updating':'creating'} user ${username}`); if(!reason)return;
     if(!editingId && !auth_user_id){
       if(!password || password.length<6){toast('For a new user, enter a password of at least 6 characters.');return;}
       try{
