@@ -3512,7 +3512,7 @@ function renderMenuMgmt(){
     const a=MENU.products.indexOf(categoryItems[current]), b=MENU.products.indexOf(categoryItems[target]);
     [MENU.products[a],MENU.products[b]]=[MENU.products[b],MENU.products[a]];
     try{await persistMenu();await writeAudit('reorder_product','product',pr.id,reason,{name:pr.name,category:pr.category,direction:direction<0?'up':'down'});renderMenuMgmt();renderPOS();toast('Menu order updated.');}
-    catch(err){console.error(err);toast('Menu order was not saved: '+(err?.message||'database error'));}
+    catch(err){[MENU.products[a],MENU.products[b]]=[MENU.products[b],MENU.products[a]];console.error(err);renderMenuMgmt();renderPOS();toast('Menu order was not saved: '+(err?.message||'database error'));}
   }
   catsWrap.querySelectorAll('[data-move-up]').forEach(b=>b.onclick=()=>moveMenuItem(b.dataset.moveUp,-1));
   catsWrap.querySelectorAll('[data-move-down]').forEach(b=>b.onclick=()=>moveMenuItem(b.dataset.moveDown,1));
@@ -3718,7 +3718,7 @@ function openEditProductModal(pr){
         }
       }catch(err){
         console.error(err);
-        if(isNew) MENU.products.splice(0,MENU.products.length,...beforeProducts.map(snapshot=>{Object.assign(snapshot.ref,snapshot.values);return snapshot.ref;}));
+        MENU.products.splice(0,MENU.products.length,...beforeProducts.map(snapshot=>{Object.assign(snapshot.ref,snapshot.values);return snapshot.ref;}));
         if(saveButton){saveButton.disabled=false;saveButton.textContent=isNew?'Save Product':'Save Changes';}
         toast((selectedImageFile?productImageUploadErrorMessage(err):'Product could not be saved: '+(err?.message||'database error'))+' Product was not saved.');
         return;
