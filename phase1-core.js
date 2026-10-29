@@ -73,6 +73,7 @@ const cents=n=>Math.round(Number(n||0)*100), money=n=>n/100;
 function p1Parts(o){return o.paymentMethod==='Cash + GCash'?{Cash:Number(o.cashAmount||0),GCash:Number(o.gcashAmount||0)}:{[o.paymentMethod]:Number(o.total||0)};}
 function p1RemainingParts(o){
  const remaining={Cash:0,GCash:0,GrabFood:0};
+ if(isUnpaidOnlineOrder(o))return remaining;
  for(const [method,value] of Object.entries(p1Parts(o))) remaining[method]=Math.max(0,Number(value)||0);
  for(const r of REFUNDS.filter(x=>x.order_id===o.id&&!x.voided_at)){
   remaining.Cash=Math.max(0,remaining.Cash-Number(r.cash_amount||0));
@@ -85,8 +86,8 @@ computeMetrics=function(orders,refunds=[]){
   // Cancellation refunds belong to cancelled orders and are already excluded
   // from sales. Only ordinary Refund records reduce reported sales totals.
   refunds=p1RefundedOnly(refunds,orders);
-  const paid=orders.filter(o=>!p1IsCancelled(o));
-  const pmAgg={},sourceAgg={'Walk-in':{count:0,sales:0,items:0,cups:0,discounts:0},GrabFood:{count:0,sales:0,items:0,cups:0,discounts:0}},productAgg={};
+  const paid=orders.filter(o=>!p1IsCancelled(o)&&!isUnpaidOnlineOrder(o));
+  const pmAgg={},sourceAgg={'Walk-in':{count:0,sales:0,items:0,cups:0,discounts:0},GrabFood:{count:0,sales:0,items:0,cups:0,discounts:0},Online:{count:0,sales:0,items:0,cups:0,discounts:0}},productAgg={};
   const cupBySize={'Hot 12oz':0,'Iced 16oz':0,'Iced 20oz':0};let cups=0,foodItems=0,gross=0,refundCents=0,fees=0;
   function products(items,amount,quantity){
     const total=items.reduce((n,i)=>n+cents(i.lineTotal),0);let allocated=0;
