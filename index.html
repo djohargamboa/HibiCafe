@@ -1224,7 +1224,12 @@ function mapAvailabilityRow(row){
 function isProductSoldOut(pr,dateKey=businessDayKey()){
   if(!pr) return false;
   const a=PRODUCT_AVAILABILITY[pr.id];
-  return !!(a && a.status==='SoldOut' && a.businessDate===dateKey);
+  return !!(a && a.status==='SoldOut');
+}
+function sortProductsAvailability(items){
+  return items.map((pr,index)=>({pr,index,soldOut:isProductSoldOut(pr)}))
+    .sort((a,b)=>Number(a.soldOut)-Number(b.soldOut)||a.index-b.index)
+    .map(item=>item.pr);
 }
 async function loadProductAvailability(){
   const res=await posApi('/rest/v1/product_availability?select=*');
@@ -1253,7 +1258,7 @@ function openAvailabilityModal(){
       <div class="availability-controls"><input id="availability-search" type="search" placeholder="Search item…" autocomplete="off"><select id="availability-category"><option value="all">All categories</option>${categories.map(cat=>`<option value="${escAttr(cat)}">${esc(cat)}</option>`).join('')}</select></div>
       <div class="availability-filters"><button class="availability-filter active" data-afilter="all">All</button><button class="availability-filter" data-afilter="available">Available</button><button class="availability-filter" data-afilter="soldout">Sold Out</button></div>
       <div class="availability-grid" id="availability-grid"></div>
-      <div class="availability-reset-note">Sold Out applies only to business day <strong>${dateKey}</strong> and automatically resets on the next business day.</div>
+      <div class="availability-reset-note">Sold Out stays in effect across business days until you manually mark the item Available after restocking.</div>
     </div>
     <div class="modal-foot"><button class="btn btn-secondary" id="availability-all">Make All Available</button><button class="btn btn-primary" id="availability-done">Done</button></div>`);
 
@@ -1269,14 +1274,14 @@ function openAvailabilityModal(){
     reset.disabled=soldCount===0;
     document.querySelectorAll('[data-afilter]').forEach(b=>b.classList.toggle('active',b.dataset.afilter===state.filter));
     const q=state.query.trim().toLowerCase();
-    const visible=products.filter(pr=>{
+    const visible=sortProductsAvailability(products.filter(pr=>{
       const sold=isProductSoldOut(pr,dateKey);
       if(state.filter==='available'&&sold) return false;
       if(state.filter==='soldout'&&!sold) return false;
       if(state.category!=='all'&&pr.category!==state.category) return false;
       if(q && !`${pr.name} ${pr.category}`.toLowerCase().includes(q)) return false;
       return true;
-    });
+    }));
     grid.innerHTML=visible.length?visible.map(pr=>{
       const sold=isProductSoldOut(pr,dateKey);
       return `<div class="availability-card ${sold?'soldout':''}">
@@ -1756,10 +1761,10 @@ function renderPOS(){
     }));
   } else {
     const query = productSearch.trim().toLowerCase();
-    const items = MENU.products.filter(p=>
+    const items = sortProductsAvailability(MENU.products.filter(p=>
       p.category===activeCategory &&
       (!query || p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query))
-    );
+    ));
     grid.innerHTML = items.map(pr=>{
       const sizeKeys = Object.keys(pr.sizes);
       const priceMap=orderChannel==='GrabFood'?(pr.grabPrices||pr.sizes):pr.sizes;
@@ -1770,7 +1775,7 @@ function renderPOS(){
         <div class="product-visual ${pr.image?'has-image':''}">${pr.image?`<img src="${pr.image}" alt="${escAttr(pr.name)}" loading="lazy">`:`<span>${productIcon(pr)}</span>`}</div>
         ${productIsDrink(pr)?'':'<span class="ptag">FOOD</span>'}
         <div class="pname">${esc(pr.name)}</div>
-        <div class="pprice">${soldOut?'Unavailable today':priceLabel}</div>
+        <div class="pprice">${soldOut?'Unavailable':priceLabel}</div>
         ${soldOut?'':'<span class="product-add">+</span>'}
       </button>`;
     }).join('') || emptyGridMsg('No items in this category yet. Add some in Menu Management.');
@@ -3514,7 +3519,7 @@ function renderMenuMgmt(){
               <span class="reorder-handle" aria-hidden="true" title="Drag to reorder">⠿</span>
               <div class="toggle ${pr.active?'on':''}" data-toggle="${pr.id}" style="${menuReorderMode?'pointer-events:none;opacity:.55':''}"><div class="knob"></div></div>
               ${pr.image?`<img src="${pr.image}" alt="" style="width:42px;height:42px;object-fit:cover;border-radius:8px;flex-shrink:0;">`:`<div style="width:42px;height:42px;border-radius:8px;background:#F0F0EC;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${productIcon(pr)}</div>`}
-              <div class="mname">${esc(pr.name)}${pr.isDrink?'':' <span class="badge-inactive">FOOD</span>'}${isProductSoldOut(pr,businessDayKey())?' <span class="badge-inactive" style="background:#FBEDE8;color:#8B3A2B;">SOLD OUT TODAY</span>':''}</div>
+              <div class="mname">${esc(pr.name)}${pr.isDrink?'':' <span class="badge-inactive">FOOD</span>'}${isProductSoldOut(pr,businessDayKey())?' <span class="badge-inactive" style="background:#FBEDE8;color:#8B3A2B;">SOLD OUT</span>':''}</div>
               <div class="mprices">Walk-in: ${Object.entries(pr.sizes).map(([k,v])=>`${k}: ${PESO(v)}`).join(' · ')}<br><span style="color:var(--caramel-dark)">Grab: ${Object.entries(pr.sizes).map(([k,v])=>`${k}: ${PESO((pr.grabPrices||pr.sizes)[k]??v)}`).join(' · ')}</span></div>
               <button class="icon-btn mgmt-photo-btn" data-photo="${pr.id}" ${menuReorderMode?'disabled':''}>${pr.image?'Change Photo':'Add Photo'}</button>
               <input class="mgmt-file-input" type="file" accept="image/*" data-photo-input="${pr.id}">
