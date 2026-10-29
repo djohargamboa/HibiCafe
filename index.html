@@ -1569,10 +1569,12 @@ async function loadPosOrders(){
 
 let LIVE_ORDER_CHANNEL = null;
 let LIVE_ORDER_REFRESH_TIMER = null;
+let LIVE_AVAILABILITY_REFRESH_TIMER = null;
 let LIVE_ORDER_REFRESHING = false;
 
 function stopLiveOrderSync(){
   if(LIVE_ORDER_REFRESH_TIMER){ clearTimeout(LIVE_ORDER_REFRESH_TIMER); LIVE_ORDER_REFRESH_TIMER=null; }
+  if(LIVE_AVAILABILITY_REFRESH_TIMER){ clearTimeout(LIVE_AVAILABILITY_REFRESH_TIMER); LIVE_AVAILABILITY_REFRESH_TIMER=null; }
   if(LIVE_ORDER_CHANNEL && supabaseClient){ supabaseClient.removeChannel(LIVE_ORDER_CHANNEL); }
   LIVE_ORDER_CHANNEL=null;
 }
@@ -1597,6 +1599,20 @@ function scheduleLiveOrderRefresh(){
   },350);
 }
 
+function scheduleLiveAvailabilityRefresh(){
+  if(LIVE_AVAILABILITY_REFRESH_TIMER) clearTimeout(LIVE_AVAILABILITY_REFRESH_TIMER);
+  LIVE_AVAILABILITY_REFRESH_TIMER=setTimeout(async ()=>{
+    LIVE_AVAILABILITY_REFRESH_TIMER=null;
+    if(!CURRENT_USER) return;
+    try{
+      await loadProductAvailability();
+      markDatabaseHealthy();
+      // Refresh the product grid and sold-out count without clearing the in-progress CART.
+      if(document.getElementById('page-pos')?.classList.contains('active')) renderPOS();
+    }catch(e){ console.warn('Live product availability refresh failed',e); }
+  },200);
+}
+
 function startLiveOrderSync(){
   stopLiveOrderSync();
   if(!supabaseClient || !CURRENT_USER) return;
@@ -1604,6 +1620,7 @@ function startLiveOrderSync(){
     .channel('hibi-live-orders')
     .on('postgres_changes',{event:'*',schema:'public',table:'pos_orders'},scheduleLiveOrderRefresh)
     .on('postgres_changes',{event:'*',schema:'public',table:'pos_order_items'},scheduleLiveOrderRefresh)
+    .on('postgres_changes',{event:'*',schema:'public',table:'product_availability'},scheduleLiveAvailabilityRefresh)
     .subscribe((status)=>{
       if(status==='CHANNEL_ERROR' || status==='TIMED_OUT'){
         console.warn('Hibi live order updates connection status:',status);
