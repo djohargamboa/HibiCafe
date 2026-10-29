@@ -1388,12 +1388,14 @@ function shiftFinancialSummary(shift,endIso=null){
   const gcashSales=orders.reduce((sum,o)=>sum+(o.paymentMethod==='GCash'?(Number(o.total)||0):o.paymentMethod==='Cash + GCash'?(Number(o.gcashAmount)||0):0),0);
   const grabSales=orders.reduce((sum,o)=>sum+(o.paymentMethod==='GrabFood'?(Number(o.total)||0):0),0);
   const expenses=EXPENSES.filter(x=>x.date===shift.businessDate&&x.status!=='Voided'&&isWithinShift(x.timestamp,shift,end)).reduce((sum,x)=>sum+Number(x.amount||0),0);
+  // Any active owner/operational expense tagged Cash reduces the drawer, regardless of category.
+  const cashOperationalExpenses=OWNER_EXPENSES.filter(x=>x.date===shift.businessDate&&x.status!=='Voided'&&(x.paymentMethod||'Cash')==='Cash'&&isWithinShift(x.timestamp,shift,end)).reduce((sum,x)=>sum+Number(x.amount||0),0);
   const movements=CASH_MOVEMENTS.filter(x=>x.date===shift.businessDate&&x.status!=='Voided'&&isWithinShift(x.timestamp,shift,end));
   const cashIn=movements.filter(x=>x.type==='In').reduce((sum,x)=>sum+Number(x.amount||0),0);
   const cashOut=movements.filter(x=>x.type==='Out').reduce((sum,x)=>sum+Number(x.amount||0),0);
   const cupsSold=orders.reduce((sum,o)=>sum+(o.items||[]).filter(i=>i.isDrink).reduce((n,i)=>n+(Number(i.qty)||0),0),0);
-  const expected=(Number(shift.openingCash)||0)+cashSales+cashIn-cashOut-expenses;
-  return {orders,cashSales,gcashSales,grabSales,expenses,cashIn,cashOut,expected,transactionCount:orders.length,cupsSold};
+  const expected=(Number(shift.openingCash)||0)+cashSales+cashIn-cashOut-expenses-cashOperationalExpenses;
+  return {orders,cashSales,gcashSales,grabSales,expenses,cashOperationalExpenses,cashIn,cashOut,expected,transactionCount:orders.length,cupsSold};
 }
 function fmtShiftTime(iso){ return iso?new Date(iso).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'—'; }
 function requireOpenShift(dateKey=businessDayKey()){
@@ -1432,7 +1434,8 @@ function openCloseShiftModal(shift){
       <div class="sumrow"><span>Cash Sales</span><span>+${PESO(summary.cashSales)}</span></div>
       <div class="sumrow"><span>Cash In</span><span>+${PESO(summary.cashIn)}</span></div>
       <div class="sumrow"><span>Cash Out</span><span>−${PESO(summary.cashOut)}</span></div>
-      <div class="sumrow"><span>Cash Expenses</span><span>−${PESO(summary.expenses)}</span></div>
+      <div class="sumrow"><span>Daily Expenses</span><span>−${PESO(summary.expenses)}</span></div>
+      <div class="sumrow"><span>Operational Expenses (Cash)</span><span>−${PESO(summary.cashOperationalExpenses)}</span></div>
       <div class="sumrow grand"><span>Expected Drawer</span><span>${PESO(summary.expected)}</span></div>
     </div>
     <div class="field"><label>Actual Cash Counted</label><input type="number" step="0.01" min="0" id="shift-actual" placeholder="0.00"></div>
