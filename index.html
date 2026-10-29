@@ -2405,7 +2405,7 @@ function orderTableRows(o){
       <td>${esc(o.date)}</td>
       <td>${esc(o.time)}</td>
       <td>${itemCount}</td>
-      <td><span class="pm-badge pm-${escAttr(o.paymentMethod)}">${esc(o.paymentMethod)}</span>${o.source==='Online'&&o.paymentStatus!=='Paid'?'<div style="font-size:10px;color:var(--rust);font-weight:800;margin-top:4px;">PAYMENT PENDING</div>':''}</td>
+      <td><span class="pm-badge pm-${escAttr(o.paymentMethod)}">${esc(o.paymentMethod)}</span>${o.source==='Online'&&o.status!=='Cancelled'&&o.paymentStatus!=='Paid'?'<div style="font-size:10px;color:var(--rust);font-weight:800;margin-top:4px;">PAYMENT PENDING</div>':''}</td>
       <td class="num">${PESO(o.total)}</td>
       <td><span class="status-badge status-${escAttr(o.status)}">${esc(o.status)}</span></td>
       <td>${esc(o.cashier)}</td>
@@ -2786,6 +2786,13 @@ function renderStaffDashboard(){
         <button class="staff-quick-action" id="staff-report"><span class="staff-quick-icon">EOD</span><span class="staff-quick-copy"><strong>Daily Report</strong><small>Review and send reconciliation</small></span></button>
       </div>
     </div>
+    <div class="card staff-preparing-card" style="margin-bottom:16px;">
+      <div class="staff-preparing-head"><div><div class="section-title" style="margin:0;">New Online Orders</div><div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Review incoming online orders and verify payment before preparation.</div></div><span class="staff-preparing-count">${ORDERS.filter(o=>o.date===dateKey&&o.source==='Online'&&o.status==='New').length}</span></div>
+      <table id="staff-online-table">
+        <thead><tr><th>Order #</th><th>Date</th><th>Time</th><th>Items</th><th>Payment</th><th class="num">Total</th><th>Status</th><th>Cashier</th><th>Actions</th></tr></thead>
+        <tbody>${ORDERS.filter(o=>o.date===dateKey&&o.source==='Online'&&o.status==='New').sort((a,b)=>(Date.parse(b.timestamp)||0)-(Date.parse(a.timestamp)||0)).map(o=>orderTableRows(o)).join('')||`<tr><td colspan="9"><div class="empty-state">No new online orders.</div></td></tr>`}</tbody>
+      </table>
+    </div>
     <div class="card staff-preparing-card">
       <div class="staff-preparing-head"><div><div class="section-title" style="margin:0;">Preparing Orders</div><div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Newest orders appear first. Item details are expanded automatically.</div></div><span class="staff-preparing-count">${preparing.length}</span></div>
       <table id="staff-preparing-table">
@@ -2798,6 +2805,24 @@ function renderStaffDashboard(){
   document.getElementById('staff-expense').onclick=()=>{if(requireOpenShift(dateKey))openAddExpenseModal();};
   document.getElementById('staff-shifts').onclick=()=>goToPage('shifts');
   document.getElementById('staff-report').onclick=()=>goToPage('reports');
+  const onlineTable=document.getElementById('staff-online-table');
+  onlineTable.querySelectorAll('[data-toggle-order]').forEach(btn=>btn.onclick=(event)=>{
+    event.stopPropagation();
+    const detail=[...onlineTable.querySelectorAll('[data-order-detail]')].find(row=>row.dataset.orderDetail===btn.dataset.toggleOrder);
+    if(!detail)return;
+    detail.hidden=!detail.hidden;
+    btn.textContent=detail.hidden?'Expand':'Collapse';
+  });
+  onlineTable.querySelectorAll('[data-order-summary]').forEach(row=>row.onclick=(event)=>{if(!event.target.closest('button'))row.querySelector('[data-toggle-order]')?.click();});
+  onlineTable.querySelectorAll('[data-view]').forEach(button=>button.onclick=(event)=>{event.stopPropagation();openOrderDetail(button.dataset.view);});
+  onlineTable.querySelectorAll('[data-quick-online]').forEach(button=>button.onclick=(event)=>{
+    event.stopPropagation();
+    const id=button.dataset.quickOnline,order=ORDERS.find(x=>x.id===id);
+    if(!order||order.status!=='New'||order.source!=='Online')return;
+    openOrderDetail(id);
+    const action=document.getElementById(order.paymentStatus==='Paid'?'modal-accept-online-order':'modal-verify-online-payment');
+    if(action)action.click();
+  });
   const table=document.getElementById('staff-preparing-table');
   table.querySelectorAll('[data-toggle-order]').forEach(btn=>btn.onclick=(event)=>{
     event.stopPropagation();
