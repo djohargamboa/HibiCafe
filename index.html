@@ -2390,17 +2390,26 @@ function orderTableRows(o){
     </tr>`;
 }
 
+async function updateOnlineOrderStatus(orderId,status,reason=''){
+  const res=await fetch(`${SUPABASE_URL}/functions/v1/online-ordering`,{method:'POST',headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${CURRENT_USER?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify({action:'updateOnlineStatus',orderId,status,reason})});
+  const data=await res.json();if(!res.ok)throw new Error(data.error||'Could not update online order status.');return data;
+}
 async function completeOrderFromList(id){
   const o=ORDERS.find(x=>x.id===id);
   if(!o || o.status!=='Preparing') return;
   if(isDateLocked(o.date) && !isSuperuser()){ toast('This order date is reconciled and locked.'); return; }
   if(!isSuperuser() && o.date!==businessDayKey()){ toast('Staff cannot edit the status of previous-date orders.'); return; }
   try{
-    const res=await posApi(`/rest/v1/pos_orders?id=eq.${encodeURIComponent(o.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({status:'Completed'})});
-    const updated=await res.json();
-    if(!updated?.length) throw new Error('Order status was not updated.');
     const oldStatus=o.status;
-    o.status='Completed';
+    if(o.source==='Online'){
+      const updated=await updateOnlineOrderStatus(o.id,'Completed','');
+      o.status=updated.status;
+    }else{
+      const res=await posApi(`/rest/v1/pos_orders?id=eq.${encodeURIComponent(o.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({status:'Completed'})});
+      const updated=await res.json();
+      if(!updated?.length) throw new Error('Order status was not updated.');
+      o.status='Completed';
+    }
     await writeAudit('update_order_status','order',o.id,'Order preparation completed',{orderNumber:o.orderNumber,date:o.date,oldStatus,newStatus:'Completed'});
     renderOrdersPage();
     toast('Order ' + o.orderNumber + ' completed');
@@ -2491,10 +2500,15 @@ function openOrderDetail(id){
     if(newStatus==='Cancelled' && !reason) return;
     const oldStatus=o.status;
     try{
-      const res=await posApi(`/rest/v1/pos_orders?id=eq.${encodeURIComponent(o.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({status:newStatus})});
-      const updated=await res.json();
-      if(!updated?.length) throw new Error('Order status was not updated.');
-      o.status=newStatus;
+      if(o.source==='Online'){
+        const updated=await updateOnlineOrderStatus(o.id,newStatus,reason||'');
+        o.status=updated.status;
+      }else{
+        const res=await posApi(`/rest/v1/pos_orders?id=eq.${encodeURIComponent(o.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({status:newStatus})});
+        const updated=await res.json();
+        if(!updated?.length) throw new Error('Order status was not updated.');
+        o.status=newStatus;
+      }
       await writeAudit('update_order_status','order',o.id,reason||'',{orderNumber:o.orderNumber,date:o.date,oldStatus,newStatus});
       closeModal();
       renderOrdersPage();
