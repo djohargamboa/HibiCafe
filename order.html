@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Order Online — Hibi Cafe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#2b1b12;--ink2:#4a3423;--cream:#fbf7ee;--cream2:#f3ecdd;--white:#fff;--caramel:#b8763e;--matcha:#6b7a4f;--line:#e7decb;--muted:#887a68;--rust:#a6412d;--blue:#315f99}
+*{box-sizing:border-box}body{margin:0;background:var(--cream);color:var(--ink);font-family:Inter,system-ui,sans-serif}button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}.top{background:var(--ink);color:var(--cream);padding:22px 18px;text-align:center}.brand{font-size:25px;font-weight:700;letter-spacing:.4px}.tag{font-size:12px;color:#d9c9ae;letter-spacing:1.8px;margin-top:4px;text-transform:uppercase}.shell{max-width:1050px;margin:auto;padding:18px 16px 48px}.tabs{display:flex;gap:8px;margin:0 auto 18px;max-width:600px}.tabs button{flex:1;border-radius:12px;padding:13px;background:var(--cream2);font-weight:700;color:var(--ink2)}.tabs button.active{background:var(--matcha);color:white}.intro{text-align:center;margin:12px 0 22px}.intro h1{font-size:26px;margin:0 0 7px}.intro p{color:var(--muted);font-size:13px;margin:0}.menu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:14px}.product{background:white;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 2px 10px #2b1b120d}.photo{height:160px;background:#eee8dc;display:flex;align-items:center;justify-content:center;overflow:hidden}.photo img{width:100%;height:100%;object-fit:cover}.photo span{color:var(--muted);font-size:13px}.pbody{padding:14px}.pname{font-size:16px;font-weight:800}.pcat{font-size:11px;color:var(--muted);margin-top:3px}.price{font-size:13px;font-weight:700;color:var(--caramel);margin:9px 0}.field{margin:11px 0}.field label{display:block;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}.field select,.field input,.field textarea{width:100%;padding:11px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}.addonlist{display:grid;gap:5px}.addon{display:flex;align-items:center;gap:7px;font-size:12px}.addon input{accent-color:var(--matcha)}.addrow{display:flex;gap:8px;align-items:center;margin-top:12px}.qty{display:flex;align-items:center;border:1px solid var(--line);border-radius:9px;overflow:hidden}.qty button{background:var(--cream2);width:31px;height:38px;font-size:17px}.qty span{width:28px;text-align:center;font-weight:700;font-size:13px}.primary{background:var(--matcha);color:white;border-radius:10px;padding:12px 14px;font-weight:800}.addrow .primary{flex:1}.primary:disabled{opacity:.45;cursor:not-allowed}.notice{background:#f7f1e5;border:1px solid var(--line);padding:12px;border-radius:10px;color:var(--ink2);font-size:12px;margin:14px 0}.sold{display:inline-block;background:#fbeae6;color:var(--rust);font-size:10px;font-weight:800;padding:5px 8px;border-radius:30px;margin-top:8px}.cartbox,.panel{background:white;border:1px solid var(--line);border-radius:16px;padding:17px;margin-top:20px}.cartbox h2,.panel h2{font-size:18px;margin:0 0 12px}.cartline{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--cream2);font-size:13px}.cartline small{display:block;color:var(--muted);margin-top:3px}.cartline button{background:none;color:var(--rust);font-size:11px}.carttotal{display:flex;justify-content:space-between;font-size:18px;font-weight:800;padding:14px 0}.checkout{width:100%;padding:15px}.hidden{display:none!important}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.paymentchoices,.servicechoices{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.servicechoices{grid-template-columns:repeat(2,1fr)}.choice{border:1px solid var(--line);border-radius:11px;padding:12px 9px;background:#fff;text-align:left}.choice.active{border:2px solid var(--matcha);background:#f4f6f0}.choice strong{display:block;font-size:13px}.choice small{font-size:11px;color:var(--muted)}.qrbox{background:var(--cream);border:1px dashed var(--line);border-radius:12px;padding:14px;text-align:center;margin:10px 0}.qrbox img{max-width:230px;max-height:260px;object-fit:contain;background:white;border-radius:8px}.qrbox p{font-size:12px;color:var(--muted);margin:8px 0 0}.err{color:var(--rust);font-size:12px;margin:10px 0}.success{background:#eef4e9;border:1px solid #cbd9c2;padding:16px;border-radius:12px}.ordercode{font-size:24px;font-weight:800;color:var(--caramel);margin:7px 0}.status{display:inline-block;padding:5px 10px;border-radius:20px;background:#e4ecf7;color:#315f99;font-size:12px;font-weight:800}.muted{color:var(--muted);font-size:12px}.footer{text-align:center;color:var(--muted);font-size:11px;padding:28px 0 0}@media(max-width:600px){.formgrid{grid-template-columns:1fr}.menu-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.photo{height:120px}.pbody{padding:10px}.pname{font-size:14px}.paymentchoices{grid-template-columns:1fr}.intro h1{font-size:23px}.shell{padding-left:10px;padding-right:10px}} 
+</style></head>
+<body>
+<header class="top"><div class="brand">hibi cafe</div><div class="tag">Coffee. Always.</div></header>
+<main class="shell">
+<div class="tabs"><button id="tab-order" class="active">Order Now</button><button id="tab-track">Track My Order</button></div>
+<section id="order-view">
+<div class="intro"><h1>Good coffee, made for your day.</h1><p>Order ahead for pickup or order while you're here. No delivery available.</p></div>
+<div id="menu-message" class="notice">Loading today's menu…</div><div id="menu-grid" class="menu-grid"></div>
+<div class="cartbox"><h2>Your Order <span id="cart-count" class="muted">(0 items)</span></h2><div id="cart-lines"><div class="muted">Add something you love to get started.</div></div><div class="carttotal"><span>Total</span><span id="cart-total">₱0.00</span></div><button class="primary checkout" id="checkout-btn" disabled>Continue to Checkout</button></div>
+<div id="checkout-panel" class="panel hidden"><h2>Checkout</h2><div class="formgrid"><div class="field"><label>Your Name</label><input id="customer-name" maxlength="100" autocomplete="name" placeholder="Name for your order"></div><div class="field"><label>Contact Number</label><input id="customer-phone" maxlength="30" autocomplete="tel" placeholder="09XX XXX XXXX"></div></div>
+<div class="field"><label>Order Type</label><div class="servicechoices"><button class="choice active" data-service="Dine In"><strong>Dine In</strong><small>Enjoy it at Hibi Cafe</small></button><button class="choice" data-service="Take Out"><strong>Take Out</strong><small>Pickup / takeaway</small></button></div></div>
+<div class="field"><label>Payment Method</label><div class="paymentchoices"><button class="choice active" data-provider="Cash"><strong>Cash</strong><small>Pay at the counter</small></button><button class="choice" data-provider="GCash QR"><strong>GCash QR</strong><small>Pay by GCash</small></button><button class="choice" data-provider="BPI QR"><strong>BPI QR</strong><small>Transfer from BPI</small></button></div></div>
+<div id="qr-section" class="hidden"><div class="qrbox" id="qr-display"></div><div class="field"><label>Payment Reference Number</label><input id="payment-reference" maxlength="100" placeholder="Enter the transfer reference"></div><div class="notice">Your payment is not confirmed automatically. Hibi Cafe will verify the transfer before preparing your order.</div></div>
+<div class="field"><label>Order Note (optional)</label><textarea id="customer-note" rows="2" maxlength="300" placeholder="Any helpful notes for the cafe"></textarea></div><div id="checkout-error" class="err"></div><button class="primary checkout" id="place-order">Place Order</button><button class="choice" style="width:100%;margin-top:8px;text-align:center" id="back-menu">Back to Menu</button></div>
+<div id="order-success" class="panel hidden"></div>
+</section>
+<section id="track-view" class="hidden"><div class="intro"><h1>Track My Order</h1><p>Use the order number and private tracking code from checkout.</p></div><div class="panel"><div class="field"><label>Order Number</label><input id="track-number" placeholder="HIBI-0001" autocomplete="off"></div><div class="field"><label>Private Tracking Code</label><input id="track-token" placeholder="Your private tracking code" autocomplete="off"></div><button class="primary checkout" id="track-submit">Track Order</button><div id="track-error" class="err"></div><div id="track-result"></div></div></section>
+<div class="footer">Hibi Cafe · Coffee. Always. · Pickup only</div>
+</main>
+<script>
+const API='https://ysdnxwvkqyqojrelhcbu.supabase.co/functions/v1/online-ordering';
+const $=id=>document.getElementById(id);
+const money=n=>'₱'+(Number(n)||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let catalog={products:[],addons:[],paymentQr:{}},cart=[],serviceType='Dine In',provider='Cash',busy=false;
+async function api(body){const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json().catch(()=>({error:'Unexpected server response.'}));if(!r.ok)throw new Error(data.error||'Request failed.');return data}
+function priceMap(p){return p.sizes&&typeof p.sizes==='object'?p.sizes:{}}
+function selectedProductConfig(id){return {size:$(`size-${id}`)?.value||'',addons:[...document.querySelectorAll(`[data-addon-for="${CSS.escape(id)}"]:checked`)].map(x=>x.value)}}
+function renderMenu(){
+$('menu-grid').innerHTML=catalog.products.map(p=>{
+ const sizes=Object.entries(priceMap(p)).filter(([k,v])=>v!==null&&Number.isFinite(Number(v)));
+ if(!sizes.length)return '';
+ const sold=p.soldOut;
+ return `<article class="product"><div class="photo">${p.image?`<img src="${esc(p.image)}" alt="${esc(p.name)}" loading="lazy">`:'<span>Hibi Cafe</span>'}</div><div class="pbody"><div class="pname">${esc(p.name)}</div><div class="pcat">${esc(p.category||'Cafe favorites')}</div>${sold?'<span class="sold">SOLD OUT</span>':''}<div class="field"><label>Size</label><select id="size-${esc(p.id)}" ${sold?'disabled':''}>${sizes.map(([k,v])=>`<option value="${esc(k)}">${esc(k)} · ${money(v)}</option>`).join('')}</select></div>${catalog.addons.length?`<div class="field"><label>Add-ons</label><div class="addonlist">${catalog.addons.map(a=>`<label class="addon"><input type="checkbox" data-addon-for="${esc(p.id)}" value="${esc(a.id)}" ${sold?'disabled':''}><span>${esc(a.name)} (+${money(a.price)})</span></label>`).join('')}</div></div>`:''}<div class="addrow"><div class="qty"><button type="button" data-qtyminus="${esc(p.id)}" ${sold?'disabled':''}>−</button><span id="qty-${esc(p.id)}">1</span><button type="button" data-qtyplus="${esc(p.id)}" ${sold?'disabled':''}>+</button></div><button class="primary" data-add="${esc(p.id)}" ${sold?'disabled':''}>Add</button></div></div></article>`
+}).join('');
+document.querySelectorAll('[data-qtyminus]').forEach(b=>b.onclick=()=>{const el=$('qty-'+b.dataset.qtyminus);el.textContent=Math.max(1,Number(el.textContent)-1)});
+document.querySelectorAll('[data-qtyplus]').forEach(b=>b.onclick=()=>{const el=$('qty-'+b.dataset.qtyplus);el.textContent=Math.min(20,Number(el.textContent)+1)});
+document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>addToCart(b.dataset.add));
+}
+function addToCart(id){
+ const p=catalog.products.find(x=>String(x.id)===String(id));if(!p||p.soldOut)return;
+ const cfg=selectedProductConfig(id),size=cfg.size,price=Number(priceMap(p)[size]);
+ const addons=cfg.addons.map(aid=>catalog.addons.find(a=>String(a.id)===String(aid))).filter(Boolean).map(a=>({id:String(a.id),name:a.name,price:Number(a.price)||0}));
+ const unitPrice=price+addons.reduce((n,a)=>n+a.price,0),key=[id,size,addons.map(a=>a.id).sort().join(',')].join('|');
+ const old=cart.find(x=>x.key===key);
+ if(old){if(old.qty>=20)return;old.qty++}else cart.push({key,productId:String(p.id),name:p.name,category:p.category||'',isDrink:!!(p.isDrink??p.is_drink),size,qty:1,unitPrice,addons});
+ renderCart();
+}
+function renderCart(){
+ const count=cart.reduce((n,x)=>n+x.qty,0),total=cart.reduce((n,x)=>n+x.qty*x.unitPrice,0);
+ $('cart-count').textContent='('+count+' items)';$('cart-total').textContent=money(total);$('checkout-btn').disabled=!cart.length;
+ $('cart-lines').innerHTML=cart.length?cart.map(x=>`<div class="cartline"><div><strong>${x.qty} × ${esc(x.name)}</strong><small>${esc(x.size)}${x.addons.length?' · '+x.addons.map(a=>esc(a.name)).join(', '):''}</small><button data-remove="${esc(x.key)}">Remove</button></div><strong>${money(x.qty*x.unitPrice)}</strong></div>`).join(''):'<div class="muted">Add something you love to get started.</div>';
+ document.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>{cart=cart.filter(x=>x.key!==b.dataset.remove);renderCart()});
+}
+function setProvider(p){provider=p;document.querySelectorAll('[data-provider]').forEach(b=>b.classList.toggle('active',b.dataset.provider===p));const show=p!=='Cash';$('qr-section').classList.toggle('hidden',!show);$('payment-reference').required=show;
+ if(show){const url=p==='GCash QR'?catalog.paymentQr?.gcash:catalog.paymentQr?.bpi;$('qr-display').innerHTML=url?`<img src="${esc(url)}" alt="${esc(p)} payment QR"><p>Scan with ${p==='GCash QR'?'GCash':'BPI'} and enter your payment reference below.</p>`:`<strong>${esc(p)} QR code is not configured yet.</strong><p>Please contact Hibi Cafe or choose Cash until the cafe's QR image is added in POS Settings.</p>`;}
+}
+function showTab(which){const order=which==='order';$('order-view').classList.toggle('hidden',!order);$('track-view').classList.toggle('hidden',order);$('tab-order').classList.toggle('active',order);$('tab-track').classList.toggle('active',!order)}
+$('tab-order').onclick=()=>showTab('order');$('tab-track').onclick=()=>showTab('track');
+document.querySelectorAll('[data-service]').forEach(b=>b.onclick=()=>{serviceType=b.dataset.service;document.querySelectorAll('[data-service]').forEach(x=>x.classList.toggle('active',x===b))});
+document.querySelectorAll('[data-provider]').forEach(b=>b.onclick=()=>setProvider(b.dataset.provider));
+$('checkout-btn').onclick=()=>{$('checkout-panel').classList.remove('hidden');$('checkout-panel').scrollIntoView({behavior:'smooth',block:'start'})};
+$('back-menu').onclick=()=>$('checkout-panel').classList.add('hidden');
+$('place-order').onclick=async()=>{
+ if(busy||!cart.length)return;
+ const name=$('customer-name').value.trim(),phone=$('customer-phone').value.trim(),reference=$('payment-reference').value.trim();
+ if(!name||phone.length<7){$('checkout-error').textContent='Please enter your name and contact number.';return}
+ if(provider!=='Cash'&&!reference){$('checkout-error').textContent='Enter your payment reference number.';return}
+ if(provider!=='Cash'&&!(provider==='GCash QR'?catalog.paymentQr?.gcash:catalog.paymentQr?.bpi)){$('checkout-error').textContent='This QR payment method is not configured yet. Please choose Cash or contact the cafe.';return}
+ busy=true;$('place-order').disabled=true;$('place-order').textContent='Submitting…';$('checkout-error').textContent='';
+ try{
+ const result=await api({action:'submit',customer:{name,phone,note:$('customer-note').value.trim()},serviceType,paymentProvider:provider,paymentReference:reference,items:cart.map(x=>({productId:x.productId,size:x.size,qty:x.qty,addonIds:x.addons.map(a=>a.id)}))});
+ $('order-success').classList.remove('hidden');$('order-success').innerHTML=`<div class="success"><strong>Thank you! Your order has been submitted.</strong><div class="ordercode">${esc(result.orderNumber)}</div><div class="muted">Keep this private tracking code. You'll need it with your order number.</div><div style="font-weight:800;letter-spacing:1px;word-break:break-all;margin:8px 0">${esc(result.trackingToken)}</div><div class="carttotal"><span>Order total</span><span>${money(result.total)}</span></div><div class="muted">Payment: ${esc(result.paymentProvider)} · Awaiting cashier verification</div><button class="primary checkout" id="track-this-order" style="margin-top:12px">Track this order</button><button class="choice" id="new-order" style="width:100%;margin-top:8px">Start another order</button></div>`;
+ $('track-number').value=result.orderNumber;$('track-token').value=result.trackingToken;
+ $('track-this-order').onclick=()=>{showTab('track');$('track-submit').click()};$('new-order').onclick=()=>{cart=[];renderCart();$('order-success').classList.add('hidden');$('checkout-panel').classList.add('hidden');$('customer-note').value='';$('payment-reference').value='';$('checkout-error').textContent='';window.scrollTo({top:0,behavior:'smooth'})};
+ $('order-success').scrollIntoView({behavior:'smooth',block:'center'});
+ }catch(e){$('checkout-error').textContent=e.message||'Could not submit order.'}
+ finally{busy=false;$('place-order').disabled=false;$('place-order').textContent='Place Order'}
+};
+$('track-submit').onclick=async()=>{
+ $('track-error').textContent='';$('track-result').innerHTML='';$('track-submit').disabled=true;$('track-submit').textContent='Checking…';
+ try{const o=await api({action:'track',orderNumber:$('track-number').value.trim(),trackingToken:$('track-token').value.trim()});
+ const statusColor=o.status==='Completed'?'#eef4e9':o.status==='Cancelled'?'#fbeae6':'#e4ecf7';
+ $('track-result').innerHTML=`<div class="panel" style="padding:14px;margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><strong>${esc(o.orderNumber)}</strong><span class="status" style="background:${statusColor}">${esc(o.status)}</span></div><p class="muted">${esc(o.serviceType)} · Payment: ${esc(o.paymentProvider)} · ${esc(o.paymentStatus)}</p>${o.items.map(i=>`<div class="cartline"><span>${i.qty} × ${esc(i.name)}<small>${esc(i.size||'')}</small></span><strong>${money(i.lineTotal)}</strong></div>`).join('')}<div class="carttotal"><span>Total</span><span>${money(o.total)}</span></div><p class="muted">Status updates appear after the cafe updates your order.</p></div>`;
+ }catch(e){$('track-error').textContent=e.message||'Unable to find order.'}
+ finally{$('track-submit').disabled=false;$('track-submit').textContent='Track Order'}
+};
+async function loadMenu(){try{catalog=await api({action:'menu'});$('menu-message').textContent='Choose your drinks and treats. Your order will be prepared after the cashier confirms payment.';renderMenu();setProvider(provider)}catch(e){$('menu-message').textContent=e.message||'Could not load the menu. Please try again later.'}}
+loadMenu();
+</script></body></html>
