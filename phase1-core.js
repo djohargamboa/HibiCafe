@@ -1,5 +1,5 @@
 /* Phase 1: database-backed financial records, shared reporting and safe submissions. */
-let REFUNDS=[], FEE_RATES=[], p1Epoch=0;
+REFUNDS = []; let FEE_RATES=[], p1Epoch=0;
 const p1Ranges=new Map(), p1Loads=new Map(), p1RenderVersions={};
 const originalPosApi=posApi;
 posApi=async function(path,options={}){
