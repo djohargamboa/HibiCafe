@@ -2399,7 +2399,7 @@ function orderTableRows(o){
       <td class="num">${PESO(o.total)}</td>
       <td><span class="status-badge status-${escAttr(o.status)}">${esc(o.status)}</span></td>
       <td>${esc(o.cashier)}</td>
-      <td style="white-space:nowrap;"><button class="icon-btn order-toggle-btn" data-toggle-order="${escAttr(o.id)}">${expanded?'Collapse':'Expand'}</button> <button class="icon-btn" data-view="${escAttr(o.id)}">View</button></td>
+      <td style="white-space:nowrap;"><button class="icon-btn order-toggle-btn" data-toggle-order="${escAttr(o.id)}">${expanded?'Collapse':'Expand'}</button> <button class="icon-btn" data-view="${escAttr(o.id)}">${o.source==='Online'&&o.status==='New'?'Review':'View'}</button></td>
     </tr>
     <tr class="order-detail-row" data-order-detail="${escAttr(o.id)}" ${expanded?'':'hidden'}>
       <td colspan="9">
