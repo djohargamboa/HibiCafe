@@ -941,11 +941,11 @@ async function doLogin(){
   showLoginError(''); const username=document.getElementById('login-username').value.trim().toLowerCase(); const password=document.getElementById('login-password').value;
   if(!username||!password){showLoginError('Enter your username and password.');return;}
   const btn=document.getElementById('login-btn'); btn.disabled=true; btn.textContent='Signing in…';
-  try{ const email=await getLoginProfile(username); if(!email) throw new Error('Invalid username or password.'); const {data,error}=await supabaseClient.auth.signInWithPassword({email,password}); if(error) throw error; CURRENT_USER=data.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); await writeAudit('login','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||username,role:CURRENT_PROFILE?.role||''}); showApp(); await loadAll(); startDatabaseHealthMonitor(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }
+  try{ const email=await getLoginProfile(username); if(!email) throw new Error('Invalid username or password.'); const {data,error}=await supabaseClient.auth.signInWithPassword({email,password}); if(error) throw error; CURRENT_USER=data.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); await writeAudit('login','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||username,role:CURRENT_PROFILE?.role||''}); showApp(); await loadAll(); startLiveOrderSync(); startDatabaseHealthMonitor(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }
   catch(e){ console.error(e); showLoginError(e.message==='Invalid login credentials'?'Invalid username or password.':e.message||'Unable to sign in.'); if(supabaseClient) await supabaseClient.auth.signOut(); }
   finally{btn.disabled=false;btn.textContent='Sign in';}
 }
-async function doLogout(){ stopDatabaseHealthMonitor(); if(CURRENT_USER) await writeAudit('logout','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); if(supabaseClient) await supabaseClient.auth.signOut(); CURRENT_USER=null; CURRENT_PROFILE=null; FUND_TRANSACTIONS=[]; document.getElementById('app').style.display='none'; document.getElementById('login-screen').style.display='flex'; document.getElementById('login-password').value=''; showLoginError(''); }
+async function doLogout(){ stopLiveOrderSync(); stopDatabaseHealthMonitor(); if(CURRENT_USER) await writeAudit('logout','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); if(supabaseClient) await supabaseClient.auth.signOut(); CURRENT_USER=null; CURRENT_PROFILE=null; FUND_TRANSACTIONS=[]; document.getElementById('app').style.display='none'; document.getElementById('login-screen').style.display='flex'; document.getElementById('login-password').value=''; showLoginError(''); }
 
 let supabaseOk = HAS_SUPABASE; // connection health only; never used as permission or as a reason to save locally
 let LAST_DB_SYNC_AT = null;
@@ -1560,6 +1560,50 @@ async function loadPosOrders(){
   ORDERS=rows.map(mapDbOrder);
   const maxNum=rows.reduce((m,r)=>Math.max(m,Number(r.order_number)||0),0);
   SETTINGS.nextOrderNum=Math.max(Number(SETTINGS.nextOrderNum)||1,maxNum+1);
+}
+
+let LIVE_ORDER_CHANNEL = null;
+let LIVE_ORDER_REFRESH_TIMER = null;
+let LIVE_ORDER_REFRESHING = false;
+
+function stopLiveOrderSync(){
+  if(LIVE_ORDER_REFRESH_TIMER){ clearTimeout(LIVE_ORDER_REFRESH_TIMER); LIVE_ORDER_REFRESH_TIMER=null; }
+  if(LIVE_ORDER_CHANNEL && supabaseClient){ supabaseClient.removeChannel(LIVE_ORDER_CHANNEL); }
+  LIVE_ORDER_CHANNEL=null;
+}
+
+function scheduleLiveOrderRefresh(){
+  if(LIVE_ORDER_REFRESH_TIMER) clearTimeout(LIVE_ORDER_REFRESH_TIMER);
+  LIVE_ORDER_REFRESH_TIMER=setTimeout(async ()=>{
+    LIVE_ORDER_REFRESH_TIMER=null;
+    if(!CURRENT_USER || LIVE_ORDER_REFRESHING) return;
+    LIVE_ORDER_REFRESHING=true;
+    try{
+      await loadPosOrders();
+      markDatabaseHealthy();
+      const activePage=document.querySelector('.page.active')?.id;
+      if(activePage==='page-dashboard') renderDashboard();
+      else if(activePage==='page-orders') renderOrdersPage();
+      else if(activePage==='page-reports') renderReports();
+      else if(activePage==='page-settings') renderSettings();
+      // Avoid re-rendering the POS while a cashier is building an in-progress cart.
+    }catch(e){ console.warn('Live order refresh failed',e); }
+    finally{ LIVE_ORDER_REFRESHING=false; }
+  },350);
+}
+
+function startLiveOrderSync(){
+  stopLiveOrderSync();
+  if(!supabaseClient || !CURRENT_USER) return;
+  LIVE_ORDER_CHANNEL=supabaseClient
+    .channel('hibi-live-orders')
+    .on('postgres_changes',{event:'*',schema:'public',table:'pos_orders'},scheduleLiveOrderRefresh)
+    .on('postgres_changes',{event:'*',schema:'public',table:'pos_order_items'},scheduleLiveOrderRefresh)
+    .subscribe((status)=>{
+      if(status==='CHANNEL_ERROR' || status==='TIMED_OUT'){
+        console.warn('Hibi live order updates connection status:',status);
+      }
+    });
 }
 
 async function loadAll(){
@@ -4101,7 +4145,7 @@ function escAttr(s){ return esc(s); }
   document.getElementById('db-status-chip').onclick=()=>checkDatabaseHealth({silent:false});
   supabaseClient.auth.onAuthStateChange((_event,session)=>{ if(session?.access_token&&CURRENT_USER){CURRENT_USER.access_token=session.access_token;} });
   const {data}=await supabaseClient.auth.getSession();
-  if(data.session){ try{ CURRENT_USER=data.session.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); await writeAudit('login_session_restore','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); showApp(); await loadAll(); startDatabaseHealthMonitor(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }catch(e){await doLogout();} }
+  if(data.session){ try{ CURRENT_USER=data.session.user; CURRENT_USER.access_token=data.session.access_token; await loadProfile(CURRENT_USER); await writeAudit('login_session_restore','session',CURRENT_USER.id,'',{username:CURRENT_PROFILE?.username||'',role:CURRENT_PROFILE?.role||''}); showApp(); await loadAll(); startLiveOrderSync(); startDatabaseHealthMonitor(); applyBranding(); goToPage('dashboard'); renderPOS(); renderOrderNumPreview(); }catch(e){await doLogout();} }
 })();
 </script>
 </body>
