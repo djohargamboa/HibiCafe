@@ -62,12 +62,27 @@ function renderCart(){
 function setProvider(p){provider=p;document.querySelectorAll('[data-provider]').forEach(b=>b.classList.toggle('active',b.dataset.provider===p));const show=p!=='Cash';$('qr-section').classList.toggle('hidden',!show);$('payment-reference').required=show;
  if(show){const url=p==='GCash QR'?catalog.paymentQr?.gcash:catalog.paymentQr?.bpi;$('qr-display').innerHTML=url?`<img src="${esc(url)}" alt="${esc(p)} payment QR"><p>Scan with ${p==='GCash QR'?'GCash':'BPI'} and enter your payment reference below.</p>`:`<strong>${esc(p)} QR code is not configured yet.</strong><p>Please contact Hibi Cafe or choose Cash until the cafe's QR image is added in POS Settings.</p>`;}
 }
-function showTab(which){const order=which==='order';$('order-view').classList.toggle('hidden',!order);$('track-view').classList.toggle('hidden',order);$('tab-order').classList.toggle('active',order);$('tab-track').classList.toggle('active',!order)}
-$('tab-order').onclick=()=>showTab('order');$('tab-track').onclick=()=>showTab('track');
+function showTab(which){const order=which==='order';$('order-view').classList.toggle('hidden',!order);$('track-view').classList.toggle('hidden',order);$('tab-order').classList.toggle('active',order);$('tab-track').classList.toggle('active',!order);$('cartbar').classList.toggle('hidden',!order||!cart.length)}
+$('tab-order').onclick=()=>showTab('order');$('tab-track').onclick=()=>showTab('track');$('header-track').onclick=()=>{showTab('track');window.scrollTo({top:0,behavior:'smooth'})};
 document.querySelectorAll('[data-service]').forEach(b=>b.onclick=()=>{serviceType=b.dataset.service;document.querySelectorAll('[data-service]').forEach(x=>x.classList.toggle('active',x===b))});
 document.querySelectorAll('[data-provider]').forEach(b=>b.onclick=()=>setProvider(b.dataset.provider));
-$('checkout-btn').onclick=()=>{$('checkout-panel').classList.remove('hidden');$('checkout-panel').scrollIntoView({behavior:'smooth',block:'start'})};
-$('back-menu').onclick=()=>$('checkout-panel').classList.add('hidden');
+let checkoutStep=1;
+function showCheckoutStep(step){
+ checkoutStep=step;
+ [1,2,3].forEach(n=>$('checkout-step-'+n).classList.toggle('hidden',n!==step));
+ $('checkout-step-label').textContent='STEP '+step+' OF 3';
+ $('checkout-title').textContent=step===1?'Your details':step===2?'Payment method':'Review your order';
+ $('checkout-subtitle').textContent=step===1?'Who should we prepare this order for?':step===2?'Choose how you would like to pay.':'Everything look right?';
+ $('checkout-back').textContent=step===1?'Back to menu':'Back';
+ $('checkout-next').classList.toggle('hidden',step===3);$('place-order').classList.toggle('hidden',step!==3);
+ if(step===3){const total=cart.reduce((n,x)=>n+x.qty*x.unitPrice,0);$('review-lines').innerHTML=cart.map(x=>'<div class="cartline"><div><strong>'+x.qty+' × '+esc(x.name)+'</strong><small>'+esc(x.size)+(x.addons.length?' · '+x.addons.map(a=>esc(a.name)).join(', '):'')+'</small></div><strong>'+money(x.qty*x.unitPrice)+'</strong></div>').join('');$('review-total').textContent=money(total);$('review-payment').textContent='Order type: '+serviceType+' · Payment: '+provider;}
+}
+$('checkout-btn').onclick=()=>{$('cart-modal').classList.remove('hidden')};
+$('close-cart').onclick=()=>$('cart-modal').classList.add('hidden');
+$('cart-modal').onclick=e=>{if(e.target===$('cart-modal'))$('cart-modal').classList.add('hidden')};
+$('cart-checkout').onclick=()=>{$('cart-modal').classList.add('hidden');$('checkout-panel').classList.remove('hidden');showCheckoutStep(1);$('checkout-panel').scrollIntoView({behavior:'smooth',block:'start'})};
+$('checkout-back').onclick=()=>{if(checkoutStep>1)showCheckoutStep(checkoutStep-1);else{$('checkout-panel').classList.add('hidden');$('cart-modal').classList.remove('hidden')}};
+$('checkout-next').onclick=()=>{if(checkoutStep===1){const name=$('customer-name').value.trim(),phone=$('customer-phone').value.trim();if(!name||phone.length<7){$('checkout-error').textContent='Please enter your name and contact number.';return}showCheckoutStep(2)}else if(checkoutStep===2){if(provider!=='Cash'&&!$('payment-reference').value.trim()){$('checkout-error').textContent='Enter your payment reference number.';return}if(provider!=='Cash'&&!(provider==='GCash QR'?catalog.paymentQr?.gcash:catalog.paymentQr?.bpi)){$('checkout-error').textContent='This QR payment method is not configured yet. Please choose Cash or contact the cafe.';return}showCheckoutStep(3)}};
 $('place-order').onclick=async()=>{
  if(busy||!cart.length)return;
  const name=$('customer-name').value.trim(),phone=$('customer-phone').value.trim(),reference=$('payment-reference').value.trim();
@@ -79,8 +94,8 @@ $('place-order').onclick=async()=>{
  const result=await api({action:'submit',customer:{name,phone,note:$('customer-note').value.trim()},serviceType,paymentProvider:provider,paymentReference:reference,expectedTotal:cart.reduce((n,x)=>n+x.qty*x.unitPrice,0),items:cart.map(x=>({productId:x.productId,size:x.size,qty:x.qty,addonIds:x.addons.map(a=>a.id)}))});
  $('order-success').classList.remove('hidden');$('order-success').innerHTML=`<div class="success"><strong>Thank you! Your order has been submitted.</strong><div class="ordercode">${esc(result.orderNumber)}</div><div class="muted">Keep this private tracking code. You'll need it with your order number.</div><div style="font-weight:800;letter-spacing:1px;word-break:break-all;margin:8px 0">${esc(result.trackingToken)}</div><div class="carttotal"><span>Order total</span><span>${money(result.total)}</span></div><div class="muted">Payment: ${esc(result.paymentProvider)} · Awaiting cashier verification</div><button class="primary checkout" id="track-this-order" style="margin-top:12px">Track this order</button><button class="choice" id="new-order" style="width:100%;margin-top:8px">Start another order</button></div>`;
  $('track-number').value=result.orderNumber;$('track-token').value=result.trackingToken;
- $('track-this-order').onclick=()=>{showTab('track');$('track-submit').click()};$('new-order').onclick=()=>{cart=[];renderCart();$('order-success').classList.add('hidden');$('checkout-panel').classList.add('hidden');$('customer-note').value='';$('payment-reference').value='';$('checkout-error').textContent='';window.scrollTo({top:0,behavior:'smooth'})};
- $('order-success').scrollIntoView({behavior:'smooth',block:'center'});
+ $('track-this-order').onclick=()=>{showTab('track');$('track-submit').click()};$('new-order').onclick=()=>{cart=[];renderCart();$('cartbar').classList.remove('hidden');$('order-success').classList.add('hidden');$('checkout-panel').classList.add('hidden');$('customer-note').value='';$('payment-reference').value='';$('checkout-error').textContent='';window.scrollTo({top:0,behavior:'smooth'})};
+ $('checkout-panel').classList.add('hidden');$('cartbar').classList.add('hidden');$('order-success').scrollIntoView({behavior:'smooth',block:'center'});
  }catch(e){$('checkout-error').textContent=e.message||'Could not submit order.'}
  finally{busy=false;$('place-order').disabled=false;$('place-order').textContent='Place Order'}
 };
@@ -92,6 +107,6 @@ $('track-submit').onclick=async()=>{
  }catch(e){$('track-error').textContent=e.message||'Unable to find order.'}
  finally{$('track-submit').disabled=false;$('track-submit').textContent='Track Order'}
 };
-async function loadMenu(){try{catalog=await api({action:'menu'});$('menu-message').textContent='Choose your drinks and treats. Your order will be prepared after the cashier confirms payment.';renderMenu();setProvider(provider)}catch(e){$('menu-message').textContent=e.message||'Could not load the menu. Please try again later.'}}
-loadMenu();
+async function loadMenu(){try{catalog=await api({action:'menu'});$('menu-message').classList.add('hidden');renderMenu();setProvider(provider)}catch(e){$('menu-message').classList.remove('hidden');$('menu-message').textContent=e.message||'Could not load the menu. Please try again later.'}}
+loadMenu();renderCart();
 </script></body></html>
