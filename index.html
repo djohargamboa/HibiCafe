@@ -1359,7 +1359,7 @@ function cashPortionOfOrder(o){
 }
 function shiftFinancialSummary(shift,endIso=null){
   const end=endIso||shift.closedAt||new Date().toISOString();
-  const orders=ORDERS.filter(o=>o.date===shift.businessDate&&o.status!=='Cancelled'&&isWithinShift(o.timestamp,shift,end));
+  const orders=ORDERS.filter(o=>o.date===shift.businessDate&&o.status!=='Cancelled'&&o.paymentStatus!=='Pending'&&isWithinShift(o.timestamp,shift,end));
   const cashSales=orders.reduce((sum,o)=>sum+cashPortionOfOrder(o),0);
   const gcashSales=orders.reduce((sum,o)=>sum+(o.paymentMethod==='GCash'?(Number(o.total)||0):o.paymentMethod==='Cash + GCash'?(Number(o.gcashAmount)||0):0),0);
   const grabSales=orders.reduce((sum,o)=>sum+(o.paymentMethod==='GrabFood'?(Number(o.total)||0):0),0);
@@ -1538,6 +1538,11 @@ function mapDbOrder(row){
     lateEntry: row.created_at ? isLateEntryForBusinessDate(row.order_date,new Date(row.created_at)) : false,
     source:row.source||'Walk-in',
     serviceType:row.service_type||null,
+    paymentStatus:row.payment_status||'Paid',
+    customerName:row.customer_name||null,
+    customerPhone:row.customer_phone||null,
+    trackingCode:row.tracking_code||null,
+    paymentProofUrl:row.payment_proof_url||null,
     grabCode:normalizedGrabCode||null,
     items:(row.pos_order_items||[]).map(i=>({
       productId:i.product_id, name:i.name, category:i.category, size:i.size,
@@ -2310,7 +2315,7 @@ function renderOrdersPage(){
       <option value="Completed">Completed</option>
       <option value="Cancelled">Cancelled</option>
     </select>
-    <select id="orders-source-select" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);"><option value="all">All sources</option><option value="Walk-in">Walk-in</option><option value="GrabFood">GrabFood</option></select>
+    <select id="orders-source-select" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);"><option value="all">All sources</option><option value="Walk-in">Walk-in</option><option value="Online">Online / QR</option><option value="GrabFood">GrabFood</option></select>
     ${isSuperuser()?`<button class="filter-btn" id="orders-prev">‹ PREV</button><button class="filter-btn" id="orders-next" ${shiftDateKey(ordersFilter.date||todayStr(),1)<=todayStr()?'':'disabled'}>NEXT ›</button>`:''}
   `;
   bar.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{ ordersFilter.mode=b.dataset.mode; renderOrdersPage(); });
@@ -2370,7 +2375,7 @@ function orderTableRows(o){
       <td>${esc(o.date)}</td>
       <td>${esc(o.time)}</td>
       <td>${itemCount}</td>
-      <td><span class="pm-badge pm-${escAttr(o.paymentMethod)}">${esc(o.paymentMethod)}</span></td>
+      <td><span class="pm-badge pm-${escAttr(o.paymentMethod)}">${esc(o.paymentMethod)}</span>${o.source==='Online'&&o.paymentStatus==='Pending'?'<div style="font-size:10px;font-weight:800;color:var(--rust);margin-top:4px;">PAYMENT PENDING</div>':''}</td>
       <td class="num">${PESO(o.total)}</td>
       <td><span class="status-badge status-${escAttr(o.status)}">${esc(o.status)}</span></td>
       <td>${esc(o.cashier)}</td>
@@ -2430,6 +2435,7 @@ function openOrderDetail(id){
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">
           <div class="sumrow"><span>Source</span><span>${esc(o.source||'Walk-in')}</span></div>${o.serviceType?`<div class="sumrow"><span>Service Type</span><span>${esc(o.serviceType)}</span></div>`:''}
           <div class="sumrow"><span>Payment</span><span>${o.paymentMethod}</span></div>
+          ${o.source==='Online'?`<div class="sumrow"><span>Customer</span><span>${esc(o.customerName||'—')} · ${esc(o.customerPhone||'—')}</span></div><div class="sumrow"><span>Payment Status</span><strong style="color:${o.paymentStatus==='Paid'?'var(--matcha-dark)':'var(--rust)'}">${esc(o.paymentStatus||'Paid')}</strong></div>${o.paymentProofUrl?`<div class="sumrow"><span>Payment Proof</span><a href="${escAttr(o.paymentProofUrl)}" target="_blank" rel="noopener noreferrer">Open proof</a></div>`:''}`:''}
           ${o.source==='GrabFood'?`<div class="sumrow"><span>Grab Code</span><span>${esc(o.grabCode||o.orderNumber)}</span></div><div class="sumrow"><span>Discount</span><span>${o.discountAmount?`−${PESO(o.discountAmount)}`:'—'}</span></div>`:(o.paymentMethod==='Cash'?`<div class="sumrow"><span>Received / Change</span><span>${PESO(o.amountReceived)} / ${PESO(o.changeGiven)}</span></div>`:o.paymentMethod==='Cash + GCash'?`<div class="sumrow"><span>Cash + GCash</span><span>${PESO(o.cashAmount||0)} + ${PESO(o.gcashAmount||0)}</span></div>`:`<div class="sumrow"><span>Reference</span><span>${o.gcashRef||'—'}</span></div>`)}
           <div class="sumrow grand"><span>Total</span><span>${PESO(o.total)}</span></div>
         </div>
@@ -2441,15 +2447,23 @@ function openOrderDetail(id){
       </div>
       <div class="modal-foot">
         <button class="btn btn-secondary" id="modal-close">Close</button>
+        ${o.source==='Online'&&o.paymentStatus==='Pending'?`<button class="btn btn-primary" id="modal-verify-payment">Confirm Payment</button>`:''}
         <button class="btn btn-primary" id="modal-save-status" ${((isDateLocked(o.date)&&!isSuperuser())||(!isSuperuser() && o.date!==businessDayKey()))?'disabled':''}>Update Status</button>
       </div>`;
   }
   openModal(body());
   document.getElementById('modal-close').onclick = closeModal;
+  document.getElementById('modal-verify-payment')?.addEventListener('click',async()=>{
+    if(!o||o.source!=='Online'||o.paymentStatus!=='Pending')return;
+    const btn=document.getElementById('modal-verify-payment');if(!btn||btn.disabled)return;
+    btn.disabled=true;btn.textContent='Confirming…';
+    try{const res=await posApi(`/rest/v1/pos_orders?id=eq.${encodeURIComponent(o.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({payment_status:'Paid',cashier:currentActor()})});const rows=await res.json();if(!rows?.length)throw new Error('Payment status was not updated.');o.paymentStatus='Paid';o.cashier=currentActor();await writeAudit('verify_online_payment','order',o.id,'',{orderNumber:o.orderNumber,paymentMethod:o.paymentMethod,reference:o.gcashRef||null,total:o.total});closeModal();renderOrdersPage();renderDashboard();toast(`Payment confirmed for ${o.orderNumber}.`);}catch(e){btn.disabled=false;btn.textContent='Confirm Payment';toast('Payment was not confirmed: '+(e?.message||'database error'));}
+  });
   document.getElementById('modal-save-status').onclick = async ()=>{
     if(isDateLocked(o.date) && !isSuperuser()){ toast('This order date is reconciled and locked. Unlock the day first.'); return; }
     if(!isSuperuser() && o.date!==businessDayKey()){ toast('Staff cannot edit the status of previous-date orders.'); return; }
     const newStatus = document.getElementById('status-select').value;
+    if(o.source==='Online'&&o.paymentStatus==='Pending'&&newStatus!=='Cancelled'){toast('Confirm the payment before moving this online order into preparation or completion.');return;}
     if(newStatus===o.status){ toast('No status change was made.'); return; }
     const reason = newStatus==='Cancelled' ? requireActionReason(`cancelling order ${o.orderNumber}`) : '';
     if(newStatus==='Cancelled' && !reason) return;
@@ -2583,7 +2597,7 @@ function openOwnerExpenseModal(){
    METRICS ENGINE (shared by Dashboard + Reports)
    ============================================================ */
 function computeMetrics(orders){
-  const completed = orders.filter(o=>!p1IsCancelled(o));
+  const completed = orders.filter(o=>!p1IsCancelled(o)&&o.paymentStatus!=='Pending');
   const cancelled = orders.filter(p1IsCancelled);
   const grossSales = completed.reduce((s,o)=>s+(Number(o.total)||0),0);
   const refundRows = Array.isArray(arguments[1]) ? arguments[1] : [];
@@ -2596,7 +2610,7 @@ function computeMetrics(orders){
   const cupBySize = {'Hot 12oz':0,'Iced 16oz':0,'Iced 20oz':0};
   const productAgg = {}; // name -> {qty, sales, sizes:{}}
   const pmAgg = {}; // method -> {count, sales}
-  const sourceAgg = {'Walk-in':{count:0,sales:0,items:0,cups:0,discounts:0},'GrabFood':{count:0,sales:0,items:0,cups:0,discounts:0}};
+  const sourceAgg = {'Walk-in':{count:0,sales:0,items:0,cups:0,discounts:0},'Online':{count:0,sales:0,items:0,cups:0,discounts:0},'GrabFood':{count:0,sales:0,items:0,cups:0,discounts:0}};
   completed.forEach(o=>{
     // Payment breakdown is based on the actual money received.
     // For Cash + GCash, split the order total between the two payment methods
@@ -2891,6 +2905,7 @@ function renderDashboard(){
           <thead><tr><th>Category</th><th class="num">Sales</th></tr></thead>
           <tbody>
           <tr><td>Walk-in</td><td class="num">${PESO(m.sourceAgg['Walk-in']?.sales||0)}</td></tr>
+          <tr><td>Online / QR</td><td class="num">${PESO(m.sourceAgg['Online']?.sales||0)}</td></tr>
           <tr><td>GrabFood</td><td class="num">${PESO(m.sourceAgg['GrabFood']?.sales||0)}</td></tr>
           <tr><td>Expenses</td><td class="num" style="color:var(--rust);">− ${PESO(expenseTotal)}</td></tr>
           <tr><td>Estimated Grab fees</td><td class="num">− ${PESO(m.estimatedFees)}</td></tr><tr><td>OPEX</td><td class="num">− ${PESO(todaysOpex.reduce((n,x)=>n+x.amount,0))}</td></tr><tr class="total-row"><td>Estimated Balance</td><td class="num">${PESO(m.estimatedProceeds-expenseTotal-todaysOpex.reduce((n,x)=>n+x.amount,0))}</td></tr>
@@ -3996,6 +4011,15 @@ function renderSettings(){
       </div>
       <div style="margin-top:16px;overflow-x:auto;"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Active</th><th>Access</th></tr></thead><tbody id="users-list"><tr><td colspan="5">Loading…</td></tr></tbody></table></div>
     </div>` : '';
+  const onlineOrderingSection = isSuperuser() ? `
+    <div class="card" style="padding:18px 20px;max-width:600px;margin-bottom:16px;">
+      <div class="section-title">Online Ordering / QR Payments</div>
+      <p class="permission-note">These settings power the public ordering page. Use public image URLs for your official GCash and BPI QR images. Both GCash and BPI QR transfers are recorded under GCash in POS reports.</p>
+      <div class="field"><label>GCash QR Image URL</label><input id="s-gcash-qr" value="${escAttr(SETTINGS.gcashQrUrl||'')}" placeholder="https://..."></div>
+      <div class="field"><label>BPI QR Image URL</label><input id="s-bpi-qr" value="${escAttr(SETTINGS.bpiQrUrl||'')}" placeholder="https://..."></div>
+      <div class="field"><label>Online Ordering</label><select id="s-online-enabled"><option value="true" ${SETTINGS.onlineOrderingEnabled!==false?'selected':''}>Open</option><option value="false" ${SETTINGS.onlineOrderingEnabled===false?'selected':''}>Temporarily closed</option></select></div>
+      <button class="btn btn-primary" id="save-online-settings" type="button">Save Online Ordering Settings</button>
+    </div>` : '';
   const brandingSection = isSuperuser() ? `
     <div class="card" style="padding:18px 20px;max-width:600px;margin-bottom:16px;">
       <div class="section-title">Branding</div>
@@ -4020,6 +4044,7 @@ function renderSettings(){
     el.innerHTML = `
       <div class="page-title"><div><h1>Settings</h1><div class="psub">Account, cashier session &amp; data</div></div></div>
       ${brandingSection}
+      ${onlineOrderingSection}
       <div class="card" style="padding:18px 20px;max-width:480px;margin-bottom:16px;">
         <div class="section-title">Current User</div>
         <div class="field"><label>Display Name</label><input type="text" id="s-cashier" value="${escAttr(currentDisplayName)}"></div>
@@ -4031,6 +4056,17 @@ function renderSettings(){
         <div style="font-size:12px;color:var(--text-dim);">${supabaseOk ? `Connected to Supabase. ${formatSyncAge(LAST_DB_SYNC_AT)}.` : 'Supabase unavailable — orders and financial writes are blocked until reconnected.'}</div>
       </div>${accountPasswordSection}${usersSection}`;
   }
+  const saveOnlineSettingsBtn=document.getElementById('save-online-settings');
+  if(saveOnlineSettingsBtn) saveOnlineSettingsBtn.onclick=async()=>{
+    const gcashQrUrl=document.getElementById('s-gcash-qr').value.trim();
+    const bpiQrUrl=document.getElementById('s-bpi-qr').value.trim();
+    if([gcashQrUrl,bpiQrUrl].some(u=>u&&!/^https:\/\//i.test(u))){toast('QR image URLs must start with https://');return;}
+    SETTINGS.gcashQrUrl=gcashQrUrl;SETTINGS.bpiQrUrl=bpiQrUrl;SETTINGS.onlineOrderingEnabled=document.getElementById('s-online-enabled').value==='true';
+    saveOnlineSettingsBtn.disabled=true;saveOnlineSettingsBtn.textContent='Saving…';
+    try{await persistSettings();await writeAudit('update_online_ordering_settings','settings','online-ordering','',{onlineOrderingEnabled:SETTINGS.onlineOrderingEnabled,gcashQrConfigured:!!gcashQrUrl,bpiQrConfigured:!!bpiQrUrl});toast('Online ordering settings saved.');}
+    catch(e){toast('Settings were not saved: '+(e?.message||'database error'));}
+    finally{saveOnlineSettingsBtn.disabled=false;saveOnlineSettingsBtn.textContent='Save Online Ordering Settings';}
+  };
   const saveCashierBtn=document.getElementById('save-cashier');
   if(saveCashierBtn) saveCashierBtn.onclick = async ()=>{
     const name = document.getElementById('s-cashier').value.trim() || CURRENT_PROFILE?.username || 'Staff';
