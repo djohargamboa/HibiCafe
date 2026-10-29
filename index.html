@@ -2378,6 +2378,16 @@ function renderOrdersPage(){
     btn?.click();
   });
   table.querySelectorAll('[data-view]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();openOrderDetail(b.dataset.view);});
+  table.querySelectorAll('[data-quick-online]').forEach(b=>b.onclick=(e)=>{
+    e.stopPropagation();
+    const id=b.dataset.quickOnline;
+    const order=ORDERS.find(x=>x.id===id);
+    if(!order||order.source!=='Online'||order.status!=='New')return;
+    if((isDateLocked(order.date)&&!isSuperuser())||(!isSuperuser()&&order.date!==businessDayKey())){toast('This order date is locked for staff.');return;}
+    openOrderDetail(id);
+    const action=document.getElementById(order.paymentStatus==='Paid'?'modal-accept-online-order':'modal-verify-online-payment');
+    if(action)action.click();
+  });
   table.querySelectorAll('[data-complete-order]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();completeOrderFromList(b.dataset.completeOrder);});
 }
 
@@ -2399,7 +2409,7 @@ function orderTableRows(o){
       <td class="num">${PESO(o.total)}</td>
       <td><span class="status-badge status-${escAttr(o.status)}">${esc(o.status)}</span></td>
       <td>${esc(o.cashier)}</td>
-      <td style="white-space:nowrap;"><button class="icon-btn order-toggle-btn" data-toggle-order="${escAttr(o.id)}">${expanded?'Collapse':'Expand'}</button> <button class="icon-btn" data-view="${escAttr(o.id)}">${o.source==='Online'&&o.status==='New'?'Review':'View'}</button></td>
+      <td style="white-space:nowrap;"><button class="icon-btn order-toggle-btn" data-toggle-order="${escAttr(o.id)}">${expanded?'Collapse':'Expand'}</button> <button class="icon-btn" data-view="${escAttr(o.id)}">${o.source==='Online'&&o.status==='New'?'Review':'View'}</button> ${o.source==='Online'&&o.status==='New'?'<button class="btn btn-primary" data-quick-online="'+escAttr(o.id)+'" '+(lockedForStaff?'disabled':'')+' style="padding:6px 10px;font-size:11px;">'+(o.paymentStatus==='Paid'?'Start':'Paid')+'</button>':''}</td>
     </tr>
     <tr class="order-detail-row" data-order-detail="${escAttr(o.id)}" ${expanded?'':'hidden'}>
       <td colspan="9">
