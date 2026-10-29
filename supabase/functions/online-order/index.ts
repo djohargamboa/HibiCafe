@@ -65,7 +65,7 @@ Deno.serve(async req=>{
   const method=isDigital?'GCash':'Cash'
   const paymentLabel=choice==='BPI QR'?'BPI QR':choice==='GCash'?'GCash QR':'Cash at counter'
   const ref=isDigital?`${paymentLabel}: ${reference}`:null
-  const orderPayload={order_number:number,order_date:date,order_time:time,source:'Online',subtotal,discount_type:null,discount_amount:0,total:subtotal,payment_method:method,amount_received:null,cash_amount:null,gcash_amount:isDigital?subtotal:null,change_given:0,gcash_ref:ref,status:'New',payment_status:'Pending',cashier:'Online Customer',service_type:serviceType,customer_name:customerName,customer_phone:customerPhone,tracking_code:trackingCode,payment_proof_url:proof||null}
+  const orderPayload={order_number:number,order_date:date,order_time:time,source:'Online',subtotal,discount_type:null,discount_amount:0,total:subtotal,payment_method:method,amount_received:null,cash_amount:null,gcash_amount:isDigital?subtotal:null,change_given:0,gcash_ref:ref,status:'New',payment_status:'Pending',cashier:'Online Customer',service_type:serviceType,customer_name:customerName,customer_phone:customerPhone,tracking_code:trackingCode,payment_proof_url:proof||null,updated_at:new Date().toISOString()}
   const {data:order,error:orderErr}=await db.from('pos_orders').insert(orderPayload).select('id,order_code').single()
   if(orderErr||!order)return json({error:'Could not save your order. Please try again.'},500)
   const itemRows=items.map(i=>({...i,order_id:order.id}))
