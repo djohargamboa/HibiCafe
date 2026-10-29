@@ -2375,7 +2375,7 @@ function orderTableRows(o){
       <td>${esc(o.date)}</td>
       <td>${esc(o.time)}</td>
       <td>${itemCount}</td>
-      <td><span class="pm-badge pm-${escAttr(o.paymentMethod)}">${esc(o.paymentMethod)}</span></td>
+      <td><span class="pm-badge pm-${escAttr(o.paymentMethod)}">${esc(o.paymentMethod)}</span>${o.source==='Online'&&o.paymentStatus==='Pending'?'<div style="font-size:10px;font-weight:800;color:var(--rust);margin-top:4px;">PAYMENT PENDING</div>':''}</td>
       <td class="num">${PESO(o.total)}</td>
       <td><span class="status-badge status-${escAttr(o.status)}">${esc(o.status)}</span></td>
       <td>${esc(o.cashier)}</td>
@@ -2463,6 +2463,7 @@ function openOrderDetail(id){
     if(isDateLocked(o.date) && !isSuperuser()){ toast('This order date is reconciled and locked. Unlock the day first.'); return; }
     if(!isSuperuser() && o.date!==businessDayKey()){ toast('Staff cannot edit the status of previous-date orders.'); return; }
     const newStatus = document.getElementById('status-select').value;
+    if(o.source==='Online'&&o.paymentStatus==='Pending'&&newStatus!=='Cancelled'){toast('Confirm the payment before moving this online order into preparation or completion.');return;}
     if(newStatus===o.status){ toast('No status change was made.'); return; }
     const reason = newStatus==='Cancelled' ? requireActionReason(`cancelling order ${o.orderNumber}`) : '';
     if(newStatus==='Cancelled' && !reason) return;
@@ -2609,7 +2610,7 @@ function computeMetrics(orders){
   const cupBySize = {'Hot 12oz':0,'Iced 16oz':0,'Iced 20oz':0};
   const productAgg = {}; // name -> {qty, sales, sizes:{}}
   const pmAgg = {}; // method -> {count, sales}
-  const sourceAgg = {'Walk-in':{count:0,sales:0,items:0,cups:0,discounts:0},'GrabFood':{count:0,sales:0,items:0,cups:0,discounts:0}};
+  const sourceAgg = {'Walk-in':{count:0,sales:0,items:0,cups:0,discounts:0},'Online':{count:0,sales:0,items:0,cups:0,discounts:0},'GrabFood':{count:0,sales:0,items:0,cups:0,discounts:0}};
   completed.forEach(o=>{
     // Payment breakdown is based on the actual money received.
     // For Cash + GCash, split the order total between the two payment methods
@@ -2904,6 +2905,7 @@ function renderDashboard(){
           <thead><tr><th>Category</th><th class="num">Sales</th></tr></thead>
           <tbody>
           <tr><td>Walk-in</td><td class="num">${PESO(m.sourceAgg['Walk-in']?.sales||0)}</td></tr>
+          <tr><td>Online / QR</td><td class="num">${PESO(m.sourceAgg['Online']?.sales||0)}</td></tr>
           <tr><td>GrabFood</td><td class="num">${PESO(m.sourceAgg['GrabFood']?.sales||0)}</td></tr>
           <tr><td>Expenses</td><td class="num" style="color:var(--rust);">− ${PESO(expenseTotal)}</td></tr>
           <tr><td>Estimated Grab fees</td><td class="num">− ${PESO(m.estimatedFees)}</td></tr><tr><td>OPEX</td><td class="num">− ${PESO(todaysOpex.reduce((n,x)=>n+x.amount,0))}</td></tr><tr class="total-row"><td>Estimated Balance</td><td class="num">${PESO(m.estimatedProceeds-expenseTotal-todaysOpex.reduce((n,x)=>n+x.amount,0))}</td></tr>
