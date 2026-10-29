@@ -1533,7 +1533,7 @@ async function loadFinancialRows(){
   EXPENSES=expenses.map(mapExpenseRow);
   OWNER_EXPENSES=ownerExpenses.map(mapOwnerExpenseRow);
   REFUNDS=refundRows; 
-  CASH_MOVEMENTS=CASH_MOVEMENTS=cashMovements.map(mapCashMovementRow);
+  CASH_MOVEMENTS=cashMovements.map(mapCashMovementRow);
   EOD={}; eodRows.forEach(r=>{ EOD[r.business_date]=mapEodRow(r); });
 }
 async function upsertFinancialRow(table,payload,conflict='id'){
