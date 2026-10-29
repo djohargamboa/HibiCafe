@@ -2463,10 +2463,17 @@ function openOrderDetail(id){
   const verifyOnlineBtn=document.getElementById('modal-verify-online-payment');
   if(verifyOnlineBtn) verifyOnlineBtn.onclick=async()=>{
     if(o.status==='Cancelled'){toast('Cancelled orders cannot be marked paid.');return}
-    if(!confirm(o.paymentMethod==='Cash'?'Confirm that the customer has paid the full amount in cash?':'Confirm that the QR transfer has been verified in the receiving account?'))return;
+    let amountReceived=null;
+    if(o.paymentMethod==='Cash'){
+      const raw=prompt('Enter the cash amount received from the customer:',String(o.total));
+      if(raw===null)return;
+      amountReceived=Number(raw);
+      if(!Number.isFinite(amountReceived)||amountReceived<Number(o.total)){toast('Cash received must be at least the order total.');return;}
+    }
+    if(!confirm(o.paymentMethod==='Cash'?'Confirm receipt of '+PESO(amountReceived)+' cash?':'Confirm that the QR transfer has been verified in the receiving account?'))return;
     verifyOnlineBtn.disabled=true;verifyOnlineBtn.textContent='Verifying…';
     try{
-      const res=await fetch(`${SUPABASE_URL}/functions/v1/online-ordering`,{method:'POST',headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${CURRENT_USER?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify({action:'verifyPayment',orderId:o.id})});
+      const res=await fetch(`${SUPABASE_URL}/functions/v1/online-ordering`,{method:'POST',headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${CURRENT_USER?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify({action:'verifyPayment',orderId:o.id,amountReceived})});
       const data=await res.json();if(!res.ok)throw new Error(data.error||'Could not verify payment.');
       o.paymentStatus='Paid';
       await writeAudit('verify_online_payment','order',o.id,'',{orderNumber:o.orderNumber,paymentMethod:o.paymentMethod,verifiedBy:data.verifiedBy||SETTINGS.cashierName});
