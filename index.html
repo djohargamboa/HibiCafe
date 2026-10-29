@@ -1570,11 +1570,14 @@ async function loadPosOrders(){
 let LIVE_ORDER_CHANNEL = null;
 let LIVE_ORDER_REFRESH_TIMER = null;
 let LIVE_AVAILABILITY_REFRESH_TIMER = null;
+let LIVE_SHARED_REFRESH_TIMER = null;
 let LIVE_ORDER_REFRESHING = false;
+let LIVE_SHARED_REFRESHING = false;
 
 function stopLiveOrderSync(){
   if(LIVE_ORDER_REFRESH_TIMER){ clearTimeout(LIVE_ORDER_REFRESH_TIMER); LIVE_ORDER_REFRESH_TIMER=null; }
   if(LIVE_AVAILABILITY_REFRESH_TIMER){ clearTimeout(LIVE_AVAILABILITY_REFRESH_TIMER); LIVE_AVAILABILITY_REFRESH_TIMER=null; }
+  if(LIVE_SHARED_REFRESH_TIMER){ clearTimeout(LIVE_SHARED_REFRESH_TIMER); LIVE_SHARED_REFRESH_TIMER=null; }
   if(LIVE_ORDER_CHANNEL && supabaseClient){ supabaseClient.removeChannel(LIVE_ORDER_CHANNEL); }
   LIVE_ORDER_CHANNEL=null;
 }
@@ -1613,17 +1616,58 @@ function scheduleLiveAvailabilityRefresh(){
   },200);
 }
 
+function scheduleLiveSharedRefresh(table){
+  if(LIVE_SHARED_REFRESH_TIMER) clearTimeout(LIVE_SHARED_REFRESH_TIMER);
+  LIVE_SHARED_REFRESH_TIMER=setTimeout(async ()=>{
+    LIVE_SHARED_REFRESH_TIMER=null;
+    if(!CURRENT_USER || LIVE_SHARED_REFRESHING) return;
+    LIVE_SHARED_REFRESHING=true;
+    try{
+      // Refresh only the shared data affected by the change; never replace the active cart.
+      if(table==='app_data'){
+        [MENU,ADDONS,SETTINGS]=await Promise.all([
+          storeGet('hibi-menu',MENU),
+          storeGet('hibi-addons',ADDONS),
+          storeGet('hibi-settings',SETTINGS)
+        ]);
+        applyBranding();
+        if(document.getElementById('page-pos')?.classList.contains('active')) renderPOS();
+        if(document.getElementById('page-settings')?.classList.contains('active')) renderSettings();
+      }else{
+        if(['daily_expenses','owner_expenses','cash_movements','eod_reconciliations'].includes(table)){
+          await loadFinancialRows();
+        }
+        if(table==='cash_shifts') await loadShifts();
+        if(table==='fund_transactions' && isSuperuser()) await loadFundTransactions();
+        const activePage=document.querySelector('.page.active')?.id;
+        if(activePage==='page-dashboard') renderDashboard();
+        else if(activePage==='page-reports') renderReports();
+        else if(activePage==='page-settings') renderSettings();
+      }
+      markDatabaseHealthy();
+    }catch(e){ console.warn('Live shared POS refresh failed for '+table,e); }
+    finally{ LIVE_SHARED_REFRESHING=false; }
+  },300);
+}
+
 function startLiveOrderSync(){
   stopLiveOrderSync();
   if(!supabaseClient || !CURRENT_USER) return;
   LIVE_ORDER_CHANNEL=supabaseClient
-    .channel('hibi-live-orders')
+    .channel('hibi-live-pos')
     .on('postgres_changes',{event:'*',schema:'public',table:'pos_orders'},scheduleLiveOrderRefresh)
     .on('postgres_changes',{event:'*',schema:'public',table:'pos_order_items'},scheduleLiveOrderRefresh)
     .on('postgres_changes',{event:'*',schema:'public',table:'product_availability'},scheduleLiveAvailabilityRefresh)
+    .on('postgres_changes',{event:'*',schema:'public',table:'app_data'},()=>scheduleLiveSharedRefresh('app_data'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'cash_shifts'},()=>scheduleLiveSharedRefresh('cash_shifts'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'daily_expenses'},()=>scheduleLiveSharedRefresh('daily_expenses'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'owner_expenses'},()=>scheduleLiveSharedRefresh('owner_expenses'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'cash_movements'},()=>scheduleLiveSharedRefresh('cash_movements'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'eod_reconciliations'},()=>scheduleLiveSharedRefresh('eod_reconciliations'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'fund_transactions'},()=>scheduleLiveSharedRefresh('fund_transactions'))
     .subscribe((status)=>{
       if(status==='CHANNEL_ERROR' || status==='TIMED_OUT'){
-        console.warn('Hibi live order updates connection status:',status);
+        console.warn('Hibi live POS updates connection status:',status);
       }
     });
 }
