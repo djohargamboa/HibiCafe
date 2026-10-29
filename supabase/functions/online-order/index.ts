@@ -50,6 +50,7 @@ Deno.serve(async req=>{
    const size=clean(input.size,60),base=Number(product.sizes?.[size]),qty=Number(input.qty)
    if(!size||!Number.isFinite(base)||base<0||!Number.isInteger(qty)||qty<1||qty>20)return json({error:'A product option or quantity is invalid.'},400)
    const chosen=Array.isArray(input.addonIds)?input.addonIds.slice(0,8):[]
+   if(chosen.length && product.addonEligible===false)return json({error:'Add-ons are not available for '+product.name+'.'},400)
    const itemAddons:any[]=[];let addonTotal=0
    for(const id of chosen){const a=addons.find((x:any)=>x.id===clean(id,80)&&x.active!==false);if(!a)return json({error:'An add-on is no longer available. Refresh the menu.'},409);const price=Number(a.price)||0;addonTotal+=price;itemAddons.push({id:a.id,name:a.name,price})}
    const unit=base+addonTotal,line=unit*qty;subtotal+=line
@@ -74,9 +75,9 @@ Deno.serve(async req=>{
  if(action==='track'){
   const orderNumber=clean(body.orderNumber,30).toUpperCase(),trackingCode=clean(body.trackingCode,12).toUpperCase()
   if(!/^HIBI-\d{1,8}$/.test(orderNumber)||!/^[A-F0-9]{8}$/.test(trackingCode))return json({error:'Enter the order number and tracking code exactly as shown.'},400)
-  const {data:order,error}=await db.from('pos_orders').select('order_code,status,payment_status,service_type,total,created_at,updated_at').eq('order_code',orderNumber).eq('tracking_code',trackingCode).maybeSingle()
+  const {data:order,error}=await db.from('pos_orders').select('order_code,status,payment_status,service_type,total,created_at').eq('order_code',orderNumber).eq('tracking_code',trackingCode).maybeSingle()
   if(error||!order)return json({error:'Order not found. Check the order number and private tracking code.'},404)
-  return json({orderNumber:order.order_code,status:order.status,paymentStatus:order.payment_status,serviceType:order.service_type,total:Number(order.total)||0,updatedAt:order.updated_at||order.created_at})
+  return json({orderNumber:order.order_code,status:order.status,paymentStatus:order.payment_status,serviceType:order.service_type,total:Number(order.total)||0,updatedAt:order.created_at})
  }
  return json({error:'Unknown action.'},400)
 })
