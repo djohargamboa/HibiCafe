@@ -16,9 +16,9 @@ returns integer
 language sql
 security definer
 set search_path = public
-as $
+as $fn$
   select nextval('public.hibi_order_number_seq')::integer;
-$;
+$fn$;
 
 revoke all on function public.next_hibi_order_number() from public, anon, authenticated;
 grant execute on function public.next_hibi_order_number() to service_role;
