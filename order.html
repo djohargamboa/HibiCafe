@@ -28,11 +28,12 @@
 </main>
 <script>
 const API='https://ysdnxwvkqyqojrelhcbu.supabase.co/functions/v1/online-ordering';
+const ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ5c2RueHd2a3F5cW9qcmVsaGNidSIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzg3NzczMDg5LCJleHAiOjIxMDMzNDkwODl9.XyYlPVroIXudGM2M6hSWb8ccMwjH21kLHgk5ESGA8T0';
 const $=id=>document.getElementById(id);
 const money=n=>'₱'+(Number(n)||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let catalog={products:[],addons:[],paymentQr:{}},cart=[],serviceType='Dine In',provider='Cash',busy=false;
-async function api(body){const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json().catch(()=>({error:'Unexpected server response.'}));if(!r.ok)throw new Error(data.error||'Request failed.');return data}
+async function api(body){const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json','apikey':ANON_KEY},body:JSON.stringify(body)});const data=await r.json().catch(()=>({error:'Unexpected server response.'}));if(!r.ok)throw new Error(data.error||'Request failed.');return data}
 function priceMap(p){return p.sizes&&typeof p.sizes==='object'?p.sizes:{}}
 function selectedProductConfig(id){return {size:$(`size-${id}`)?.value||'',addons:[...document.querySelectorAll(`[data-addon-for="${CSS.escape(id)}"]:checked`)].map(x=>x.value)}}
 function renderMenu(){
