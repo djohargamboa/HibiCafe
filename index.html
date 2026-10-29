@@ -3005,7 +3005,8 @@ function fundBalances(){
   // GCash and Bank follow the Monthly Reports payment breakdown, which
   // excludes cancelled orders and deducts valid refunds from their original buckets.
   // GCash = all recorded net GCash sales (including split payments) less active GCash OPEX.
-  const reportRefunds=REFUNDS.filter(r=>!r.voided_at&&r.business_date>='1900-01-01'&&r.business_date<=businessDayKey());
+  const allRefundRows=(typeof REFUNDS!=='undefined'&&Array.isArray(REFUNDS))?REFUNDS:[];
+  const reportRefunds=allRefundRows.filter(r=>!r.voided_at&&r.business_date>='1900-01-01'&&r.business_date<=businessDayKey());
   const fundMetrics=computeMetrics(ORDERS,reportRefunds);
   const gcashSales=Number(fundMetrics.pmAgg.GCash?.sales)||0;
   const gcashOpex=OWNER_EXPENSES.filter(x=>isActive(x)&&x.paymentMethod==='GCash')
