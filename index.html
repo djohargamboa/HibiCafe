@@ -918,6 +918,8 @@ let PRODUCT_AVAILABILITY = {};
 let SHIFTS = [];
 let shiftsFilterDate = businessDayKey();
 let FUND_TRANSACTIONS = [];
+let FUND_SNAPSHOTS = [];
+let FUND_SNAPSHOT_AUTO_RUNNING = false;
 
 /* ---------- Storage helpers ---------- */
 // Shared storage uses Supabase only. Writes fail closed: no browser/local fallback for shared data.
@@ -1703,7 +1705,7 @@ function scheduleLiveSharedRefresh(table){
         await loadFinancialRows();
       }
       if(tables.includes('cash_shifts')) await loadShifts();
-      if(tables.includes('fund_transactions') && isSuperuser()) await loadFundTransactions();
+      if(tables.includes('fund_transactions') && isSuperuser()) await Promise.all([loadFundTransactions(),loadFundSnapshots()]);
       if(tables.some(t=>t!=='app_data')){
         const activePage=document.querySelector('.page.active')?.id;
         if(activePage==='page-dashboard') renderDashboard();
@@ -2888,7 +2890,35 @@ async function loadFundTransactions(){
   const rows=await posGetAll('/rest/v1/fund_transactions?select=*&order=created_at.desc');
   FUND_TRANSACTIONS=rows.map(r=>({id:r.id,date:r.business_date,type:r.transaction_type,account:r.account||null,direction:r.direction||null,amount:Number(r.amount)||0,fromAccount:r.from_account||null,toAccount:r.to_account||null,description:r.description||'',reference:r.reference||'',status:r.status||'Active',createdAt:r.created_at,createdBy:r.created_by_name||''}));
 }
+async function loadFundSnapshots(){
+  if(!isSuperuser()){ FUND_SNAPSHOTS=[]; return; }
+  const rows=await posGetAll('/rest/v1/fund_balance_snapshots?select=*&order=snapshot_at.desc&limit=100');
+  FUND_SNAPSHOTS=rows.map(r=>({id:r.id,date:r.business_date,snapshotAt:r.snapshot_at,cash:Number(r.cash_balance)||0,gcash:Number(r.gcash_balance)||0,bank:Number(r.bank_balance)||0,type:r.snapshot_type||'daily',notes:r.notes||'',createdBy:r.created_by_name||''}));
+}
+async function saveFundSnapshot(type='manual',notes=''){
+  if(!isSuperuser()) throw new Error('Only a superuser can save fund snapshots.');
+  const capturedAt=new Date().toISOString();
+  const balances=fundBalances();
+  await posApi('/rest/v1/fund_balance_snapshots',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({
+    business_date:businessDayKey(),snapshot_at:capturedAt,
+    cash_balance:Number(balances.Cash)||0,gcash_balance:Number(balances.GCash)||0,bank_balance:Number(balances.Bank)||0,
+    snapshot_type:type,notes:notes||null,created_by:CURRENT_USER?.id||null,created_by_name:currentActor()
+  })});
+  await loadFundSnapshots();
+}
+async function ensureDailyFundSnapshot(){
+  if(!isSuperuser()||FUND_SNAPSHOT_AUTO_RUNNING) return;
+  const today=businessDayKey();
+  if(FUND_SNAPSHOTS.some(s=>s.date===today)) return;
+  FUND_SNAPSHOT_AUTO_RUNNING=true;
+  try{
+    await saveFundSnapshot('daily','Automatic daily snapshot on first superuser dashboard visit.');
+    renderDashboard();
+  }catch(e){console.warn('Automatic fund snapshot failed:',e);toast('Daily funds snapshot could not be saved. Please use Snapshot Now and check the database connection.');}
+  finally{FUND_SNAPSHOT_AUTO_RUNNING=false;}
+}
 function fundBalances(){
+  const latestSnapshot=FUND_SNAPSHOTS[0]||null;
   const activeFunds=FUND_TRANSACTIONS.filter(x=>x.status==='Active');
   const result={Cash:0,GCash:0,Bank:0};
   const amount=x=>Number(x)||0;
@@ -2897,6 +2927,38 @@ function fundBalances(){
   const gcashOrder=o=>!validOrder(o)?0:o.paymentMethod==='GCash'?amount(o.total):o.paymentMethod==='Cash + GCash'?amount(o.gcashAmount):0;
   const isActive=x=>x.status!=='Voided';
   const stamp=x=>x?.timestamp?new Date(x.timestamp).getTime():0;
+  if(latestSnapshot && latestSnapshot.snapshotAt){
+    const anchorTime=new Date(latestSnapshot.snapshotAt).getTime();
+    const recentOrders=ORDERS.filter(o=>stamp(o)>anchorTime);
+    const allRefunds=(typeof REFUNDS!=='undefined'&&Array.isArray(REFUNDS))?REFUNDS:[];
+    const recentRefunds=allRefunds.filter(r=>!r.voided_at&&r.created_at&&new Date(r.created_at).getTime()>anchorTime&&r.business_date<=businessDayKey());
+    let cash=amount(latestSnapshot.cash),gcashSales=0,grabSales=0;
+    for(const o of recentOrders){if(o.status!=='Cancelled')cash+=cashPortionOfOrder(o);}
+    for(const x of CASH_MOVEMENTS){if(isActive(x)&&stamp(x)>anchorTime)cash+=(x.type==='Out'?-1:1)*amount(x.amount);}
+    for(const x of EXPENSES){if(isActive(x)&&stamp(x)>anchorTime)cash-=amount(x.amount);}
+    for(const x of OWNER_EXPENSES){if(isActive(x)&&x.paymentMethod==='Cash'&&stamp(x)>anchorTime)cash-=amount(x.amount);}
+    const recentMetrics=computeMetrics(recentOrders,recentRefunds);
+    gcashSales=Number(recentMetrics.pmAgg.GCash?.sales)||0;
+    grabSales=Number(recentMetrics.pmAgg.GrabFood?.sales)||0;
+    const orderById=new Map(recentOrders.map(o=>[String(o.id),o]));
+    const gcashRefunds=recentRefunds.reduce((sum,r)=>{
+      if(r.gcash_amount!=null) return sum+amount(r.gcash_amount);
+      const o=orderById.get(String(r.order_id));
+      return sum+(o?.paymentMethod==='GCash'?amount(r.amount):o?.paymentMethod==='Cash + GCash'?Math.min(amount(r.amount),amount(o.gcashAmount)):0);
+    },0);
+    const grabRefunds=recentRefunds.reduce((sum,r)=>{
+      if(r.grab_amount!=null) return sum+amount(r.grab_amount);
+      const o=orderById.get(String(r.order_id));
+      return sum+(o?.source==='GrabFood'?amount(r.amount):0);
+    },0);
+    const gcashOpex=OWNER_EXPENSES.filter(x=>isActive(x)&&x.paymentMethod==='GCash'&&stamp(x)>anchorTime).reduce((sum,x)=>sum+amount(x.amount),0);
+    const bankOpex=OWNER_EXPENSES.filter(x=>isActive(x)&&x.paymentMethod==='Bank Transfer'&&stamp(x)>anchorTime).reduce((sum,x)=>sum+amount(x.amount),0);
+    result.Cash=cash;
+    result.GCash=amount(latestSnapshot.gcash)+gcashSales-gcashRefunds-gcashOpex;
+    const netGrabSales=grabSales-grabRefunds;
+    result.Bank=amount(latestSnapshot.bank)+(netGrabSales-(netGrabSales*0.25))-bankOpex;
+    return result;
+  }
   const addFundFlows=(account,baseTime,baseAmount)=>{
     let total=baseAmount;
     for(const x of activeFunds){
@@ -2970,7 +3032,7 @@ function renderAvailableFunds(){
     <section class="card" style="padding:18px 20px;margin-bottom:16px;border-color:#D7DCCB;" aria-label="Available funds">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
         <div><div class="section-title" style="margin-bottom:4px;">Available Funds</div><div style="font-size:12px;color:var(--text-dim);">Superuser only · Cash uses actual-count logic; GCash and Bank follow cumulative Monthly Reports sales less tagged OPEX</div></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn btn-secondary" id="fund-refresh-btn" style="padding:9px 12px;">Refresh</button><button type="button" class="btn btn-primary" id="fund-add-btn" style="padding:9px 12px;">+ Record Movement</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn btn-secondary" id="fund-refresh-btn" style="padding:9px 12px;">Refresh</button><button type="button" class="btn btn-secondary" id="fund-snapshot-btn" style="padding:9px 12px;">Snapshot Now</button><button type="button" class="btn btn-primary" id="fund-add-btn" style="padding:9px 12px;">+ Record Movement</button></div>
       </div>
       <div class="stat-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:12px;">
         <div class="stat-card"><div class="slabel">Cash on Hand</div><div class="sval" style="font-size:clamp(21px,2.2vw,28px);">${PESO(b.Cash)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:5px;">${SHIFTS.some(s=>s.status==='Closed'&&s.actualCashCounted!=null)?'Latest actual count + later records':'Based on recorded cash activity'}</div></div>
@@ -2979,6 +3041,13 @@ function renderAvailableFunds(){
       </div>
       ${!hasCashAnchor?'<div style="padding:10px 12px;border-radius:9px;background:#FFF5E9;color:#8A5528;font-size:12px;margin-bottom:12px;">Cash has no actual count or opening balance anchor yet; the cash figure is based on recorded activity only.</div>':''}
       <div style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:12px;">Cash remains based on the latest actual cash count plus later cash activity. GCash is cumulative net GCash sales (including split payments) less non-voided GCash OPEX. Bank is cumulative net GrabFood sales less the 25% fee and non-voided Bank Transfer OPEX. Opening balances, settlements, and manual movements are not added to GCash or Bank totals, to avoid double-counting sales.</div>
+      <div style="font-size:12px;color:var(--text-dim);line-height:1.5;margin:0 0 12px;">${FUND_SNAPSHOTS.length?`Latest snapshot: ${esc(new Date(FUND_SNAPSHOTS[0].snapshotAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}))} · ${esc(FUND_SNAPSHOTS[0].type)} · balances are anchored to snapshots.`:'No fund snapshot yet. A daily snapshot is created automatically on the first superuser Dashboard visit each business day.'}</div>
+      <details style="border-top:1px solid var(--line);padding-top:10px;">
+        <summary style="cursor:pointer;font-weight:700;font-size:13px;">Snapshot history <span style="font-weight:500;color:var(--text-dim);">(${FUND_SNAPSHOTS.length})</span></summary>
+        <div style="overflow-x:auto;margin-top:10px;"><table style="min-width:620px;"><thead><tr><th>Date / Time</th><th>Type</th><th class="num">Cash</th><th class="num">GCash</th><th class="num">Bank</th></tr></thead><tbody>
+        ${FUND_SNAPSHOTS.length?FUND_SNAPSHOTS.slice(0,20).map(x=>`<tr><td>${esc(new Date(x.snapshotAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}))}</td><td>${esc(x.type)}</td><td class="num">${esc(PESO(x.cash))}</td><td class="num">${esc(PESO(x.gcash))}</td><td class="num">${esc(PESO(x.bank))}</td></tr>`).join(''):'<tr><td colspan="5" style="color:var(--text-dim);text-align:center;padding:18px;">No snapshots recorded yet.</td></tr>'}
+        </tbody></table></div>
+      </details>
       <details style="border-top:1px solid var(--line);padding-top:10px;">
         <summary style="cursor:pointer;font-weight:700;font-size:13px;">Recent account movements <span style="font-weight:500;color:var(--text-dim);">(${active.length})</span></summary>
         <div style="overflow-x:auto;margin-top:10px;"><table style="min-width:620px;"><thead><tr><th>Date</th><th>Movement</th><th>Description</th><th class="num">Amount</th></tr></thead><tbody>
@@ -3017,7 +3086,7 @@ function openFundMovementModal(){
     if(type==='Transfer'){const from=document.getElementById('fund-from').value,to=document.getElementById('fund-to').value;if(from===to){toast('Choose two different accounts for a transfer.');return;}payload={...common,account:null,direction:null,from_account:from,to_account:to};}
     else{const direction=type==='Money Out'?'Out':type==='Adjustment'?document.getElementById('fund-direction').value:'In';payload={...common,account:document.getElementById('fund-account').value,direction,from_account:null,to_account:null};}
     btn.disabled=true;btn.textContent='Saving…';
-    try{await posApi('/rest/v1/fund_transactions',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify(payload)});await writeAudit('fund_movement','fund_transaction',date,description,{type,amount,account:payload.account,fromAccount:payload.from_account,toAccount:payload.to_account,direction:payload.direction,reference});await loadFundTransactions();closeModal();renderDashboard();toast('Funds movement recorded.');}
+    try{await posApi('/rest/v1/fund_transactions',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify(payload)});await writeAudit('fund_movement','fund_transaction',date,description,{type,amount,account:payload.account,fromAccount:payload.from_account,toAccount:payload.to_account,direction:payload.direction,reference});await Promise.all([loadFundTransactions(),loadFundSnapshots()]);closeModal();renderDashboard();toast('Funds movement recorded.');}
     catch(err){console.error('Fund movement save failed:',err);btn.disabled=false;btn.textContent='Save Movement';toast('Funds movement was NOT saved: '+(err?.message||'database error'));}
   };
 }
@@ -3093,8 +3162,10 @@ function renderDashboard(){
     </div>
   `;
   document.getElementById('fund-add-btn')?.addEventListener('click',openFundMovementModal);
-  document.getElementById('fund-refresh-btn')?.addEventListener('click',async()=>{try{const today=businessDayKey();await Promise.all([p1Load('1900-01-01',today,true),loadFundTransactions()]);renderDashboard();toast('Available Funds refreshed.');}catch(e){toast('Could not refresh account balances.');}});
+  document.getElementById('fund-snapshot-btn')?.addEventListener('click',async()=>{const btn=document.getElementById('fund-snapshot-btn');if(btn)btn.disabled=true;try{await saveFundSnapshot('manual','Manual snapshot by superuser.');renderDashboard();toast('Funds snapshot saved.');}catch(e){console.error(e);toast('Could not save funds snapshot. Check the database connection.');}finally{const b=document.getElementById('fund-snapshot-btn');if(b)b.disabled=false;}});
+  document.getElementById('fund-refresh-btn')?.addEventListener('click',async()=>{try{const today=businessDayKey();await Promise.all([p1Load('1900-01-01',today,true),loadFundTransactions(),loadFundSnapshots()]);renderDashboard();toast('Available Funds refreshed.');}catch(e){toast('Could not refresh account balances.');}});
   const dashShiftBtn=document.getElementById('dashboard-shift-btn'); if(dashShiftBtn) dashShiftBtn.onclick=()=>currentShift?goToPage('shifts'):openShiftModal();
+  void ensureDailyFundSnapshot();
 }
 
 function monthDateRange(ym){
