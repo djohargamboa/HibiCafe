@@ -32,6 +32,7 @@ Deno.serve(async req=>{
   if(!['Dine In','Take Out'].includes(serviceType))return json({error:'Choose Dine In or Take Out.'},400)
   if(!['Cash','GCash','BPI QR'].includes(choice))return json({error:'Choose a valid payment method.'},400)
   if(choice!=='Cash'&&!reference)return json({error:'Payment reference is required for QR payments.'},400)
+  if(proof&&!/^https:\/\//i.test(proof))return json({error:'Payment proof URL must start with https://.'},400)
   if(!Array.isArray(body.items)||body.items.length<1||body.items.length>40)return json({error:'Your cart is empty or too large.'},400)
   const {data:settingsRow}=await db.from('app_data').select('value').eq('key','hibi-settings').maybeSingle()
   if(settingsRow?.value?.onlineOrderingEnabled===false)return json({error:'Online ordering is currently closed.'},403)
@@ -75,9 +76,9 @@ Deno.serve(async req=>{
  if(action==='track'){
   const orderNumber=clean(body.orderNumber,30).toUpperCase(),trackingCode=clean(body.trackingCode,12).toUpperCase()
   if(!/^HIBI-\d{1,8}$/.test(orderNumber)||!/^[A-F0-9]{8}$/.test(trackingCode))return json({error:'Enter the order number and tracking code exactly as shown.'},400)
-  const {data:order,error}=await db.from('pos_orders').select('order_code,status,payment_status,service_type,total,created_at').eq('order_code',orderNumber).eq('tracking_code',trackingCode).maybeSingle()
+  const {data:order,error}=await db.from('pos_orders').select('order_code,status,payment_status,service_type,total,created_at,updated_at').eq('order_code',orderNumber).eq('tracking_code',trackingCode).maybeSingle()
   if(error||!order)return json({error:'Order not found. Check the order number and private tracking code.'},404)
-  return json({orderNumber:order.order_code,status:order.status,paymentStatus:order.payment_status,serviceType:order.service_type,total:Number(order.total)||0,updatedAt:order.created_at})
+  return json({orderNumber:order.order_code,status:order.status,paymentStatus:order.payment_status,serviceType:order.service_type,total:Number(order.total)||0,updatedAt:order.updated_at||order.created_at})
  }
  return json({error:'Unknown action.'},400)
 })
