@@ -271,6 +271,25 @@ async function p1Resolve(id){const res=await posApi('/rest/v1/rpc/hibi_resolve_r
 function p1RefundKey(){return 'hibi-pending-refund:'+CURRENT_USER.id;}
 const p1RefundForm=p1RefundModal;
 p1RefundModal=async function(o){
+ // Unpaid online orders have no money to refund; cancel directly without marking them paid.
+ if(o?.source==='Online' && isUnpaidOnlineOrder(o)){
+  if(o.status==='Cancelled'){toast('This order is already cancelled.');return;}
+  if(!isSuperuser()&&(o.date!==businessDayKey()||isDateLocked(o.date))){toast('You can only cancel online orders for the current, unlocked business day.');return;}
+  openModal(`<div class="modal-head"><h3>Cancel unpaid online order ${esc(o.orderNumber)}</h3></div><div class="modal-body"><p>This order has not been marked as paid, so no refund or payment entry is needed.</p><div class="field"><label>Cancellation reason</label><input id="p1-online-cancel-reason" placeholder="Required"></div></div><div class="modal-foot"><button id="p1-online-cancel-close" class="btn btn-secondary">Keep order</button><button id="p1-online-cancel-save" class="btn btn-danger">Cancel order</button></div>`);
+  document.getElementById('p1-online-cancel-close').onclick=closeModal;
+  document.getElementById('p1-online-cancel-save').onclick=async()=>{
+   const reason=document.getElementById('p1-online-cancel-reason').value.trim();
+   if(reason.length<2){toast('Enter a cancellation reason.');return;}
+   const button=document.getElementById('p1-online-cancel-save');button.disabled=true;
+   try{
+    const res=await fetch(`${SUPABASE_URL}/functions/v1/online-ordering`,{method:'POST',headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${CURRENT_USER?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify({action:'updateOnlineStatus',orderId:o.id,status:'Cancelled',reason})});
+    const data=await res.json();if(!res.ok)throw new Error(data.error||'Could not cancel online order.');
+    await writeAudit('cancel_unpaid_online_order','order',o.id,reason,{orderNumber:o.orderNumber,date:o.date,paymentStatus:o.paymentStatus||'Pending'});
+    closeModal();await loadPosOrders();await p1RefreshOrderSurface();toast('Unpaid online order cancelled. No payment was added to totals.');
+   }catch(e){toast(e.message||'Could not cancel online order.');button.disabled=false;}
+  };
+  return;
+ }
  const old=JSON.parse(sessionStorage.getItem(p1RefundKey())||'null');
  if(old){await p1CheckRefund();return;}
  await p1RefundForm(o);
