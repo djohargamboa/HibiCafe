@@ -1573,6 +1573,7 @@ let LIVE_AVAILABILITY_REFRESH_TIMER = null;
 let LIVE_SHARED_REFRESH_TIMER = null;
 let LIVE_ORDER_REFRESHING = false;
 let LIVE_SHARED_REFRESHING = false;
+const LIVE_SHARED_REFRESH_TABLES = new Set();
 
 function stopLiveOrderSync(){
   if(LIVE_ORDER_REFRESH_TIMER){ clearTimeout(LIVE_ORDER_REFRESH_TIMER); LIVE_ORDER_REFRESH_TIMER=null; }
@@ -1617,14 +1618,21 @@ function scheduleLiveAvailabilityRefresh(){
 }
 
 function scheduleLiveSharedRefresh(table){
+  LIVE_SHARED_REFRESH_TABLES.add(table);
   if(LIVE_SHARED_REFRESH_TIMER) clearTimeout(LIVE_SHARED_REFRESH_TIMER);
   LIVE_SHARED_REFRESH_TIMER=setTimeout(async ()=>{
     LIVE_SHARED_REFRESH_TIMER=null;
-    if(!CURRENT_USER || LIVE_SHARED_REFRESHING) return;
+    if(!CURRENT_USER || LIVE_SHARED_REFRESH_TABLES.size===0) return;
+    if(LIVE_SHARED_REFRESHING){
+      scheduleLiveSharedRefresh([...LIVE_SHARED_REFRESH_TABLES][0]);
+      return;
+    }
     LIVE_SHARED_REFRESHING=true;
+    const tables=[...LIVE_SHARED_REFRESH_TABLES];
+    LIVE_SHARED_REFRESH_TABLES.clear();
     try{
-      // Refresh only the shared data affected by the change; never replace the active cart.
-      if(table==='app_data'){
+      // Refresh all shared changes received in this debounce window; never replace the active cart.
+      if(tables.includes('app_data')){
         [MENU,ADDONS,SETTINGS]=await Promise.all([
           storeGet('hibi-menu',MENU),
           storeGet('hibi-addons',ADDONS),
@@ -1633,20 +1641,24 @@ function scheduleLiveSharedRefresh(table){
         applyBranding();
         if(document.getElementById('page-pos')?.classList.contains('active')) renderPOS();
         if(document.getElementById('page-settings')?.classList.contains('active')) renderSettings();
-      }else{
-        if(['daily_expenses','owner_expenses','cash_movements','eod_reconciliations'].includes(table)){
-          await loadFinancialRows();
-        }
-        if(table==='cash_shifts') await loadShifts();
-        if(table==='fund_transactions' && isSuperuser()) await loadFundTransactions();
+      }
+      if(tables.some(t=>['daily_expenses','owner_expenses','cash_movements','eod_reconciliations'].includes(t))){
+        await loadFinancialRows();
+      }
+      if(tables.includes('cash_shifts')) await loadShifts();
+      if(tables.includes('fund_transactions') && isSuperuser()) await loadFundTransactions();
+      if(tables.some(t=>t!=='app_data')){
         const activePage=document.querySelector('.page.active')?.id;
         if(activePage==='page-dashboard') renderDashboard();
         else if(activePage==='page-reports') renderReports();
         else if(activePage==='page-settings') renderSettings();
       }
       markDatabaseHealthy();
-    }catch(e){ console.warn('Live shared POS refresh failed for '+table,e); }
-    finally{ LIVE_SHARED_REFRESHING=false; }
+    }catch(e){ console.warn('Live shared POS refresh failed',e); }
+    finally{
+      LIVE_SHARED_REFRESHING=false;
+      if(LIVE_SHARED_REFRESH_TABLES.size>0) scheduleLiveSharedRefresh([...LIVE_SHARED_REFRESH_TABLES][0]);
+    }
   },300);
 }
 
