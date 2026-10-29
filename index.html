@@ -2371,7 +2371,7 @@ function orderTableRows(o){
       <td>${esc(o.date)}</td>
       <td>${esc(o.time)}</td>
       <td>${itemCount}</td>
-      <td><span class="pm-badge pm-${escAttr(o.paymentMethod)}">${esc(o.paymentMethod)}</span></td>
+      <td><span class="pm-badge pm-${escAttr(o.paymentMethod)}">${esc(o.paymentMethod)}</span>${o.source==='Online'&&o.paymentStatus!=='Paid'?'<div style="font-size:10px;color:var(--rust);font-weight:800;margin-top:4px;">PAYMENT PENDING</div>':''}</td>
       <td class="num">${PESO(o.total)}</td>
       <td><span class="status-badge status-${escAttr(o.status)}">${esc(o.status)}</span></td>
       <td>${esc(o.cashier)}</td>
