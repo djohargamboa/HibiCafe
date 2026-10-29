@@ -1598,7 +1598,30 @@ let LIVE_AVAILABILITY_REFRESH_TIMER = null;
 let LIVE_SHARED_REFRESH_TIMER = null;
 let LIVE_ORDER_REFRESHING = false;
 let LIVE_SHARED_REFRESHING = false;
+let LIVE_ORDER_SOUND_ENABLED = false;
+let LIVE_ORDER_AUDIO_CONTEXT = null;
+let LIVE_SEEN_ONLINE_ORDER_IDS = new Set();
 const LIVE_SHARED_REFRESH_TABLES = new Set();
+
+function playOnlineOrderAlert(force=false){
+  if(!LIVE_ORDER_SOUND_ENABLED&&!force)return;
+  try{
+    const AudioCtx=window.AudioContext||window.webkitAudioContext;
+    if(!AudioCtx)return;
+    if(!LIVE_ORDER_AUDIO_CONTEXT)LIVE_ORDER_AUDIO_CONTEXT=new AudioCtx();
+    const ctx=LIVE_ORDER_AUDIO_CONTEXT;
+    if(ctx.state==='suspended')ctx.resume();
+    const now=ctx.currentTime;
+    [880,1175,880].forEach((frequency,i)=>{
+      const start=now+i*0.22,osc=ctx.createOscillator(),gain=ctx.createGain();
+      osc.type='sine';osc.frequency.value=frequency;
+      gain.gain.setValueAtTime(0.0001,start);
+      gain.gain.exponentialRampToValueAtTime(0.16,start+0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001,start+0.16);
+      osc.connect(gain);gain.connect(ctx.destination);osc.start(start);osc.stop(start+0.17);
+    });
+  }catch(e){console.warn('Online order sound alert could not play:',e);}
+}
 
 function stopLiveOrderSync(){
   if(LIVE_ORDER_REFRESH_TIMER){ clearTimeout(LIVE_ORDER_REFRESH_TIMER); LIVE_ORDER_REFRESH_TIMER=null; }
@@ -1616,6 +1639,12 @@ function scheduleLiveOrderRefresh(){
     LIVE_ORDER_REFRESHING=true;
     try{
       await loadPosOrders();
+      const newOnlineOrders=ORDERS.filter(o=>o.source==='Online'&&o.status==='New'&&!LIVE_SEEN_ONLINE_ORDER_IDS.has(String(o.id)));
+      ORDERS.filter(o=>o.source==='Online').forEach(o=>LIVE_SEEN_ONLINE_ORDER_IDS.add(String(o.id)));
+      if(newOnlineOrders.length){
+        playOnlineOrderAlert();
+        toast(newOnlineOrders.length===1?'New online order received.':'New online orders received: '+newOnlineOrders.length);
+      }
       markDatabaseHealthy();
       const activePage=document.querySelector('.page.active')?.id;
       if(activePage==='page-dashboard') renderDashboard();
@@ -1690,6 +1719,7 @@ function scheduleLiveSharedRefresh(table){
 function startLiveOrderSync(){
   stopLiveOrderSync();
   if(!supabaseClient || !CURRENT_USER) return;
+  LIVE_SEEN_ONLINE_ORDER_IDS=new Set(ORDERS.filter(o=>o.source==='Online').map(o=>String(o.id)));
   LIVE_ORDER_CHANNEL=supabaseClient
     .channel('hibi-live-pos')
     .on('postgres_changes',{event:'*',schema:'public',table:'pos_orders'},scheduleLiveOrderRefresh)
@@ -2787,7 +2817,7 @@ function renderStaffDashboard(){
       </div>
     </div>
     <div class="card staff-preparing-card" style="margin-bottom:16px;">
-      <div class="staff-preparing-head"><div><div class="section-title" style="margin:0;">New Online Orders</div><div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Review incoming online orders and verify payment before preparation.</div></div><span class="staff-preparing-count">${ORDERS.filter(o=>o.date===dateKey&&o.source==='Online'&&o.status==='New').length}</span></div>
+      <div class="staff-preparing-head"><div><div class="section-title" style="margin:0;">New Online Orders</div><div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Review incoming online orders and verify payment before preparation.</div></div><div style="display:flex;align-items:center;gap:8px;"><button class="icon-btn" id="staff-sound-toggle" type="button" aria-pressed="${LIVE_ORDER_SOUND_ENABLED}">${LIVE_ORDER_SOUND_ENABLED?'Sound on':'Enable sound'}</button><span class="staff-preparing-count">${ORDERS.filter(o=>o.date===dateKey&&o.source==='Online'&&o.status==='New').length}</span></div></div>
       <table id="staff-online-table">
         <thead><tr><th>Order #</th><th>Date</th><th>Time</th><th>Items</th><th>Payment</th><th class="num">Total</th><th>Status</th><th>Cashier</th><th>Actions</th></tr></thead>
         <tbody>${ORDERS.filter(o=>o.date===dateKey&&o.source==='Online'&&o.status==='New').sort((a,b)=>(Date.parse(b.timestamp)||0)-(Date.parse(a.timestamp)||0)).map(o=>orderTableRows(o)).join('')||`<tr><td colspan="9"><div class="empty-state">No new online orders.</div></td></tr>`}</tbody>
@@ -2805,6 +2835,19 @@ function renderStaffDashboard(){
   document.getElementById('staff-expense').onclick=()=>{if(requireOpenShift(dateKey))openAddExpenseModal();};
   document.getElementById('staff-shifts').onclick=()=>goToPage('shifts');
   document.getElementById('staff-report').onclick=()=>goToPage('reports');
+  const soundToggle=document.getElementById('staff-sound-toggle');
+  if(soundToggle)soundToggle.onclick=()=>{
+    LIVE_ORDER_SOUND_ENABLED=!LIVE_ORDER_SOUND_ENABLED;
+    if(LIVE_ORDER_SOUND_ENABLED){
+      try{const AudioCtx=window.AudioContext||window.webkitAudioContext;if(AudioCtx){if(!LIVE_ORDER_AUDIO_CONTEXT)LIVE_ORDER_AUDIO_CONTEXT=new AudioCtx();LIVE_ORDER_AUDIO_CONTEXT.resume();}}catch(e){}
+      playOnlineOrderAlert(true);
+      soundToggle.textContent='Sound on';soundToggle.setAttribute('aria-pressed','true');
+      toast('Sound alerts enabled for new online orders.');
+    }else{
+      soundToggle.textContent='Enable sound';soundToggle.setAttribute('aria-pressed','false');
+      toast('Sound alerts disabled.');
+    }
+  };
   const onlineTable=document.getElementById('staff-online-table');
   onlineTable.querySelectorAll('[data-toggle-order]').forEach(btn=>btn.onclick=(event)=>{
     event.stopPropagation();
