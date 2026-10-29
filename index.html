@@ -2930,13 +2930,11 @@ function fundBalances(){
   for(const x of CASH_MOVEMENTS){if(isActive(x)&&stamp(x)>cashBaseTime)cash+=(x.type==='Out'?-1:1)*amount(x.amount);}
   for(const x of EXPENSES){if(isActive(x)&&stamp(x)>cashBaseTime)cash-=amount(x.amount);}
   for(const x of OWNER_EXPENSES){if(isActive(x)&&x.paymentMethod==='Cash'&&stamp(x)>cashBaseTime)cash-=amount(x.amount);}
-  // Apply only supplemental fund movements after the cash anchor. Avoid re-applying
-  // ledger entries dated before the latest physical count.
-  for(const x of activeFunds){
-    const t=x.createdAt?new Date(x.createdAt).getTime():0;if(t<=cashBaseTime)continue;
-    if(x.type==='Transfer'){if(x.fromAccount==='Cash')cash-=amount(x.amount);if(x.toAccount==='Cash')cash+=amount(x.amount);}
-    else if(x.account==='Cash'&&x.type!=='Opening Balance')cash+=(x.direction==='Out'?-1:1)*amount(x.amount);
-  }
+  // Cash formula after the latest physical count:
+  // opening/anchor cash + cash sales + Cash In - Cash Out
+  // - Daily Expenses - operational expenses paid in Cash.
+  // Do not re-apply fund_transactions here: Cash In/Out and expense records
+  // are the source of truth for these movements and ledger entries may duplicate them.
   result.Cash=cash;
 
   // GCash and Bank follow the Monthly Reports payment breakdown, which
