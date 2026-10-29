@@ -1749,7 +1749,7 @@ async function loadAll(){
   ADDONS = await storeGet('hibi-addons', ADDONS);
   SETTINGS = await storeGet('hibi-settings', SETTINGS);
   applyBranding();
-  await Promise.all([loadPosOrders(),loadFinancialRows(),loadProductAvailability(),loadShifts(),isSuperuser()?loadFundTransactions():Promise.resolve()]);
+  await Promise.all([loadPosOrders(),loadFinancialRows(),loadProductAvailability(),loadShifts(),isSuperuser()?Promise.all([loadFundTransactions(),loadFundSnapshots()]):Promise.resolve()]);
   await migrateLegacyProductImages();
 }
 async function persistMenu(){ await storeSet('hibi-menu', MENU); }
