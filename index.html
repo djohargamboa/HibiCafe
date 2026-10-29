@@ -1359,7 +1359,7 @@ function cashPortionOfOrder(o){
 }
 function shiftFinancialSummary(shift,endIso=null){
   const end=endIso||shift.closedAt||new Date().toISOString();
-  const orders=ORDERS.filter(o=>o.date===shift.businessDate&&o.status!=='Cancelled'&&isWithinShift(o.timestamp,shift,end));
+  const orders=ORDERS.filter(o=>o.date===shift.businessDate&&o.status!=='Cancelled'&&!isUnpaidOnlineOrder(o)&&isWithinShift(o.timestamp,shift,end));
   const cashSales=orders.reduce((sum,o)=>sum+cashPortionOfOrder(o),0);
   const gcashSales=orders.reduce((sum,o)=>sum+(o.paymentMethod==='GCash'?(Number(o.total)||0):o.paymentMethod==='Cash + GCash'?(Number(o.gcashAmount)||0):0),0);
   const grabSales=orders.reduce((sum,o)=>sum+(o.paymentMethod==='GrabFood'?(Number(o.total)||0):0),0);
@@ -2611,8 +2611,10 @@ function openOwnerExpenseModal(){
 /* ============================================================
    METRICS ENGINE (shared by Dashboard + Reports)
    ============================================================ */
+function isUnpaidOnlineOrder(o){ return o?.source==='Online' && o?.paymentStatus!=='Paid'; }
+function p1IsCancelled(o){ return o?.status==='Cancelled'; }
 function computeMetrics(orders){
-  const completed = orders.filter(o=>!p1IsCancelled(o));
+  const completed = orders.filter(o=>!p1IsCancelled(o)&&!isUnpaidOnlineOrder(o));
   const cancelled = orders.filter(p1IsCancelled);
   const grossSales = completed.reduce((s,o)=>s+(Number(o.total)||0),0);
   const refundRows = Array.isArray(arguments[1]) ? arguments[1] : [];
@@ -2702,7 +2704,7 @@ function computeMetrics(orders){
    ============================================================ */
 function renderStaffDashboard(){
   const dateKey=businessDayKey();
-  const operationalOrders=ORDERS.filter(o=>o.date===dateKey&&!p1IsCancelled(o));
+  const operationalOrders=ORDERS.filter(o=>o.date===dateKey&&!p1IsCancelled(o)&&!isUnpaidOnlineOrder(o));
   const preparing=filteredOrders({mode:'today',status:'Preparing',source:'all'}).filter(o=>!p1IsCancelled(o));
   const cups=operationalOrders.reduce((total,o)=>total+(o.items||[]).filter(item=>item.isDrink).reduce((n,item)=>n+(Number(item.qty)||0),0),0);
   const currentShift=openShiftForDate(dateKey);
@@ -2994,7 +2996,7 @@ function renderMonthlyPerformance(){
   const totalGrab=m.pmAgg['GrabFood']?.sales||0;
   const netAfterDailyExpenses=m.estimatedProceeds-expenseTotal;
   const netAfterAllExpenses=netAfterDailyExpenses-opexTotal;
-  const activeDays=new Set(completed.filter(o=>!p1IsCancelled(o)).map(o=>o.date)).size;
+  const activeDays=new Set(completed.filter(o=>!p1IsCancelled(o)&&!isUnpaidOnlineOrder(o)).map(o=>o.date)).size;
   const dailyRows=[];
   for(let d=1;d<=days;d++){
     const dateKey=`${ym}-${String(d).padStart(2,'0')}`;
@@ -3471,7 +3473,7 @@ async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, 
         text += ` x${i.qty}`;
         return text;
       }).join('\n');
-      const vals=[o.orderNumber,o.time,o.source,o.paymentMethod,o.cashier,(p1IsCancelled(o)?'Cancelled':(o.paymentStatus||o.status))+'\n'+itemsText,p1IsCancelled(o)?0:(o.total||0)];
+      const vals=[o.orderNumber,o.time,o.source,o.paymentMethod,o.cashier,(p1IsCancelled(o)?'Cancelled':(isUnpaidOnlineOrder(o)?'Pending Payment':(o.paymentStatus||o.status)))+'\n'+itemsText,(p1IsCancelled(o)||isUnpaidOnlineOrder(o))?0:(o.total||0)];
       vals.forEach((v,c)=>{
         const cell=ws.getCell(r,c+1); cell.value=v; cell.border={bottom:thin}; cell.alignment={vertical:'top',wrapText:c===5};
         if(idx%2===1) cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:lightFill}};
