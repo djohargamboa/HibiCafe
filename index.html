@@ -918,6 +918,7 @@ let PRODUCT_AVAILABILITY = {};
 let SHIFTS = [];
 let shiftsFilterDate = businessDayKey();
 let FUND_TRANSACTIONS = [];
+let REFUNDS = [];
 let FUND_SNAPSHOTS = [];
 let FUND_SNAPSHOT_AUTO_RUNNING = false;
 
@@ -1522,15 +1523,17 @@ function mapEodRow(row){
   return {opening:Number(row.opening)||0,actual:row.actual==null?null:Number(row.actual),expected:row.expected==null?null:Number(row.expected),variance:row.variance==null?null:Number(row.variance),totalCashSales:Number(row.total_cash_sales)||0,cashIn:Number(row.cash_in)||0,cashOut:Number(row.cash_out)||0,totalGcashSales:Number(row.total_gcash_sales)||0,totalExpenses:Number(row.total_expenses)||0,varianceReason:row.variance_reason||'',locked:!!row.locked,reconciledAt:row.reconciled_at||null,reconciledBy:row.reconciled_by||'',unlockedAt:row.unlocked_at||null,unlockedBy:row.unlocked_by||''};
 }
 async function loadFinancialRows(){
-  const [expenses,ownerExpenses,cashMovements,eodRows]=await Promise.all([
+  const [expenses,ownerExpenses,cashMovements,eodRows,refundRows]=await Promise.all([
     posGetAll('/rest/v1/daily_expenses?select=*&order=created_at.desc,id.desc'),
     posGetAll('/rest/v1/owner_expenses?select=*&order=created_at.desc,id.desc'),
     posGetAll('/rest/v1/cash_movements?select=*&order=created_at.desc,id.desc'),
-    posGetAll('/rest/v1/eod_reconciliations?select=*&order=business_date.desc')
+    posGetAll('/rest/v1/eod_reconciliations?select=*&order=business_date.desc'),
+    posGetAll('/rest/v1/pos_refunds?select=*&order=created_at.desc')
   ]);
   EXPENSES=expenses.map(mapExpenseRow);
   OWNER_EXPENSES=ownerExpenses.map(mapOwnerExpenseRow);
-  CASH_MOVEMENTS=cashMovements.map(mapCashMovementRow);
+  REFUNDS=refundRows; 
+  CASH_MOVEMENTS=CASH_MOVEMENTS=cashMovements.map(mapCashMovementRow);
   EOD={}; eodRows.forEach(r=>{ EOD[r.business_date]=mapEodRow(r); });
 }
 async function upsertFinancialRow(table,payload,conflict='id'){
