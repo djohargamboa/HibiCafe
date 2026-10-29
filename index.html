@@ -2899,7 +2899,7 @@ async function loadFundSnapshots(){
   FUND_SNAPSHOTS=rows.map(r=>({id:r.id,date:r.business_date,snapshotAt:r.snapshot_at,cash:Number(r.cash_balance)||0,gcash:Number(r.gcash_balance)||0,bank:Number(r.bank_balance)||0,type:r.snapshot_type||'daily',notes:r.notes||'',createdBy:r.created_by_name||''}));
 }
 async function saveFundSnapshot(type='manual',notes='',businessDate=businessDayKey()){
-  if(!isSuperuser() && type!=='reconciliation') throw new Error('Only a superuser can save manual fund snapshots.');
+  if(!isSuperuser()) throw new Error('Only a superuser can save fund snapshots.');
   const capturedAt=new Date().toISOString();
   const balances=fundBalances();
   await posApi('/rest/v1/fund_balance_snapshots',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({
@@ -2907,8 +2907,7 @@ async function saveFundSnapshot(type='manual',notes='',businessDate=businessDayK
     cash_balance:Number(balances.Cash)||0,gcash_balance:Number(balances.GCash)||0,bank_balance:Number(balances.Bank)||0,
     snapshot_type:type,notes:notes||null,created_by:CURRENT_USER?.id||null,created_by_name:currentActor()
   })});
-  // Staff may insert reconciliation snapshots, but only superusers can read/manage snapshot history.
-  if(isSuperuser()) await loadFundSnapshots();
+  await loadFundSnapshots();
 }
 async function ensureDailyFundSnapshot(){
   if(!isSuperuser()||FUND_SNAPSHOT_AUTO_RUNNING) return;
@@ -3577,14 +3576,16 @@ function renderReports(){
       const reconciliation={...(EOD[dateKey]||{}),opening,actual,expected,variance,totalCashSales:cashSales,cashIn:drawerTotals.in,cashOut:drawerTotals.out,totalGcashSales:gcashSales,totalExpenses:expenseTotal,varianceReason,locked:true,reconciledAt:new Date().toISOString(),reconciledBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')};
       try{ await saveEodRecord(dateKey,reconciliation); EOD[dateKey]=reconciliation; }
       catch(e){ toast('Reconciliation was NOT saved: '+(e?.message||'database error')); return; }
-      // Every successful reconciliation creates its own snapshot, including staff reconciliations
-      // and superuser-unlocked re-reconciliations. Save before non-critical audit/email work.
+      // Only a superuser can write to the protected Available Funds snapshot table.
+      // Save immediately after the database confirms reconciliation, before non-critical audit/email work.
       let reconciliationSnapshotError=null;
-      try{
-        await saveFundSnapshot('reconciliation',`Automatic snapshot after successful reconciliation of ${dateKey}.`,dateKey);
-      }catch(snapshotError){
-        reconciliationSnapshotError=snapshotError;
-        console.error('Reconciliation snapshot failed:',snapshotError);
+      if(isSuperuser() && !FUND_SNAPSHOTS.some(s=>s.date===dateKey && s.type==='reconciliation')){
+        try{
+          await saveFundSnapshot('reconciliation',`Automatic snapshot after successful reconciliation of ${dateKey}.`,dateKey);
+        }catch(snapshotError){
+          reconciliationSnapshotError=snapshotError;
+          console.error('Reconciliation snapshot failed:',snapshotError);
+        }
       }
       await writeAudit('reconcile_day','eod',dateKey,varianceReason,{opening,actual,expected,variance,cashIn:drawerTotals.in,cashOut:drawerTotals.out,totalCashSales:cashSales,totalGcashSales:gcashSales,totalExpenses:expenseTotal});
       try{
