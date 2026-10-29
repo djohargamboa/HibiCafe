@@ -4,7 +4,7 @@ alter table public.pos_orders
   add column if not exists customer_phone text,
   add column if not exists tracking_code text,
   add column if not exists payment_proof_url text,
-  add column if not exists updated_at timestamptz not null default now();
+  add column if not exists updated_at timestamptz;
 
 create unique index if not exists pos_orders_tracking_code_uidx
   on public.pos_orders (tracking_code)
