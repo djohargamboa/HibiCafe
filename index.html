@@ -3576,22 +3576,23 @@ function renderReports(){
       const reconciliation={...(EOD[dateKey]||{}),opening,actual,expected,variance,totalCashSales:cashSales,cashIn:drawerTotals.in,cashOut:drawerTotals.out,totalGcashSales:gcashSales,totalExpenses:expenseTotal,varianceReason,locked:true,reconciledAt:new Date().toISOString(),reconciledBy:(CURRENT_PROFILE?.display_name||CURRENT_PROFILE?.username||'Staff')};
       try{ await saveEodRecord(dateKey,reconciliation); EOD[dateKey]=reconciliation; }
       catch(e){ toast('Reconciliation was NOT saved: '+(e?.message||'database error')); return; }
-      await writeAudit('reconcile_day','eod',dateKey,varianceReason,{opening,actual,expected,variance,cashIn:drawerTotals.in,cashOut:drawerTotals.out,totalCashSales:cashSales,totalGcashSales:gcashSales,totalExpenses:expenseTotal});
       // Only a superuser can write to the protected Available Funds snapshot table.
-      // Save once per reconciled business date, after the database confirms reconciliation.
+      // Save immediately after the database confirms reconciliation, before non-critical audit/email work.
+      let reconciliationSnapshotError=null;
       if(isSuperuser() && !FUND_SNAPSHOTS.some(s=>s.date===dateKey && s.type==='reconciliation')){
         try{
           await saveFundSnapshot('reconciliation',`Automatic snapshot after successful reconciliation of ${dateKey}.`,dateKey);
         }catch(snapshotError){
+          reconciliationSnapshotError=snapshotError;
           console.error('Reconciliation snapshot failed:',snapshotError);
-          toast('Reconciliation saved, but the funds snapshot could not be saved: '+(snapshotError.message||snapshotError));
         }
       }
+      await writeAudit('reconcile_day','eod',dateKey,varianceReason,{opening,actual,expected,variance,cashIn:drawerTotals.in,cashOut:drawerTotals.out,totalCashSales:cashSales,totalGcashSales:gcashSales,totalExpenses:expenseTotal});
       try{
         const attachment = await exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, reconciliation, {download:false});
         const emailReport = buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expenseTotal, netSales, reconciliation);
         await sendDailyReportEmail(emailReport, attachment);
-        toast('Cash reconciliation saved and daily report emailed.');
+        toast(reconciliationSnapshotError?'Cash reconciliation saved and daily report emailed, but the funds snapshot failed: '+(reconciliationSnapshotError.message||reconciliationSnapshotError):'Cash reconciliation saved and daily report emailed.');
       }catch(err){
         console.error('Daily report email failed:', err);
         toast('Cash reconciliation saved, but email failed: ' + (err.message || err));
