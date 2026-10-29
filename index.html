@@ -2468,7 +2468,7 @@ function openOrderDetail(id){
           ${o.source==='GrabFood'?`<div class="sumrow"><span>Grab Code</span><span>${esc(o.grabCode||o.orderNumber)}</span></div><div class="sumrow"><span>Discount</span><span>${o.discountAmount?`−${PESO(o.discountAmount)}`:'—'}</span></div>`:(o.paymentMethod==='Cash'?`<div class="sumrow"><span>Received / Change</span><span>${PESO(o.amountReceived)} / ${PESO(o.changeGiven)}</span></div>`:o.paymentMethod==='Cash + GCash'?`<div class="sumrow"><span>Cash + GCash</span><span>${PESO(o.cashAmount||0)} + ${PESO(o.gcashAmount||0)}</span></div>`:`<div class="sumrow"><span>Reference</span><span>${o.gcashRef||'—'}</span></div>`)}
           <div class="sumrow grand"><span>Total</span><span>${PESO(o.total)}</span></div>
         </div>
-        ${o.source==='Online'?`<div class="card" style="padding:12px;margin-top:14px;background:var(--cream);"><div class="section-title">Online Customer &amp; Payment</div><div id="online-customer-details" class="permission-note">Customer details are loaded securely when requested.</div><button type="button" class="icon-btn" id="modal-load-online-details" style="margin-top:8px;">Load Customer / Payment Details</button>${o.paymentStatus!=='Paid'?`<button type="button" class="btn btn-primary" id="modal-verify-online-payment" style="width:100%;margin-top:10px;">${o.paymentMethod==='Cash'?'Confirm Cash Received':'Verify QR Payment'}</button>`:''}</div>`:''}
+        ${o.source==='Online'?`<div class="card" style="padding:12px;margin-top:14px;background:var(--cream);"><div class="section-title">Online Customer &amp; Payment</div><div id="online-customer-details" class="permission-note">Loading customer and payment details…</div><button type="button" class="icon-btn" id="modal-load-online-details" style="margin-top:8px;">Refresh customer details</button>${o.status==='New'&&o.paymentStatus==='Paid'?`<button type="button" class="btn btn-primary" id="modal-accept-online-order" style="width:100%;margin-top:10px;">Accept Order &amp; Start Preparing</button>`:o.paymentStatus!=='Paid'?`<button type="button" class="btn btn-primary" id="modal-verify-online-payment" style="width:100%;margin-top:10px;">${o.status==='New'?'Verify Payment &amp; Accept Order':(o.paymentMethod==='Cash'?'Confirm Cash Received':'Verify QR Payment')}</button>`:''}</div>`:''}
         <div class="section-title" style="margin-top:16px;">Order Status</div>
         <select id="status-select" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);font-size:14px;" ${((isDateLocked(o.date)&&!isSuperuser())||(!isSuperuser() && o.date!==businessDayKey()))?'disabled':''}>
           ${['New','Preparing','Completed','Cancelled'].map(s=>`<option value="${s}" ${s===o.status?'selected':''}>${s}</option>`).join('')}
@@ -2493,26 +2493,29 @@ function openOrderDetail(id){
     }catch(err){target.textContent=err.message||'Could not load customer details.'}
     finally{onlineDetailsBtn.disabled=false}
   };
+  if(o.source==='Online'&&onlineDetailsBtn) onlineDetailsBtn.click();
   const verifyOnlineBtn=document.getElementById('modal-verify-online-payment');
+  const acceptOnlineBtn=document.getElementById('modal-accept-online-order');
+  if(acceptOnlineBtn) acceptOnlineBtn.onclick=async()=>{acceptOnlineBtn.disabled=true;acceptOnlineBtn.textContent='Accepting order…';try{const updated=await updateOnlineOrderStatus(o.id,'Preparing','');await writeAudit('accept_online_order','order',o.id,'Online order accepted',{orderNumber:o.orderNumber,date:o.date,oldStatus:o.status,newStatus:updated.status});closeModal();await loadPosOrders();renderOrdersPage();toast('Order '+o.orderNumber+' accepted and sent to Preparing')}catch(err){toast(err.message||'Could not accept online order.');acceptOnlineBtn.disabled=false;acceptOnlineBtn.textContent='Accept Order & Start Preparing'}};
   if(verifyOnlineBtn) verifyOnlineBtn.onclick=async()=>{
     if(o.status==='Cancelled'){toast('Cancelled orders cannot be marked paid.');return}
-    let amountReceived=null;
-    if(o.paymentMethod==='Cash'){
-      const raw=prompt('Enter the cash amount received from the customer:',String(o.total));
-      if(raw===null)return;
-      amountReceived=Number(raw);
-      if(!Number.isFinite(amountReceived)||amountReceived<Number(o.total)){toast('Cash received must be at least the order total.');return;}
-    }
-    if(!confirm(o.paymentMethod==='Cash'?'Confirm receipt of '+PESO(amountReceived)+' cash?':'Confirm that the QR transfer has been verified in the receiving account?'))return;
-    verifyOnlineBtn.disabled=true;verifyOnlineBtn.textContent='Verifying…';
-    try{
-      const res=await fetch(`${SUPABASE_URL}/functions/v1/online-ordering`,{method:'POST',headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${CURRENT_USER?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify({action:'verifyPayment',orderId:o.id,amountReceived})});
-      const data=await res.json();if(!res.ok)throw new Error(data.error||'Could not verify payment.');
-      o.paymentStatus='Paid';
-      await writeAudit('verify_online_payment','order',o.id,'',{orderNumber:o.orderNumber,paymentMethod:o.paymentMethod,verifiedBy:data.verifiedBy||SETTINGS.cashierName});
-      toast(data.alreadyPaid?'Payment was already marked paid.':'Payment marked as paid.');
-      closeModal();await loadPosOrders();renderOrdersPage();if(document.getElementById('page-dashboard')?.classList.contains('active'))renderDashboard();
-    }catch(err){toast(err.message||'Could not verify payment.');verifyOnlineBtn.disabled=false;verifyOnlineBtn.textContent=o.paymentMethod==='Cash'?'Confirm Cash Received':'Verify QR Payment'}
+    const accepting=o.status==='New',cash=o.paymentMethod==='Cash';closeModal();
+    const intro='<div class="modal-head"><h3>'+(accepting?'Verify &amp; accept online order':'Verify online payment')+'</h3><div class="msub">Order '+esc(o.orderNumber)+' · Total '+PESO(o.total)+'</div></div>';
+    const guidance='<div class="card" style="padding:13px;background:var(--cream);margin-bottom:14px;"><div style="font-weight:800;margin-bottom:4px;">'+(cash?'Cash at counter':'QR payment')+'</div><div class="permission-note">'+(cash?'Enter the amount the customer actually handed to the cashier.':'Check the receiving GCash/BPI account and confirm the transfer is received before approving.')+'</div></div>';
+    const input=cash?'<label for="online-cash-received" style="display:block;font-size:12px;font-weight:700;margin-bottom:6px;">Cash received (₱)</label><input id="online-cash-received" type="number" min="'+Number(o.total)+'" step="0.01" value="'+Number(o.total)+'" style="width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font-size:16px;">':'<label style="display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--line);border-radius:10px;"><input id="online-payment-confirmed" type="checkbox" style="margin-top:3px;accent-color:var(--matcha);"><span><strong>I verified the transfer</strong><small style="display:block;color:var(--text-dim);margin-top:4px;">The amount and reference match the receiving account.</small></span></label>';
+    openModal(intro+'<div class="modal-body">'+guidance+input+'<div id="online-verify-error" style="color:var(--rust);font-size:12px;margin-top:9px;"></div></div><div class="modal-foot"><button class="btn btn-secondary" id="online-verify-cancel">Back</button><button class="btn btn-primary" id="online-verify-confirm">'+(accepting?'Verify &amp; Accept':'Confirm Payment')+'</button></div>');
+    document.getElementById('online-verify-cancel').onclick=()=>{closeModal();openOrderDetail(o.id)};
+    document.getElementById('online-verify-confirm').onclick=async()=>{
+      const error=document.getElementById('online-verify-error');let amountReceived=null;
+      if(cash){amountReceived=Number(document.getElementById('online-cash-received').value);if(!Number.isFinite(amountReceived)||amountReceived<Number(o.total)){error.textContent='Cash received must be at least '+PESO(o.total)+'.';return}}
+      else if(!document.getElementById('online-payment-confirmed').checked){error.textContent='Please confirm that you verified the transfer in the receiving account.';return}
+      const confirmBtn=document.getElementById('online-verify-confirm');confirmBtn.disabled=true;confirmBtn.textContent='Saving…';
+      try{const res=await fetch(SUPABASE_URL+'/functions/v1/online-ordering',{method:'POST',headers:{apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+(CURRENT_USER?.access_token||''),'Content-Type':'application/json'},body:JSON.stringify({action:'verifyPayment',orderId:o.id,amountReceived})});const data=await res.json();if(!res.ok)throw new Error(data.error||'Could not verify payment.');
+        await writeAudit('verify_online_payment','order',o.id,'Online payment verified',{orderNumber:o.orderNumber,paymentMethod:o.paymentMethod,verifiedBy:data.verifiedBy||SETTINGS.cashierName});
+        if(accepting){const statusUpdate=await updateOnlineOrderStatus(o.id,'Preparing','');await writeAudit('accept_online_order','order',o.id,'Online order accepted',{orderNumber:o.orderNumber,date:o.date,oldStatus:'New',newStatus:statusUpdate.status})}
+        closeModal();await loadPosOrders();renderOrdersPage();if(document.getElementById('page-dashboard')?.classList.contains('active'))renderDashboard();toast(accepting?'Payment verified; order accepted and sent to Preparing.':'Payment marked as verified.');
+      }catch(err){error.textContent=err.message||'Could not verify payment.';confirmBtn.disabled=false;confirmBtn.textContent=accepting?'Verify & Accept':'Confirm Payment'}
+    };
   };
   document.getElementById('modal-save-status').onclick = async ()=>{
     if(isDateLocked(o.date) && !isSuperuser()){ toast('This order date is reconciled and locked. Unlock the day first.'); return; }
