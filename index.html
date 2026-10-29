@@ -2634,7 +2634,7 @@ function computeMetrics(orders){
   const cupBySize = {'Hot 12oz':0,'Iced 16oz':0,'Iced 20oz':0};
   const productAgg = {}; // name -> {qty, sales, sizes:{}}
   const pmAgg = {}; // method -> {count, sales}
-  const sourceAgg = {'Walk-in':{count:0,sales:0,items:0,cups:0,discounts:0},'GrabFood':{count:0,sales:0,items:0,cups:0,discounts:0}};
+  const sourceAgg = {'Walk-in':{count:0,sales:0,items:0,cups:0,discounts:0},'GrabFood':{count:0,sales:0,items:0,cups:0,discounts:0},'Online':{count:0,sales:0,items:0,cups:0,discounts:0}};
   completed.forEach(o=>{
     // Payment breakdown is based on the actual money received.
     // For Cash + GCash, split the order total between the two payment methods
