@@ -19,7 +19,7 @@ function p2Money(n){return PESO(Math.round((Number(n)||0)*100)/100);}
 function p2MonthData(ym){
  const {start,end,days}=monthDateRange(ym);
  const orders=ORDERS.filter(o=>o.date>=start&&o.date<=end);
- const paid=orders.filter(o=>!p1IsCancelled(o));
+ const paid=orders.filter(o=>!p1IsCancelled(o)&&!isUnpaidOnlineOrder(o));
  const refunds=p1RefundedOnly(p1Refunds(start,end),orders);
  const m=computeMetrics(orders,refunds);
  const dailyExpenses=EXPENSES.filter(x=>x.date>=start&&x.date<=end&&x.status!=='Voided');
@@ -39,7 +39,7 @@ function p2MonthData(ym){
  for(let d=1;d<=days;d++){
   const dateKey=`${ym}-${String(d).padStart(2,'0')}`;
   const dayOrders=ORDERS.filter(o=>o.date===dateKey);
-  const dayPaid=dayOrders.filter(o=>!p1IsCancelled(o));
+  const dayPaid=dayOrders.filter(o=>!p1IsCancelled(o)&&!isUnpaidOnlineOrder(o));
   const dm=computeMetrics(dayOrders,p1Refunds(dateKey));
   const exp=dailyExpenses.filter(x=>x.date===dateKey).reduce((n,x)=>n+Number(x.amount||0),0);
   const opex=opexRows.filter(x=>x.date===dateKey).reduce((n,x)=>n+Number(x.amount||0),0);
