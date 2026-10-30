@@ -31,7 +31,7 @@ let availabilityChannel=null,availabilityFallbackTimer=null;
 
 const $=id=>document.getElementById(id);
 const money=n=>'₱'+(Number(n)||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
-function displayPickupTime(value){if(!value)return '';const m=String(value).match(/^(\\d{2}):(\\d{2})/);if(!m)return String(value);const h=Number(m[1]);return (h%12||12)+':'+m[2]+' '+(h>=12?'PM':'AM')}
+function displayPickupTime(value){if(!value)return '';const m=String(value).match(/^(\d{2}):(\d{2})/);if(!m)return String(value);const h=Number(m[1]);return (h%12||12)+':'+m[2]+' '+(h>=12?'PM':'AM')}
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let catalog={products:[],addons:[],paymentQr:{}},cart=[],serviceType='Dine In',provider='Cash',busy=false;
 async function api(body){const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json','apikey':ANON_KEY},body:JSON.stringify(body)});const data=await r.json().catch(()=>({error:'Unexpected server response.'}));if(!r.ok)throw new Error(data.error||'Request failed.');return data}
