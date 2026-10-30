@@ -106,7 +106,7 @@ function setProvider(p){provider=p;document.querySelectorAll('[data-provider]').
  if(show){const url=p==='GCash QR'?catalog.paymentQr?.gcash:catalog.paymentQr?.bpi;$('qr-display').innerHTML=url?`<img src="${esc(url)}" alt="${esc(p)} payment QR"><p>Scan with ${p==='GCash QR'?'GCash':'BPI'} and enter your payment reference below.</p>`:`<strong>${esc(p)} QR code is not configured yet.</strong><p>Please contact Hibi Cafe or choose Cash until the cafe's QR image is added in POS Settings.</p>`;}
 }
 function showTab(which){const order=which==='order';$('order-view').classList.toggle('hidden',!order);$('track-view').classList.toggle('hidden',order);$('tab-order').classList.toggle('active',order);$('tab-track').classList.toggle('active',!order);$('cartbar').classList.toggle('hidden',!order||!cart.length)}
-$('tab-order').onclick=()=>showTab('order');$('tab-track').onclick=()=>showTab('track');$('header-track').onclick=()=>{showTab('track');window.scrollTo({top:0,behavior:'smooth'})};
+$('tab-order').onclick=()=>showTab('order');$('tab-track').onclick=()=>showTab('track');
 document.querySelectorAll('[data-service]').forEach(b=>b.onclick=()=>{serviceType=b.dataset.service;document.querySelectorAll('[data-service]').forEach(x=>x.classList.toggle('active',x===b));updatePickupTimeVisibility()});
 function updatePickupTimeVisibility(){const show=serviceType==='Take Out';$('pickup-time-field').classList.toggle('hidden',!show);if(!show&&$('pickup-time'))$('pickup-time').value=''}
 updatePickupTimeVisibility();
