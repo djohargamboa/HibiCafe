@@ -74,12 +74,17 @@ function renderMenu(){
 $('menu-search').addEventListener('input',renderMenu);
 function renderAddonOptions(productId){
  const list=$('addon-list');if(!list)return;
- const selected=new Set([...document.querySelectorAll('[data-addon-for="'+CSS.escape(String(productId))+'"]:checked')].map(x=>String(x.value)));
- const query=($('addon-search')?.value||'').trim().toLowerCase();
- const matches=catalog.addons.filter(a=>String(a.name||'').toLowerCase().includes(query));
- list.innerHTML=matches.length?matches.map(a=>'<label class="addon"><input type="checkbox" data-addon-for="'+esc(productId)+'" value="'+esc(a.id)+'" '+(selected.has(String(a.id))?'checked':'')+'><span class="addon-copy"><span class="addon-name">'+esc(a.name)+'</span><strong class="addon-price">+'+money(a.price)+'</strong></span></label>').join(''):'<div class="addon-empty">No matching add-ons.</div>';
+ list.innerHTML=catalog.addons.map(a=>'<label class="addon"><input type="checkbox" data-addon-for="'+esc(productId)+'" value="'+esc(a.id)+'"><span class="addon-copy"><span class="addon-name">'+esc(a.name)+'</span><strong class="addon-price">+'+money(a.price)+'</strong></span></label>').join('');
  list.querySelectorAll('input[type="checkbox"]').forEach(input=>input.onchange=()=>updateAddonSelectionSummary(productId));
- updateAddonSelectionSummary(productId);
+ filterAddonOptions();updateAddonSelectionSummary(productId);
+}
+function filterAddonOptions(){
+ const list=$('addon-list'),query=($('addon-search')?.value||'').trim().toLowerCase();if(!list)return;
+ let visible=0;
+ list.querySelectorAll('.addon').forEach(item=>{const match=item.querySelector('.addon-name')?.textContent.toLowerCase().includes(query);item.hidden=!match;if(match)visible++;});
+ let empty=$('addon-empty');
+ if(!visible&&!empty){empty=document.createElement('div');empty.id='addon-empty';empty.className='addon-empty';empty.textContent='No matching add-ons.';list.appendChild(empty);}
+ if(visible&&empty)empty.remove();
 }
 function updateAddonSelectionSummary(productId){
  const selected=[...document.querySelectorAll('[data-addon-for="'+CSS.escape(String(productId))+'"]:checked')];
@@ -97,7 +102,7 @@ function openProduct(id){
  if((p.isDrink??p.is_drink)&&catalog.addons.length){
   renderAddonOptions(p.id);
   $('addon-toggle').onclick=()=>{const panel=$('addon-panel'),open=panel.classList.toggle('hidden')===false;$('addon-toggle').setAttribute('aria-expanded',String(open));$('addon-chevron').textContent=open?'−':'＋';if(open)$('addon-search').focus();};
-  $('addon-search').addEventListener('input',()=>renderAddonOptions(p.id));
+  $('addon-search').addEventListener('input',filterAddonOptions);
  }
  $('product-modal').classList.remove('hidden');
 }
