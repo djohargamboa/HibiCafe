@@ -20,9 +20,15 @@
 </style></head>
 <body>
 <header class="top"><div class="top-inner"><div><div class="brand">hibi cafe</div><div class="tag">Coffee. Always.</div></div><button class="top-link" id="header-track">Track order ↗</button></div></header><main class="shell"><div class="tabs"><button id="tab-order" class="active">Order Now</button><button id="tab-track">Track My Order</button></div><section id="order-view"><div class="intro"><h1>Hibi Cafe</h1><p>Coffee, drinks & treats · Dine in or take out</p></div><label class="searchbox" id="menu-search-wrap"><span>⌕</span><input id="menu-search" type="search" placeholder="Search drinks and treats" autocomplete="off"></label><div id="category-strip" class="category-strip"></div><div class="menu-heading" id="menu-heading">Popular right now</div><div class="menu-subheading" id="menu-subheading">Made fresh when you order</div><div id="menu-message" class="notice">Loading menu…</div><div id="menu-grid" class="menu-grid"></div><div id="checkout-panel" class="panel hidden"><div class="step-label" id="checkout-step-label">STEP 1 OF 3</div><h2 id="checkout-title">Your details</h2><p class="muted" id="checkout-subtitle">Who should we prepare this order for?</p><div id="checkout-step-1"><div class="formgrid"><div class="field"><label>Your name</label><input id="customer-name" maxlength="100" autocomplete="name" placeholder="Name for your order"></div><div class="field"><label>Contact number <span class="muted">(optional)</span></label><input id="customer-phone" maxlength="30" autocomplete="tel" placeholder="09XX XXX XXXX (optional)"></div></div><div class="field"><label>Order type</label><div class="servicechoices"><button class="choice active" data-service="Dine In"><strong>Dine In</strong><small>Enjoy it at Hibi Cafe</small></button><button class="choice" data-service="Take Out"><strong>Take Out</strong><small>Pickup / takeaway</small></button></div></div><div class="field"><label>Order note <span class="muted">(optional)</span></label><textarea id="customer-note" rows="2" maxlength="300" placeholder="Anything we should know?"></textarea></div></div><div id="checkout-step-2" class="hidden"><div class="field"><label>Choose how to pay</label><div class="paymentchoices"><button class="choice active" data-provider="Cash"><strong>Cash at counter</strong><small>Pay before we prepare your order</small></button><button class="choice" data-provider="GCash QR"><strong>GCash QR</strong><small>Scan and pay with GCash</small></button><button class="choice" data-provider="BPI QR"><strong>BPI QR</strong><small>Pay using BPI</small></button></div></div><div id="qr-section" class="hidden"><div class="qrbox" id="qr-display"></div><div class="field"><label>Payment reference last 4 digits <span class="muted">(optional)</span></label><input id="payment-reference" maxlength="4" inputmode="numeric" pattern="[0-9]{0,4}" placeholder="Last 4 digits (optional)"></div><p class="muted">We will verify your payment before preparing the order.</p></div></div><div id="checkout-error" class="err"></div><div id="checkout-step-3" class="hidden"><div id="review-lines"></div><div class="carttotal"><span>Total</span><span id="review-total">₱0.00</span></div><div id="review-payment" class="notice"></div><div id="checkout-error-review" class="err"></div><p class="muted">Please check your order before submitting.</p></div><div class="step-actions"><button class="subtle-btn" id="checkout-back">Back</button><button class="primary" id="checkout-next">Continue</button><button class="primary hidden" id="place-order">Place order</button></div></div><div id="order-success" class="panel hidden"></div></section><section id="track-view" class="hidden"><div class="intro"><h1>Track your order</h1><p>Enter your order code and the name used when placing the order.</p></div><div class="panel"><div class="field"><label>Order code</label><div class="order-code-input"><span>HIBI-</span><input id="track-number" inputmode="numeric" placeholder="0001" autocomplete="off" aria-label="Order number digits"></div><small class="field-hint">Enter the number shown on your order confirmation.</small></div><div class="field"><label>Customer name</label><input id="track-name" placeholder="Name used when ordering" autocomplete="name"></div><button class="primary checkout" id="track-submit">Track order</button><div id="track-error" class="err"></div><div id="track-result"></div></div></section><div class="footer">Hibi Cafe · Coffee. Always.</div></main><div class="cartbar" id="cartbar"><div class="cartbar-inner"><div class="cart-summary"><strong id="cart-count">0 items · ₱0.00</strong><span id="cart-hint">Your order will appear here</span></div><button class="primary" id="checkout-btn" disabled>View order</button></div></div><div id="product-modal" class="modal-backdrop hidden"><div class="modal"><div class="modal-head"><div><div class="step-label">CUSTOMIZE YOUR DRINK</div><h2 id="modal-product-name">Choose options</h2></div><button class="close-btn" id="close-product" aria-label="Close">×</button></div><div id="modal-product-content"></div><div class="step-actions"><div class="qty"><button id="modal-qty-minus" type="button">−</button><span id="modal-qty">1</span><button id="modal-qty-plus" type="button">+</button></div><button class="primary" id="modal-add">Add to order</button></div></div></div><div id="cart-modal" class="modal-backdrop hidden"><div class="modal"><div class="modal-head"><h2>Your order</h2><button class="close-btn" id="close-cart" aria-label="Close">×</button></div><div id="cart-lines"></div><div class="carttotal"><span>Total</span><span id="cart-total">₱0.00</span></div><button class="primary checkout" id="cart-checkout">Continue to checkout</button></div></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3"></script>
 <script>
 const API='https://ysdnxwvkqyqojrelhcbu.supabase.co/functions/v1/online-ordering';
 const ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ5c2RueHd2a3F5cW9qcmVsaGNidSIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzg3NzczMDg5LCJleHAiOjIxMDMzNDkwODl9.XyYlPVroIXudGM2M6hSWb8ccMwjH21kLHgk5ESGA8T0';
+const REALTIME_SUPABASE=window.supabase?.createClient
+ ? window.supabase.createClient('https://ysdnxwvkqyqojrelhcbu.supabase.co',ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}})
+ : null;
+let availabilityChannel=null,availabilityFallbackTimer=null;
+
 const $=id=>document.getElementById(id);
 const money=n=>'₱'+(Number(n)||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -77,20 +83,22 @@ $('close-product').onclick=()=>$('product-modal').classList.add('hidden');
 $('product-modal').onclick=e=>{if(e.target===$('product-modal'))$('product-modal').classList.add('hidden')};
 $('modal-qty-minus').onclick=()=>$('modal-qty').textContent=Math.max(1,Number($('modal-qty').textContent)-1);
 $('modal-qty-plus').onclick=()=>$('modal-qty').textContent=Math.min(20,Number($('modal-qty').textContent)+1);
-$('modal-add').onclick=()=>{if(!activeProductId)return;addToCart(activeProductId,Number($('modal-qty').textContent)||1);$('product-modal').classList.add('hidden')};
+$('modal-add').onclick=()=>{if(!activeProductId)return;const added=addToCart(activeProductId,Number($('modal-qty').textContent)||1);$('product-modal').classList.add('hidden');if(!added){$('menu-message').classList.remove('hidden');$('menu-message').textContent='This item just sold out. Please choose another item.';}};
 function addToCart(id,quantity=1){
- const p=catalog.products.find(x=>String(x.id)===String(id));if(!p||p.soldOut)return;
+ const p=catalog.products.find(x=>String(x.id)===String(id));if(!p||p.soldOut)return false;
  const cfg=selectedProductConfig(id),size=cfg.size,price=Number(priceMap(p)[size]);
  const addons=cfg.addons.map(aid=>catalog.addons.find(a=>String(a.id)===String(aid))).filter(Boolean).map(a=>({id:String(a.id),name:a.name,price:Number(a.price)||0}));
  const unitPrice=price+addons.reduce((n,a)=>n+a.price,0),key=[id,size,addons.map(a=>a.id).sort().join(',')].join('|');
  const old=cart.find(x=>x.key===key);
  if(old){old.qty=Math.min(20,old.qty+quantity)}else cart.push({key,productId:String(p.id),name:p.name,category:p.category||'',isDrink:!!(p.isDrink??p.is_drink),size,qty:Math.min(20,quantity),unitPrice,addons});
  renderCart();
+ return true;
 }
 function renderCart(){
  const count=cart.reduce((n,x)=>n+x.qty,0),total=cart.reduce((n,x)=>n+x.qty*x.unitPrice,0);
- $('cart-count').textContent=count+' '+(count===1?'item':'items')+' · '+money(total);$('cart-total').textContent=money(total);$('checkout-btn').disabled=!cart.length;$('cart-checkout').disabled=!cart.length;$('cart-hint').textContent=count?'Tap to review your order':'Your order will appear here';
- $('cart-lines').innerHTML=cart.length?cart.map(x=>'<div class="cartline"><div><strong>'+x.qty+' × '+esc(x.name)+'</strong><small>'+esc(x.size)+(x.addons.length?' · '+x.addons.map(a=>esc(a.name)).join(', '):'')+'</small><button data-remove="'+esc(x.key)+'">Remove</button></div><strong>'+money(x.qty*x.unitPrice)+'</strong></div>').join(''):'<div class="muted">Your cart is empty. Add a drink to get started.</div>';
+ const unavailable=cart.some(x=>{const p=catalog.products.find(y=>String(y.id)===String(x.productId));return !p||p.soldOut;});
+ $('cart-count').textContent=count+' '+(count===1?'item':'items')+' · '+money(total);$('cart-total').textContent=money(total);$('checkout-btn').disabled=!cart.length||unavailable;$('cart-checkout').disabled=!cart.length||unavailable;$('cart-hint').textContent=unavailable?'Remove sold-out items to continue':count?'Tap to review your order':'Your order will appear here';
+ $('cart-lines').innerHTML=cart.length?cart.map(x=>{const p=catalog.products.find(y=>String(y.id)===String(x.productId)),soldOut=!p||p.soldOut;return '<div class="cartline"><div><strong>'+x.qty+' × '+esc(x.name)+'</strong><small>'+esc(x.size)+(x.addons.length?' · '+x.addons.map(a=>esc(a.name)).join(', '):'')+'</small>'+(soldOut?'<small class="sold">Sold out · remove this item to continue</small>':'')+'<button data-remove="'+esc(x.key)+'">Remove</button></div><strong>'+money(x.qty*x.unitPrice)+'</strong></div>'}).join(''):'<div class="muted">Your cart is empty. Add a drink to get started.</div>';
  document.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>{cart=cart.filter(x=>x.key!==b.dataset.remove);renderCart()});
 }
 function setProvider(p){provider=p;document.querySelectorAll('[data-provider]').forEach(b=>b.classList.toggle('active',b.dataset.provider===p));const show=p!=='Cash';$('qr-section').classList.toggle('hidden',!show);$('payment-reference').required=false;
@@ -122,6 +130,8 @@ $('checkout-back').onclick=()=>{if(checkoutStep>1)showCheckoutStep(checkoutStep-
 $('checkout-next').onclick=()=>{if(checkoutStep===1){const name=$('customer-name').value.trim(),phone=$('customer-phone').value.trim();if(!name){$('checkout-error').textContent='Please enter your name.';return}showCheckoutStep(2)}else if(checkoutStep===2){if(provider!=='Cash'&&!(provider==='GCash QR'?catalog.paymentQr?.gcash:catalog.paymentQr?.bpi)){$('checkout-error').textContent='This QR payment method is not configured yet. Please choose Cash or contact the cafe.';return}showCheckoutStep(3)}};
 $('place-order').onclick=async()=>{
  if(busy||!cart.length)return;
+ const unavailable=cart.some(x=>{const p=catalog.products.find(y=>String(y.id)===String(x.productId));return !p||p.soldOut;});
+ if(unavailable){$('checkout-error-review').textContent='One or more items in your cart just sold out. Remove them before submitting your order.';renderCart();return;}
  const name=$('customer-name').value.trim(),phone=$('customer-phone').value.trim(),reference=$('payment-reference').value.trim();
  if(!name){$('checkout-error').textContent='Please enter your name.';return}
  
@@ -144,6 +154,29 @@ $('track-submit').onclick=async()=>{
  }catch(e){$('track-error').textContent=e.message||'Unable to find order.'}
  finally{$('track-submit').disabled=false;$('track-submit').textContent='Track Order'}
 };
-async function loadMenu(){try{catalog=await api({action:'menu'});$('menu-message').classList.add('hidden');renderCategories();renderMenu();setProvider(provider)}catch(e){$('menu-message').classList.remove('hidden');$('menu-message').textContent=e.message||'Could not load the menu. Please try again later.'}}
-loadMenu();renderCart();
+async function loadMenu(){try{catalog=await api({action:'menu'});$('menu-message').classList.add('hidden');renderCategories();renderMenu();setProvider(provider);renderCart()}catch(e){$('menu-message').classList.remove('hidden');$('menu-message').textContent=e.message||'Could not load the menu. Please try again later.'}}
+function startAvailabilityRealtime(){
+ const refreshFallback=()=>{if(!availabilityFallbackTimer)availabilityFallbackTimer=setInterval(loadMenu,15000)};
+ if(!REALTIME_SUPABASE){refreshFallback();return;}
+ availabilityChannel=REALTIME_SUPABASE.channel('hibi-online-product-availability',{config:{private:false}})
+  .on('postgres_changes',{event:'*',schema:'public',table:'online_product_availability'},payload=>{
+   const row=payload.new||payload.old||{},id=String(row.product_id||'');
+   if(!id){loadMenu();return;}
+   if(row.business_date&&catalog.businessDate&&row.business_date!==catalog.businessDate){loadMenu();return;}
+   const product=catalog.products.find(p=>String(p.id)===id);
+   if(product)product.soldOut=payload.eventType==='DELETE'?false:row.status==='SoldOut';
+   renderMenu();renderCart();
+  })
+  .subscribe(status=>{
+   if(status==='SUBSCRIBED'){
+    if(availabilityFallbackTimer){clearInterval(availabilityFallbackTimer);availabilityFallbackTimer=null;}
+    loadMenu(); // Reconcile any change between the first menu load and subscription.
+   }else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED')refreshFallback();
+  });
+}
+loadMenu();
+startAvailabilityRealtime();
+renderCart();
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadMenu()});
+window.addEventListener('focus',loadMenu);
 </script></body></html>
