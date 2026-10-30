@@ -1643,7 +1643,10 @@ function scheduleLiveOrderRefresh(){
   if(LIVE_ORDER_REFRESH_TIMER) clearTimeout(LIVE_ORDER_REFRESH_TIMER);
   LIVE_ORDER_REFRESH_TIMER=setTimeout(async ()=>{
     LIVE_ORDER_REFRESH_TIMER=null;
-    if(!CURRENT_USER || LIVE_ORDER_REFRESHING) return;
+    if(!CURRENT_USER) return;
+    // If another refresh is still running, queue one more pass instead of
+    // dropping a Realtime event that may contain a newly saved/updated order.
+    if(LIVE_ORDER_REFRESHING){ scheduleLiveOrderRefresh(); return; }
     LIVE_ORDER_REFRESHING=true;
     try{
       await loadPosOrders();
@@ -2932,7 +2935,8 @@ function fundBalances(){
   const activeFunds=FUND_TRANSACTIONS.filter(x=>x.status==='Active');
   const result={Cash:0,GCash:0,Bank:0};
   const amount=x=>Number(x)||0;
-  const validOrder=o=>o.status!=='Cancelled';
+  // Unpaid online orders must not affect Available Funds until payment is confirmed.
+  const validOrder=o=>o.status!=='Cancelled'&&!isUnpaidOnlineOrder(o);
   const cashOrder=o=>validOrder(o)?cashPortionOfOrder(o):0;
   const gcashOrder=o=>!validOrder(o)?0:o.paymentMethod==='GCash'?amount(o.total):o.paymentMethod==='Cash + GCash'?amount(o.gcashAmount):0;
   const isActive=x=>x.status!=='Voided';
@@ -3052,7 +3056,7 @@ function renderAvailableFunds(){
       </div>
       ${!hasCashAnchor?'<div style="padding:10px 12px;border-radius:9px;background:#FFF5E9;color:#8A5528;font-size:12px;margin-bottom:12px;">Cash has no actual count or opening balance anchor yet; the cash figure is based on recorded activity only.</div>':''}
       <div style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:12px;">Cash remains based on the latest actual cash count plus later cash activity. GCash is cumulative net GCash sales (including split payments) less non-voided GCash OPEX. Bank is cumulative net GrabFood sales less the 25% fee and non-voided Bank Transfer OPEX. Opening balances, settlements, and manual movements are not added to GCash or Bank totals, to avoid double-counting sales.</div>
-      <div style="font-size:12px;color:var(--text-dim);line-height:1.5;margin:0 0 12px;">${FUND_SNAPSHOTS.length?`Latest snapshot: ${esc(new Date(FUND_SNAPSHOTS[0].snapshotAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}))} · ${esc(FUND_SNAPSHOTS[0].type)} · balances are anchored to snapshots.`:'No fund snapshot yet. A daily snapshot is created automatically on the first superuser Dashboard visit each business day.'}</div>
+      <div style="font-size:12px;color:var(--text-dim);line-height:1.5;margin:0 0 12px;">${FUND_SNAPSHOTS.length?`Latest snapshot: ${esc(new Date(FUND_SNAPSHOTS[0].snapshotAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}))} · ${esc(FUND_SNAPSHOTS[0].type)} · balances are anchored to snapshots.`:'No fund snapshot yet. Create one with Snapshot Now or complete a reconciliation.'}</div>
       <details style="border-top:1px solid var(--line);padding-top:10px;">
         <summary style="cursor:pointer;font-weight:700;font-size:13px;">Snapshot history <span style="font-weight:500;color:var(--text-dim);">(${FUND_SNAPSHOTS.length})</span></summary>
         <div style="overflow-x:auto;margin-top:10px;"><table style="min-width:620px;"><thead><tr><th>Date / Time</th><th>Type</th><th class="num">Cash</th><th class="num">GCash</th><th class="num">Bank</th></tr></thead><tbody>
