@@ -1608,9 +1608,26 @@ let LIVE_ORDER_REFRESHING = false;
 let LIVE_SHARED_REFRESHING = false;
 let LIVE_ORDER_SOUND_ENABLED = false;
 let LIVE_ORDER_AUDIO_CONTEXT = null;
+let LIVE_ORDER_REMINDER_TIMER = null;
 let LIVE_SEEN_ONLINE_ORDER_IDS = new Set();
 const LIVE_SHARED_REFRESH_TABLES = new Set();
 
+function pendingOnlineOrders(){
+  return ORDERS.filter(o=>o.source==='Online'&&o.status==='New');
+}
+function syncOnlineOrderReminder(){
+  const hasPending=pendingOnlineOrders().length>0;
+  if(!LIVE_ORDER_SOUND_ENABLED||!hasPending){
+    if(LIVE_ORDER_REMINDER_TIMER){clearInterval(LIVE_ORDER_REMINDER_TIMER);LIVE_ORDER_REMINDER_TIMER=null;}
+    return;
+  }
+  if(!LIVE_ORDER_REMINDER_TIMER){
+    LIVE_ORDER_REMINDER_TIMER=setInterval(()=>{
+      if(!CURRENT_USER||!LIVE_ORDER_SOUND_ENABLED||!pendingOnlineOrders().length){syncOnlineOrderReminder();return;}
+      playOnlineOrderAlert();
+    },120000);
+  }
+}
 function playOnlineOrderAlert(force=false){
   if(!LIVE_ORDER_SOUND_ENABLED&&!force)return;
   try{
@@ -1620,18 +1637,20 @@ function playOnlineOrderAlert(force=false){
     const ctx=LIVE_ORDER_AUDIO_CONTEXT;
     if(ctx.state==='suspended')ctx.resume();
     const now=ctx.currentTime;
-    [880,1175,880].forEach((frequency,i)=>{
-      const start=now+i*0.22,osc=ctx.createOscillator(),gain=ctx.createGain();
-      osc.type='sine';osc.frequency.value=frequency;
+    // A louder, distinctive three-note alert with two quick bursts.
+    [740,988,1318,740,988,1318].forEach((frequency,i)=>{
+      const start=now+i*0.19+(i>=3?0.28:0),osc=ctx.createOscillator(),gain=ctx.createGain();
+      osc.type='triangle';osc.frequency.value=frequency;
       gain.gain.setValueAtTime(0.0001,start);
-      gain.gain.exponentialRampToValueAtTime(0.16,start+0.025);
-      gain.gain.exponentialRampToValueAtTime(0.0001,start+0.16);
-      osc.connect(gain);gain.connect(ctx.destination);osc.start(start);osc.stop(start+0.17);
+      gain.gain.exponentialRampToValueAtTime(0.38,start+0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001,start+0.22);
+      osc.connect(gain);gain.connect(ctx.destination);osc.start(start);osc.stop(start+0.23);
     });
   }catch(e){console.warn('Online order sound alert could not play:',e);}
 }
 
 function stopLiveOrderSync(){
+  if(LIVE_ORDER_REMINDER_TIMER){clearInterval(LIVE_ORDER_REMINDER_TIMER);LIVE_ORDER_REMINDER_TIMER=null;}
   if(LIVE_ORDER_REFRESH_TIMER){ clearTimeout(LIVE_ORDER_REFRESH_TIMER); LIVE_ORDER_REFRESH_TIMER=null; }
   if(LIVE_AVAILABILITY_REFRESH_TIMER){ clearTimeout(LIVE_AVAILABILITY_REFRESH_TIMER); LIVE_AVAILABILITY_REFRESH_TIMER=null; }
   if(LIVE_SHARED_REFRESH_TIMER){ clearTimeout(LIVE_SHARED_REFRESH_TIMER); LIVE_SHARED_REFRESH_TIMER=null; }
@@ -1656,6 +1675,8 @@ function scheduleLiveOrderRefresh(){
         playOnlineOrderAlert();
         toast(newOnlineOrders.length===1?'New online order received.':'New online orders received: '+newOnlineOrders.length);
       }
+      // New means not yet acknowledged; moving an order to Preparing clears its reminder.
+      syncOnlineOrderReminder();
       markDatabaseHealthy();
       const activePage=document.querySelector('.page.active')?.id;
       if(activePage==='page-dashboard') renderDashboard();
@@ -1731,6 +1752,7 @@ function startLiveOrderSync(){
   stopLiveOrderSync();
   if(!supabaseClient || !CURRENT_USER) return;
   LIVE_SEEN_ONLINE_ORDER_IDS=new Set(ORDERS.filter(o=>o.source==='Online').map(o=>String(o.id)));
+  syncOnlineOrderReminder();
   LIVE_ORDER_CHANNEL=supabaseClient
     .channel('hibi-live-pos')
     .on('postgres_changes',{event:'*',schema:'public',table:'pos_orders'},scheduleLiveOrderRefresh)
@@ -2852,9 +2874,11 @@ function renderStaffDashboard(){
     if(LIVE_ORDER_SOUND_ENABLED){
       try{const AudioCtx=window.AudioContext||window.webkitAudioContext;if(AudioCtx){if(!LIVE_ORDER_AUDIO_CONTEXT)LIVE_ORDER_AUDIO_CONTEXT=new AudioCtx();LIVE_ORDER_AUDIO_CONTEXT.resume();}}catch(e){}
       playOnlineOrderAlert(true);
+      syncOnlineOrderReminder();
       soundToggle.textContent='Sound on';soundToggle.setAttribute('aria-pressed','true');
-      toast('Sound alerts enabled for new online orders.');
+      toast(pendingOnlineOrders().length?'Sound enabled. Unacknowledged online orders will alert every 2 minutes.':'Sound alerts enabled for new online orders.');
     }else{
+      syncOnlineOrderReminder();
       soundToggle.textContent='Enable sound';soundToggle.setAttribute('aria-pressed','false');
       toast('Sound alerts disabled.');
     }
