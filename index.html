@@ -3176,7 +3176,7 @@ function renderDashboard(){
   document.getElementById('fund-snapshot-btn')?.addEventListener('click',async()=>{const btn=document.getElementById('fund-snapshot-btn');if(btn)btn.disabled=true;try{await saveFundSnapshot('manual','Manual snapshot by superuser.');renderDashboard();toast('Funds snapshot saved.');}catch(e){console.error(e);toast('Could not save funds snapshot. Check the database connection.');}finally{const b=document.getElementById('fund-snapshot-btn');if(b)b.disabled=false;}});
   document.getElementById('fund-refresh-btn')?.addEventListener('click',async()=>{try{const today=businessDayKey();await Promise.all([p1Load('1900-01-01',today,true),loadFundTransactions(),loadFundSnapshots()]);renderDashboard();toast('Available Funds refreshed.');}catch(e){toast('Could not refresh account balances.');}});
   const dashShiftBtn=document.getElementById('dashboard-shift-btn'); if(dashShiftBtn) dashShiftBtn.onclick=()=>currentShift?goToPage('shifts'):openShiftModal();
-  void ensureDailyFundSnapshot();
+  // Daily auto-snapshots are disabled. Snapshots are created after reconciliation or by explicit superuser action.
 }
 
 function monthDateRange(ym){
