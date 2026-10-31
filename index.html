@@ -3374,7 +3374,7 @@ function openingCashForDate(dateStr){
 }
 
 let reportsView = 'daily';
-function renderReports(){
+async function renderReports(){
   if(!can('reports')) return;
   if(!isSuperuser()){
     reportsView='daily';
@@ -3409,6 +3409,20 @@ function renderReports(){
   const el = document.getElementById('reports-content');
   const rangeLabel = reportsFilter.mode==='today' ? 'Today' : reportsFilter.mode==='date' ? reportsFilter.date : reportsFilter.mode==='month' ? 'This Month' : `${reportsFilter.start} → ${reportsFilter.end}`;
   const selectedEodDate = reportsFilter.mode==='date' ? reportsFilter.date : businessDayKey();
+  const singleDayReport = reportsFilter.mode==='today'||reportsFilter.mode==='date';
+  let reportFundSnapshot = null;
+  if(singleDayReport){
+    try{
+      if(isSuperuser()){
+        reportFundSnapshot=FUND_SNAPSHOTS.filter(s=>s.date===selectedEodDate&&s.type==='reconciliation').sort((a,b)=>new Date(b.snapshotAt)-new Date(a.snapshotAt))[0]||null;
+      }else{
+        const response=await posApi('/rest/v1/rpc/get_fund_balance_snapshot_for_date',{method:'POST',body:JSON.stringify({p_business_date:selectedEodDate})});
+        const rows=await response.json();
+        const row=Array.isArray(rows)?rows[0]:null;
+        if(row) reportFundSnapshot={id:row.id,date:row.business_date,snapshotAt:row.snapshot_at,cash:Number(row.cash_balance)||0,gcash:Number(row.gcash_balance)||0,bank:Number(row.bank_balance)||0,type:row.snapshot_type||'reconciliation',createdBy:row.created_by_name||''};
+      }
+    }catch(snapshotReadError){console.warn('Could not load daily actual funds snapshot:',snapshotReadError);}
+  }
   const eod = (reportsFilter.mode==='today'||reportsFilter.mode==='date') ? (EOD[selectedEodDate] || {}) : {};
   const eodOpenShift = openShiftForDate(selectedEodDate);
   const openingCash = openingCashForDate(selectedEodDate);
@@ -3525,6 +3539,14 @@ function renderReports(){
       <div class="sumrow"><span>Cash Out</span><span>−${PESO(drawerTotals.out)}</span></div>
     </div>
 
+    ${singleDayReport?`<div class="card" style="padding:18px 20px;margin-top:16px;">
+      <div class="section-title">Actual Funds Balance</div>
+      ${reportFundSnapshot?`<div class="sumrow"><span>Cash</span><strong>${PESO(reportFundSnapshot.cash)}</strong></div>
+      <div class="sumrow"><span>GCash</span><strong>${PESO(reportFundSnapshot.gcash)}</strong></div>
+      <div class="sumrow"><span>Bank</span><strong>${PESO(reportFundSnapshot.bank)}</strong></div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:8px;">Reconciliation snapshot · ${esc(new Date(reportFundSnapshot.snapshotAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}))}</div>`:`<div style="font-size:13px;color:var(--text-dim);">Pending reconciliation — actual balances will appear here after the day is reconciled.</div>`}
+    </div>`:'' }
+
     <div class="card" style="padding:18px 20px;margin-top:16px;">
       <div class="section-title">End-of-Day Cash Reconciliation ${reportsFilter.mode!=='date'&&reportsFilter.mode!=='today'?'<span style="font-weight:400;font-size:12px;color:var(--text-dim);">(pick a single date to edit)</span>':''}</div>
       <div class="two-col">
@@ -3548,7 +3570,7 @@ function renderReports(){
   el.querySelector('#reports-prev')?.addEventListener('click',()=>{const current=reportsFilter.mode==='date'?reportsFilter.date:todayStr();reportsFilter.mode='date';reportsFilter.date=shiftDateKey(current,-1);renderReports();});
   el.querySelector('#reports-next')?.addEventListener('click',()=>{const current=reportsFilter.mode==='date'?reportsFilter.date:todayStr();const n=shiftDateKey(current,1);if(n<=businessDayKey()){reportsFilter.mode='date';reportsFilter.date=n;renderReports();}});
   el.querySelector('#report-apply-range')?.addEventListener('click',()=>{ reportsFilter.mode='range'; renderReports(); });
-  el.querySelector('#export-report-btn').onclick = ()=> exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, eod);
+  el.querySelector('#export-report-btn').onclick = ()=> exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, eod, {fundSnapshot:reportFundSnapshot});
   const unlockBtn=el.querySelector('#eod-unlock');
   if(unlockBtn) unlockBtn.onclick=async()=>{
     if(!isSuperuser()) return;
@@ -3622,8 +3644,9 @@ function renderReports(){
       }
       await writeAudit('reconcile_day','eod',dateKey,varianceReason,{opening,actual,expected,variance,cashIn:drawerTotals.in,cashOut:drawerTotals.out,totalCashSales:cashSales,totalGcashSales:gcashSales,totalExpenses:expenseTotal});
       try{
-        const attachment = await exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, reconciliation, {download:false});
-        const emailReport = buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expenseTotal, netSales, reconciliation);
+        reportFundSnapshot=FUND_SNAPSHOTS.filter(s=>s.date===dateKey&&s.type==='reconciliation').sort((a,b)=>new Date(b.snapshotAt)-new Date(a.snapshotAt))[0]||null;
+        const attachment = await exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, reconciliation, {download:false,fundSnapshot:reportFundSnapshot});
+        const emailReport = buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expenseTotal, netSales, reconciliation, reportFundSnapshot);
         await sendDailyReportEmail(emailReport, attachment);
         toast(reconciliationSnapshotError?'Cash reconciliation saved and daily report emailed, but the funds snapshot failed: '+(reconciliationSnapshotError.message||reconciliationSnapshotError):'Cash reconciliation saved and daily report emailed.');
       }catch(err){
@@ -3674,6 +3697,7 @@ async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, 
 
     ws.getCell('A4').value = 'SUMMARY';
     ws.getCell('A4').font = {bold:true};
+    const fundSnapshot=options.fundSnapshot||null;
     const summary = [
       ['Sales before refunds', m.grossSales],
       ['Refunds', m.refundTotal],
@@ -3689,13 +3713,17 @@ async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, 
       ['Expenses', expenseTotal],
       ['Actual Cash Counted', eod?.actual ?? ''],
       ['Expected Cash', eod?.expected ?? ((eod?.opening!=null) ? (eod.opening + (m.pmAgg['Cash']?.sales||0) + (eod.cashIn||0) - (eod.cashOut||0) - expenseTotal) : '')],
-      ['Cash Variance', eod?.variance ?? ((eod?.actual!=null && eod?.opening!=null) ? (eod.actual - (eod.opening + (m.pmAgg['Cash']?.sales||0) + (eod.cashIn||0) - (eod.cashOut||0) - expenseTotal)) : '')]
+      ['Cash Variance', eod?.variance ?? ((eod?.actual!=null && eod?.opening!=null) ? (eod.actual - (eod.opening + (m.pmAgg['Cash']?.sales||0) + (eod.cashIn||0) - (eod.cashOut||0) - expenseTotal)) : '')],
+      ['Actual Funds - Cash', fundSnapshot?.cash ?? 'Pending reconciliation'],
+      ['Actual Funds - GCash', fundSnapshot?.gcash ?? 'Pending reconciliation'],
+      ['Actual Funds - Bank', fundSnapshot?.bank ?? 'Pending reconciliation'],
+      ['Funds Snapshot Time', fundSnapshot?.snapshotAt ? new Date(fundSnapshot.snapshotAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}) : 'Pending reconciliation']
     ];
     summary.forEach((item,i)=>{
       const row=5+i;
       ws.getCell(row,1).value=item[0];
       ws.getCell(row,2).value=item[1];
-      ws.getCell(row,2).numFmt = item[0]==='Number of Cups' ? '0' : moneyFmt;
+      if(typeof item[1]==='number') ws.getCell(row,2).numFmt = item[0]==='Number of Cups' ? '0' : moneyFmt;
       if(item[0]==='Net Sales' || item[0]==='Cash Variance'){
         ws.getCell(row,1).font={bold:true}; ws.getCell(row,2).font={bold:true};
         ws.getCell(row,1).fill={type:'pattern',pattern:'solid',fgColor:{argb:summaryFill}};
@@ -3799,7 +3827,7 @@ async function sendDailyReportEmail(report, attachment){
   return await res.json().catch(()=>({ok:true}));
 }
 
-function buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expenseTotal, netSales, eod){
+function buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expenseTotal, netSales, eod, fundSnapshot=null){
   return {
     date: dateKey, period: rangeLabel,
     totalSales: Number(m.totalSales)||0,
@@ -3812,6 +3840,7 @@ function buildDailyEmailReport(dateKey, rangeLabel, m, orders, expenses, expense
     actualCash: Number(eod?.actual)||0, actualCashCounted: Number(eod?.actual)||0,
     expectedCash: Number(eod?.expected)||0, variance: Number(eod?.variance)||0, cashVariance: Number(eod?.variance)||0,
     cashIn: Number(eod?.cashIn)||0, cashOut: Number(eod?.cashOut)||0, varianceReason: String(eod?.varianceReason||''),
+    actualFunds: fundSnapshot?{cash:Number(fundSnapshot.cash)||0,gcash:Number(fundSnapshot.gcash)||0,bank:Number(fundSnapshot.bank)||0,snapshotAt:fundSnapshot.snapshotAt,type:fundSnapshot.type}:null,
     netSales: Number(m.totalSales)||0,
     estimatedBalance: Number(netSales)||0,
     grossSales:Number(m.grossSales)||0,refunds:Number(m.refundTotal)||0,estimatedGrabFees:Number(m.estimatedFees)||0,
