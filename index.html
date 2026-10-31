@@ -3570,7 +3570,7 @@ async function renderReports(){
   el.querySelector('#reports-prev')?.addEventListener('click',()=>{const current=reportsFilter.mode==='date'?reportsFilter.date:todayStr();reportsFilter.mode='date';reportsFilter.date=shiftDateKey(current,-1);renderReports();});
   el.querySelector('#reports-next')?.addEventListener('click',()=>{const current=reportsFilter.mode==='date'?reportsFilter.date:todayStr();const n=shiftDateKey(current,1);if(n<=businessDayKey()){reportsFilter.mode='date';reportsFilter.date=n;renderReports();}});
   el.querySelector('#report-apply-range')?.addEventListener('click',()=>{ reportsFilter.mode='range'; renderReports(); });
-  el.querySelector('#export-report-btn').onclick = ()=> exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, eod, {fundSnapshot:reportFundSnapshot});
+  el.querySelector('#export-report-btn').onclick = ()=> exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, netSales, eod, {fundSnapshot:reportFundSnapshot,singleDay:singleDayReport});
   const unlockBtn=el.querySelector('#eod-unlock');
   if(unlockBtn) unlockBtn.onclick=async()=>{
     if(!isSuperuser()) return;
@@ -3714,10 +3714,10 @@ async function exportReportExcel(m, rangeLabel, orders, expenses, expenseTotal, 
       ['Actual Cash Counted', eod?.actual ?? ''],
       ['Expected Cash', eod?.expected ?? ((eod?.opening!=null) ? (eod.opening + (m.pmAgg['Cash']?.sales||0) + (eod.cashIn||0) - (eod.cashOut||0) - expenseTotal) : '')],
       ['Cash Variance', eod?.variance ?? ((eod?.actual!=null && eod?.opening!=null) ? (eod.actual - (eod.opening + (m.pmAgg['Cash']?.sales||0) + (eod.cashIn||0) - (eod.cashOut||0) - expenseTotal)) : '')],
-      ['Actual Funds - Cash', fundSnapshot?.cash ?? 'Pending reconciliation'],
-      ['Actual Funds - GCash', fundSnapshot?.gcash ?? 'Pending reconciliation'],
-      ['Actual Funds - Bank', fundSnapshot?.bank ?? 'Pending reconciliation'],
-      ['Funds Snapshot Time', fundSnapshot?.snapshotAt ? new Date(fundSnapshot.snapshotAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}) : 'Pending reconciliation']
+      ['Actual Funds - Cash', fundSnapshot?.cash ?? (options.singleDay===false?'Select a single date':'Pending reconciliation')],
+      ['Actual Funds - GCash', fundSnapshot?.gcash ?? (options.singleDay===false?'Select a single date':'Pending reconciliation')],
+      ['Actual Funds - Bank', fundSnapshot?.bank ?? (options.singleDay===false?'Select a single date':'Pending reconciliation')],
+      ['Funds Snapshot Time', fundSnapshot?.snapshotAt ? new Date(fundSnapshot.snapshotAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}) : (options.singleDay===false?'Not applicable to date ranges':'Pending reconciliation')]
     ];
     summary.forEach((item,i)=>{
       const row=5+i;
